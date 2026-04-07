@@ -22,6 +22,14 @@ const db = {
       return data.value;
     } catch (e) { console.error("DB get error:", e); return null; }
   },
+  async set(k, v) {
+    try {
+      await supabase
+        .from("kv_store")
+        .upsert({ key: k, value: JSON.stringify(v) }, { onConflict: "key" });
+    } catch (e) { console.error("DB set error:", e); }
+  },
+};
 
 // ─── Helpers ───
 const DK = { 0: "일", 1: "월", 2: "화", 3: "수", 4: "목", 5: "금", 6: "토" };
@@ -35,7 +43,6 @@ const stripLabels = (v) => v.split('\n').filter(l => !/^\s*\[(숙제|학원|학�
 
 // ─── Main App ───
 export default function App() {
-  // URL에서 학생 id 가져오기
   const params = new URLSearchParams(window.location.search);
   const studentId = params.get("id");
 
@@ -51,23 +58,15 @@ export default function App() {
   const [viewingVideo, setViewingVideo] = useState(null);
   const [viewStartTime, setViewStartTime] = useState(null);
 
-  // ─── 데이터 로드 ───
   useEffect(() => {
     if (!studentId) { setLoading(false); return; }
-
     const load = async () => {
       try {
         const [stuData, todoData, chkData, recData, vidData] = await Promise.all([
-          db.get("stu3"),
-          db.get("todo4"),
-          db.get("chk3"),
-          db.get("rec3"),
-          db.get("student_videos"),
+          db.get("stu3"), db.get("todo4"), db.get("chk3"), db.get("rec3"), db.get("student_videos"),
         ]);
-
         const found = (stuData || []).find(s => s.id === studentId);
         if (!found) { setError("not_found"); setLoading(false); return; }
-
         setStudent(found);
         setTodos(todoData || {});
         setChecklistData(chkData || {});
@@ -79,15 +78,11 @@ export default function App() {
       }
       setLoading(false);
     };
-
     load();
-
-    // 30초마다 자동 새로고침
     const interval = setInterval(load, 30000);
     return () => clearInterval(interval);
   }, [studentId]);
 
-  // ─── 체류 시간 추적 (학생에게 안 보임) ───
   const openVideo = (video) => {
     setViewingVideo(video);
     setViewStartTime(Date.now());
@@ -99,24 +94,14 @@ export default function App() {
       try {
         const key = `vtime_${studentId}`;
         const existing = await db.get(key) || [];
-        existing.push({
-          videoId: viewingVideo.id,
-          title: viewingVideo.title,
-          seconds: elapsed,
-          date: getTodayStr(),
-          timestamp: new Date().toISOString(),
-        });
+        existing.push({ videoId: viewingVideo.id, title: viewingVideo.title, seconds: elapsed, date: getTodayStr(), timestamp: new Date().toISOString() });
         await db.set(key, existing);
-        console.log(`📊 체류시간 저장 완료: ${viewingVideo.title} ${elapsed}초`);
-      } catch (e) {
-        console.error("체류시간 저장 실패:", e);
-      }
+      } catch (e) { console.error("체류시간 저장 실패:", e); }
     }
     setViewingVideo(null);
     setViewStartTime(null);
   };
 
-  // ─── 페이지 이탈 시에도 체류시간 저장 ───
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (viewingVideo && viewStartTime) {
@@ -132,7 +117,6 @@ export default function App() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [viewingVideo, viewStartTime, studentId]);
 
-  // 앱 로드 시 pending 체류시간 전송
   useEffect(() => {
     const flush = async () => {
       try {
@@ -150,7 +134,6 @@ export default function App() {
     flush();
   }, []);
 
-  // ─── 로딩 / 에러 화면 ───
   if (loading) {
     return (
       <div style={{ minHeight: "100vh", background: "#f6f7fb", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font)" }}>
@@ -203,13 +186,11 @@ export default function App() {
 
   if (!student) return null;
 
-  // ─── 고정 메시지 ───
   const sRec = records[studentId] || {};
   const pinnedMessages = Object.entries(sRec)
     .filter(([, v]) => v && v.pinned)
     .sort(([a], [b]) => b.localeCompare(a));
 
-  // ─── 날짜별 투두 (최근순, 최근 20개) ───
   const allDates = Object.keys(todos)
     .filter((d) => {
       const t = todos[d]?.[studentId];
@@ -226,7 +207,6 @@ export default function App() {
   const hwLines = stripLabels(todo.homework || "").split("\n").filter((l) => l.trim());
   const acLines = stripLabels(todo.academy || "").split("\n").filter((l) => l.trim());
 
-  // 읽기 전용 체크
   const chk = checklistData[activeDate]?.[studentId] || {};
   const isChecked = (type, idx) => !!chk[`${type}_${idx}`];
 
@@ -237,10 +217,8 @@ export default function App() {
   ].filter(Boolean).length;
   const pct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
 
-  // ─── 학생별 강의 영상 필터 ───
   const studentVideos = videos.filter(v => !v.studentId || v.studentId === studentId);
 
-  // ─── 강의 시청 페이지 ───
   if (viewingVideo) {
     return (
       <div style={{ minHeight: "100vh", background: "#0a0a0f", color: "#fff", fontFamily: "'Pretendard Variable', -apple-system, sans-serif" }}>
@@ -271,12 +249,9 @@ export default function App() {
     );
   }
 
-  // ─── 메인 페이지 ───
   const F = "'Pretendard Variable', -apple-system, sans-serif";
   return (
     <div style={{ minHeight: "100vh", background: "#f6f7fb", fontFamily: F }}>
-
-      {/* Profile Header */}
       <div style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)", padding: "28px 24px 24px", color: "#fff" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: pinnedMessages.length > 0 ? 16 : 0 }}>
           <div style={{ width: 48, height: 48, borderRadius: 14, background: "rgba(255,255,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 700, border: "1px solid rgba(255,255,255,0.1)" }}>
@@ -291,8 +266,6 @@ export default function App() {
             </div>
           </div>
         </div>
-
-        {/* 📌 고정 메시지 */}
         {pinnedMessages.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {pinnedMessages.map(([dateKey, rec]) => (
@@ -310,7 +283,6 @@ export default function App() {
         )}
       </div>
 
-      {/* Progress */}
       {totalTasks > 0 && (
         <div style={{ padding: "14px 24px", background: "#fff", borderBottom: "1px solid #eee" }}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 12 }}>
@@ -325,7 +297,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Tabs */}
       <div style={{ display: "flex", background: "#fff", borderBottom: "1px solid #eee", position: "sticky", top: 0, zIndex: 10 }}>
         {[
           { key: "tasks", label: "📋 숙제/과제" },
@@ -340,11 +311,9 @@ export default function App() {
         ))}
       </div>
 
-      {/* Content */}
       <div style={{ padding: "16px 16px 100px" }}>
         {tab === "tasks" && (
           <>
-            {/* Date Pills */}
             {allDates.length > 0 && (
               <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 12, WebkitOverflowScrolling: "touch" }}>
                 {allDates.map((d) => (
@@ -359,17 +328,14 @@ export default function App() {
                 ))}
               </div>
             )}
-
             {allDates.length > 0 && (
               <div style={{ fontSize: 16, fontWeight: 700, color: "#1a1a2e", margin: "12px 0 16px" }}>
                 {fmtDateKR(activeDate)}
                 {isToday(activeDate) && <span style={{ fontSize: 12, color: "#7c4dff", marginLeft: 8, fontWeight: 600 }}>TODAY</span>}
               </div>
             )}
-
             <TaskSection label="숙제" color="#e84393" bg="#fdf2f8" lines={hwLines} type="hw" isChecked={isChecked} />
             <TaskSection label="학원과제" color="#4a6cf7" bg="#eef1ff" lines={acLines} type="ac" isChecked={isChecked} />
-
             {hwLines.length === 0 && acLines.length === 0 && (
               <div style={{ textAlign: "center", padding: "60px 20px", color: "#bbb" }}>
                 <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
@@ -380,7 +346,6 @@ export default function App() {
             )}
           </>
         )}
-
         {tab === "videos" && (
           <div>
             <div style={{ fontSize: 13, color: "#999", marginBottom: 16 }}>강의를 눌러 시청하세요.</div>
@@ -405,7 +370,6 @@ export default function App() {
   );
 }
 
-// ─── 유튜브 ID 추출 ───
 function extractYoutubeId(url) {
   if (!url) return "";
   let m = url.match(/youtu\.be\/([^?&]+)/);
@@ -417,7 +381,6 @@ function extractYoutubeId(url) {
   return "";
 }
 
-// ─── 과제 섹션 (읽기 전용) ───
 function TaskSection({ label, color, bg, lines, type, isChecked }) {
   if (lines.length === 0) return null;
   return (
