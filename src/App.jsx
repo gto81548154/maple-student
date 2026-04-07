@@ -186,14 +186,14 @@ export default function App() {
 
   if (!student) return null;
 
-  const sRec = records[studentId] || {};
+  const sRec = records[studentId] || records[Number(studentId)] || {};
   const pinnedMessages = Object.entries(sRec)
     .filter(([, v]) => v && v.pinned)
     .sort(([a], [b]) => b.localeCompare(a));
 
   const allDates = Object.keys(todos)
     .filter((d) => {
-      const t = todos[d]?.[studentId];
+      const t = todos[d]?.[studentId] || todos[d]?.[Number(studentId)];
       if (!t) return false;
       const hw = stripLabels(t.homework || "").trim();
       const ac = stripLabels(t.academy || "").trim();
@@ -203,11 +203,11 @@ export default function App() {
     .slice(0, 20);
 
   const activeDate = selectedDate || allDates[0] || getTodayStr();
-  const todo = todos[activeDate]?.[studentId] || {};
+  const todo = todos[activeDate]?.[studentId] || todos[activeDate]?.[Number(studentId)] || {};
   const hwLines = stripLabels(todo.homework || "").split("\n").filter((l) => l.trim());
   const acLines = stripLabels(todo.academy || "").split("\n").filter((l) => l.trim());
 
-  const chk = checklistData[activeDate]?.[studentId] || {};
+  const chk = checklistData[activeDate]?.[studentId] || checklistData[activeDate]?.[Number(studentId)] || {};
   const isChecked = (type, idx) => !!chk[`${type}_${idx}`];
 
   const totalTasks = hwLines.length + acLines.length;
