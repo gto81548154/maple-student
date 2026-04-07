@@ -66,7 +66,7 @@ export default function App() {
         ]);
 
         // 학생 찾기
-        const found = (stuData || []).find(s => s.id === studentId);
+        const found = (stuData || []).find(s => String(s.id) === String(studentId));
         if (!found) { setError("not_found"); setLoading(false); return; }
 
         setStudent(found);
