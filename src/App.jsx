@@ -65,7 +65,7 @@ export default function App() {
         const [stuData, todoData, chkData, recData, vidData] = await Promise.all([
           db.get("stu3"), db.get("todo4"), db.get("chk3"), db.get("rec3"), db.get("student_videos"),
         ]);
-        const found = (stuData || []).find(s => s.id === studentId);
+        const found = (stuData || []).find(s => String(s.id) === String(studentId));
         if (!found) { setError("not_found"); setLoading(false); return; }
         setStudent(found);
         setTodos(todoData || {});
