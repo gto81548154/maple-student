@@ -1,23 +1,29 @@
 import { useState, useEffect } from "react";
-import { createClient as createTursoClient } from '@libsql/client/web';
+import { createClient } from '@supabase/supabase-js';
 
-// ─── Turso 연결 (원장님 앱과 같은 DB) ───
-const turso = createTursoClient({
-  url: import.meta.env.VITE_TURSO_URL,
-  authToken: import.meta.env.VITE_TURSO_AUTH_TOKEN,
-});
+// ─── Supabase 연결 (원장님 앱과 같은 DB) ───
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
 
 const db = {
   async get(k) {
     try {
-      const r = await turso.execute({ sql: "SELECT value FROM kv_store WHERE key = ?", args: [k] });
-      if (r.rows.length === 0) return null;
-      return JSON.parse(r.rows[0].value);
+      const { data, error } = await supabase
+        .from("kv_store")
+        .select("value")
+        .eq("key", k)
+        .single();
+      if (error || !data) return null;
+      return JSON.parse(data.value);
     } catch (e) { console.error("DB get error:", e); return null; }
   },
   async set(k, v) {
     try {
-      await turso.execute({ sql: "INSERT OR REPLACE INTO kv_store (key, value) VALUES (?, ?)", args: [k, JSON.stringify(v)] });
+      await supabase
+        .from("kv_store")
+        .upsert({ key: k, value: JSON.stringify(v) }, { onConflict: "key" });
     } catch (e) { console.error("DB set error:", e); }
   },
 };
@@ -56,17 +62,15 @@ export default function App() {
 
     const load = async () => {
       try {
-        // 원장님 앱과 같은 키로 데이터 읽기
         const [stuData, todoData, chkData, recData, vidData] = await Promise.all([
           db.get("stu3"),
           db.get("todo4"),
           db.get("chk3"),
           db.get("rec3"),
-          db.get("student_videos"), // 강의 영상 목록 (원장님이 등록)
+          db.get("student_videos"),
         ]);
 
-        // 학생 찾기
-        const found = (stuData || []).find(s => String(s.id) === String(studentId));
+        const found = (stuData || []).find(s => s.id === studentId);
         if (!found) { setError("not_found"); setLoading(false); return; }
 
         setStudent(found);
@@ -83,7 +87,7 @@ export default function App() {
 
     load();
 
-    // 30초마다 자동 새로고침 (원장님이 업데이트한 내용 반영)
+    // 30초마다 자동 새로고침
     const interval = setInterval(load, 30000);
     return () => clearInterval(interval);
   }, [studentId]);
@@ -97,7 +101,6 @@ export default function App() {
   const closeVideo = async () => {
     if (viewingVideo && viewStartTime) {
       const elapsed = Math.round((Date.now() - viewStartTime) / 1000);
-      // Turso에 체류시간 저장
       try {
         const key = `vtime_${studentId}`;
         const existing = await db.get(key) || [];
@@ -123,8 +126,6 @@ export default function App() {
     const handleBeforeUnload = () => {
       if (viewingVideo && viewStartTime) {
         const elapsed = Math.round((Date.now() - viewStartTime) / 1000);
-        // sendBeacon으로 확실하게 전송 (페이지 닫혀도 전송됨)
-        // Turso는 sendBeacon 미지원이므로 localStorage에 임시 저장
         try {
           const pending = JSON.parse(localStorage.getItem("pending_vtime") || "[]");
           pending.push({ studentId, videoId: viewingVideo.id, title: viewingVideo.title, seconds: elapsed, date: getTodayStr(), timestamp: new Date().toISOString() });
@@ -253,7 +254,6 @@ export default function App() {
           <span style={{ fontSize: 15, fontWeight: 600 }}>{viewingVideo.title}</span>
         </div>
         <div style={{ padding: 20 }}>
-          {/* 유튜브 임베드 */}
           {viewingVideo.url && viewingVideo.url.includes("youtu") ? (
             <div style={{ borderRadius: 16, overflow: "hidden", aspectRatio: "16/9", marginBottom: 20 }}>
               <iframe
@@ -413,13 +413,10 @@ export default function App() {
 // ─── 유튜브 ID 추출 ───
 function extractYoutubeId(url) {
   if (!url) return "";
-  // youtu.be/ID
   let m = url.match(/youtu\.be\/([^?&]+)/);
   if (m) return m[1];
-  // youtube.com/watch?v=ID
   m = url.match(/[?&]v=([^?&]+)/);
   if (m) return m[1];
-  // youtube.com/embed/ID
   m = url.match(/embed\/([^?&]+)/);
   if (m) return m[1];
   return "";
@@ -458,4 +455,3 @@ function TaskSection({ label, color, bg, lines, type, isChecked }) {
     </div>
   );
 }
-
