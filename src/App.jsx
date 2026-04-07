@@ -16,7 +16,11 @@ const db = {
         .eq("key", k)
         .single();
       if (error || !data) return null;
-      return JSON.parse(data.value);
+      // value가 이미 객체면 그대로, 문자열이면 parse
+      if (typeof data.value === 'string') {
+        return JSON.parse(data.value);
+      }
+      return data.value;
     } catch (e) { console.error("DB get error:", e); return null; }
   },
   async set(k, v) {
