@@ -14,23 +14,14 @@ const db = {
         .from("kv_store")
         .select("value")
         .eq("key", k)
-        .single();
+        .maybeSingle();
       if (error || !data) return null;
-      // value가 이미 객체면 그대로, 문자열이면 parse
       if (typeof data.value === 'string') {
         return JSON.parse(data.value);
       }
       return data.value;
     } catch (e) { console.error("DB get error:", e); return null; }
   },
-  async set(k, v) {
-    try {
-      await supabase
-        .from("kv_store")
-        .upsert({ key: k, value: JSON.stringify(v) }, { onConflict: "key" });
-    } catch (e) { console.error("DB set error:", e); }
-  },
-};
 
 // ─── Helpers ───
 const DK = { 0: "일", 1: "월", 2: "화", 3: "수", 4: "목", 5: "금", 6: "토" };
