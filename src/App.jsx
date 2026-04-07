@@ -227,7 +227,16 @@ export default function App() {
           <span style={{ fontSize: 15, fontWeight: 600 }}>{viewingVideo.title}</span>
         </div>
         <div style={{ padding: 20 }}>
-          {viewingVideo.url && viewingVideo.url.includes("youtu") ? (
+          {viewingVideo.type === "playlist" && viewingVideo.playlistUrl ? (
+            <div style={{ borderRadius: 16, overflow: "hidden", aspectRatio: "16/9", marginBottom: 20 }}>
+              <iframe
+                src={`https://www.youtube.com/embed/videoseries?list=${extractPlaylistId(viewingVideo.playlistUrl)}&rel=0`}
+                style={{ width: "100%", height: "100%", border: "none" }}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          ) : viewingVideo.url && viewingVideo.url.includes("youtu") ? (
             <div style={{ borderRadius: 16, overflow: "hidden", aspectRatio: "16/9", marginBottom: 20 }}>
               <iframe
                 src={`https://www.youtube.com/embed/${extractYoutubeId(viewingVideo.url)}?rel=0`}
@@ -355,10 +364,10 @@ export default function App() {
                 boxShadow: "0 1px 4px rgba(0,0,0,0.04)", cursor: "pointer",
                 display: "flex", alignItems: "center", gap: 14,
               }}>
-                <div style={{ width: 48, height: 48, borderRadius: 12, flexShrink: 0, background: "linear-gradient(135deg, #667eea, #764ba2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>▶️</div>
+                <div style={{ width: 48, height: 48, borderRadius: 12, flexShrink: 0, background: v.type === "playlist" ? "linear-gradient(135deg, #e74c3c, #e67e22)" : "linear-gradient(135deg, #667eea, #764ba2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{v.type === "playlist" ? "📋" : "▶️"}</div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 15, fontWeight: 600, color: "#1a1a2e" }}>{v.title}</div>
-                  {v.subject && <div style={{ fontSize: 12, color: "#bbb", marginTop: 3 }}>{v.subject}</div>}
+                  <div style={{ fontSize: 12, color: "#bbb", marginTop: 3 }}>{v.type === "playlist" ? "재생목록 전체 보기" : (v.subject || "")}</div>
                 </div>
                 <div style={{ color: "#ccc", fontSize: 18 }}>›</div>
               </div>
@@ -379,6 +388,12 @@ function extractYoutubeId(url) {
   m = url.match(/embed\/([^?&]+)/);
   if (m) return m[1];
   return "";
+}
+
+function extractPlaylistId(url) {
+  if (!url) return "";
+  const m = url.match(/[?&]list=([^?&]+)/);
+  return m ? m[1] : "";
 }
 
 function TaskSection({ label, color, bg, lines, type, isChecked }) {
