@@ -1,0 +1,9 @@
+{
+  "name": "마플영어",
+  "short_name": "마플영어",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1a2e",
+  "theme_color": "#1a1a2e",
+  "description": "마플영어 학생용 페이지"
+}
