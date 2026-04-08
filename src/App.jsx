@@ -57,13 +57,14 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState(null);
   const [viewingVideo, setViewingVideo] = useState(null);
   const [viewStartTime, setViewStartTime] = useState(null);
+  const [videoWatch, setVideoWatch] = useState({});
 
   useEffect(() => {
     if (!studentId) { setLoading(false); return; }
     const load = async () => {
       try {
-        const [stuData, todoData, chkData, recData, vidData] = await Promise.all([
-          db.get("stu3"), db.get("todo4"), db.get("chk3"), db.get("rec3"), db.get("student_videos"),
+        const [stuData, todoData, chkData, recData, vidData, vwData] = await Promise.all([
+          db.get("stu3"), db.get("todo4"), db.get("chk3"), db.get("rec3"), db.get("student_videos"), db.get("video_watch"),
         ]);
         const found = (stuData || []).find(s => String(s.id) === String(studentId));
         if (!found) { setError("not_found"); setLoading(false); return; }
@@ -72,6 +73,7 @@ export default function App() {
         setChecklistData(chkData || {});
         setRecords(recData || {});
         setVideos(vidData || []);
+        setVideoWatch(vwData || {});
       } catch (e) {
         console.error("Load error:", e);
         setError("load_error");
@@ -96,6 +98,21 @@ export default function App() {
         const existing = await db.get(key) || [];
         existing.push({ videoId: viewingVideo.id, title: viewingVideo.title, seconds: elapsed, date: getTodayStr(), timestamp: new Date().toISOString() });
         await db.set(key, existing);
+        // video_watch 집계 업데이트
+        const vw = await db.get("video_watch") || {};
+        if (!vw[studentId]) vw[studentId] = {};
+        const prev = vw[studentId][viewingVideo.id] || { watchSec: 0, sessions: 0 };
+        const totalSec = prev.watchSec + elapsed;
+        const estDur = 720; // 12분 기본 추정
+        vw[studentId][viewingVideo.id] = {
+          watchSec: totalSec,
+          durSec: prev.durSec || estDur,
+          pct: Math.min(100, Math.round(totalSec / estDur * 100)),
+          lastAt: new Date().toISOString(),
+          sessions: prev.sessions + 1
+        };
+        await db.set("video_watch", vw);
+        setVideoWatch(vw);
       } catch (e) { console.error("체류시간 저장 실패:", e); }
     }
     setViewingVideo(null);
@@ -122,12 +139,20 @@ export default function App() {
       try {
         const pending = JSON.parse(localStorage.getItem("pending_vtime") || "[]");
         if (pending.length === 0) return;
+        const vw = await db.get("video_watch") || {};
         for (const item of pending) {
           const key = `vtime_${item.studentId}`;
           const existing = await db.get(key) || [];
           existing.push(item);
           await db.set(key, existing);
+          // video_watch 집계
+          if (!vw[item.studentId]) vw[item.studentId] = {};
+          const prev = vw[item.studentId][item.videoId] || { watchSec: 0, sessions: 0 };
+          const totalSec = prev.watchSec + item.seconds;
+          const estDur = prev.durSec || 720;
+          vw[item.studentId][item.videoId] = { watchSec: totalSec, durSec: estDur, pct: Math.min(100, Math.round(totalSec / estDur * 100)), lastAt: item.timestamp, sessions: prev.sessions + 1 };
         }
+        await db.set("video_watch", vw);
         localStorage.removeItem("pending_vtime");
       } catch (e) { /* ignore */ }
     };
