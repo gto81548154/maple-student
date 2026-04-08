@@ -34,7 +34,7 @@ const db = {
 // ─── Helpers ───
 const DK = { 0: "일", 1: "월", 2: "화", 3: "수", 4: "목", 5: "금", 6: "토" };
 const fmtDateKR = (ds) => { const d = new Date(ds + "T00:00:00"); return `${d.getMonth() + 1}월 ${d.getDate()}일 ${DK[d.getDay()]}요일`; };
-const fmtDateShort = (ds) => { const d = new Date(ds + "T00:00:00"); return `${d.getMonth() + 1}/${d.getDate()}(${DK[d.getDay()]})`; };
+const fmtDateShort = (ds) => { if(!ds) return ""; const d = new Date(ds + "T00:00:00"); if(isNaN(d.getTime())) return ""; return `${d.getMonth() + 1}/${d.getDate()}(${DK[d.getDay()]})`; };
 const isToday = (ds) => { const t = new Date(); return ds === `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`; };
 const getTodayStr = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`; };
 
@@ -200,7 +200,7 @@ export default function App() {
       return hw || ac;
     })
     .sort((a, b) => b.localeCompare(a))
-    .slice(0, 20);
+    .slice(0, 3);
 
   const activeDate = selectedDate || allDates[0] || getTodayStr();
   const todo = todos[activeDate]?.[studentId] || todos[activeDate]?.[Number(studentId)] || {};
@@ -282,7 +282,7 @@ export default function App() {
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                   <span style={{ fontSize: 12 }}>📌</span>
                   <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)" }}>
-                    {fmtDateShort(dateKey)} · {rec.author || "선생님"}
+                    {fmtDateShort(dateKey) ? `${fmtDateShort(dateKey)} · ` : ""}{rec.author || "선생님"}
                   </span>
                 </div>
                 <div style={{ fontSize: 14, color: "rgba(255,255,255,0.9)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{rec.text}</div>
