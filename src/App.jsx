@@ -24,9 +24,10 @@ const db = {
   },
   async set(k, v) {
     try {
-      await supabase
+      const { error } = await supabase
         .from("kv_store")
         .upsert({ key: k, value: JSON.stringify(v) }, { onConflict: "key" });
+      if (error) console.error("DB set error for key:", k, error);
     } catch (e) { console.error("DB set error:", e); }
   },
 };
@@ -91,13 +92,16 @@ export default function App() {
   };
 
   const closeVideo = async () => {
+    console.log("closeVideo 호출됨", { viewingVideo, viewStartTime, studentId });
     if (viewingVideo && viewStartTime) {
       const elapsed = Math.round((Date.now() - viewStartTime) / 1000);
+      console.log("시청시간:", elapsed, "초, videoId:", viewingVideo.id);
       try {
         const key = `vtime_${studentId}`;
         const existing = await db.get(key) || [];
         existing.push({ videoId: viewingVideo.id, title: viewingVideo.title, seconds: elapsed, date: getTodayStr(), timestamp: new Date().toISOString() });
         await db.set(key, existing);
+        console.log("vtime 저장 완료");
         // video_watch 집계 업데이트
         const vw = await db.get("video_watch") || {};
         if (!vw[studentId]) vw[studentId] = {};
@@ -112,8 +116,11 @@ export default function App() {
           sessions: prev.sessions + 1
         };
         await db.set("video_watch", vw);
+        console.log("video_watch 저장 완료", vw);
         setVideoWatch(vw);
       } catch (e) { console.error("체류시간 저장 실패:", e); }
+    } else {
+      console.log("조건 불충족 - viewingVideo:", !!viewingVideo, "viewStartTime:", !!viewStartTime);
     }
     setViewingVideo(null);
     setViewStartTime(null);
