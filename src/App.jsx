@@ -42,6 +42,59 @@ const getTodayStr = () => { const t = new Date(); return `${t.getFullYear()}-${S
 // ─── stripLabels (원장님 앱과 동일) ───
 const stripLabels = (v) => v.split('\n').filter(l => !/^\s*\[(숙제|학원|학원과제)\]\s*$/.test(l)).join('\n');
 
+// ─── 5단계 정의 (학생용 라벨/색상/배지) ───
+const STEP_DEFS = [
+  { key: 'step1', label: '숙제',        color: '#e84393', bg: '#fdf2f8', badges: ['조교', '강사'] },
+  { key: 'step2', label: '단어 TEST',   color: '#7c3aed', bg: '#f3e8ff', badges: ['조교'] },
+  { key: 'step3', label: '오늘 수업',   color: '#4a6cf7', bg: '#eef1ff', badges: ['강사'], notice: '→ 수업 준비되면 조교T 한테 말씀드리기' },
+  { key: 'step4', label: '마무리 TEST', color: '#00b894', bg: '#e8f8f5', badges: ['조교'] },
+  { key: 'step5', label: '받을 자료',   color: '#e67e22', bg: '#fff4e6', badges: ['강사'] },
+];
+
+// 배지 스타일 (조교: 그린, 강사: 블루)
+const BADGE_STYLES = {
+  '조교': { bg: '#d1fae5', fg: '#065f46' },
+  '강사': { bg: '#dbeafe', fg: '#1e40af' },
+};
+
+// ─── todo → 단계별 그룹 ───
+// admin 앱은 step별 시각 그룹핑만 하고 체크 키는 hw_index/ac_index 유지 → 학생 앱도 동일
+// steps5 텍스트와 homework/academy 라인을 매칭해서 각 라인이 어느 step에 속하는지 결정
+const buildStepGroups = (todo) => {
+  if (!todo) return [];
+  const hwLines = stripLabels(todo.homework || "").split("\n").filter(l => l.trim());
+  const acLines = stripLabels(todo.academy || "").split("\n").filter(l => l.trim());
+  const items = [
+    ...hwLines.map((text, i) => ({ text: text.trim(), type: 'hw', idx: i })),
+    ...acLines.map((text, i) => ({ text: text.trim(), type: 'ac', idx: i })),
+  ];
+
+  // steps5 텍스트 → step 매핑 (admin의 stepKeyByText 패턴)
+  const steps5 = todo.steps5;
+  const stepKeyByText = new Map();
+  if (steps5) {
+    STEP_DEFS.forEach(def => {
+      String(steps5[def.key] || "").split('\n').forEach(line => {
+        const t = line.trim();
+        if (t && !stepKeyByText.has(t)) stepKeyByText.set(t, def.key);
+      });
+    });
+  }
+
+  // 각 라인을 step 버킷에 분류 (매칭 실패 시 폴백: hw→step1, ac→step3)
+  const grouped = { step1: [], step2: [], step3: [], step4: [], step5: [] };
+  items.forEach(item => {
+    const stepKey = stepKeyByText.get(item.text)
+      || (item.type === 'hw' ? 'step1' : 'step3');
+    grouped[stepKey].push(item);
+  });
+
+  // STEP_DEFS 순서대로 + 빈 단계 자동 숨김
+  return STEP_DEFS
+    .map(def => ({ ...def, items: grouped[def.key] }))
+    .filter(s => s.items.length > 0);
+};
+
 // ─── Main App ───
 export default function App() {
   const params = new URLSearchParams(window.location.search);
@@ -223,30 +276,32 @@ export default function App() {
     .filter(([, v]) => v && v.pinned)
     .sort(([a], [b]) => b.localeCompare(a));
 
+  // allDates: homework/academy 또는 steps5 중 하나라도 데이터가 있는 날짜
   const allDates = Object.keys(todos)
     .filter((d) => {
       const t = todos[d]?.[studentId] || todos[d]?.[Number(studentId)];
       if (!t) return false;
       const hw = stripLabels(t.homework || "").trim();
       const ac = stripLabels(t.academy || "").trim();
-      return hw || ac;
+      const hasSteps5 = t.steps5 && Object.values(t.steps5).some(v => (v || "").trim());
+      return hw || ac || hasSteps5;
     })
     .sort((a, b) => b.localeCompare(a))
     .slice(0, 3);
 
   const activeDate = selectedDate || allDates[0] || getTodayStr();
   const todo = todos[activeDate]?.[studentId] || todos[activeDate]?.[Number(studentId)] || {};
-  const hwLines = stripLabels(todo.homework || "").split("\n").filter((l) => l.trim());
-  const acLines = stripLabels(todo.academy || "").split("\n").filter((l) => l.trim());
+
+  // 5단계 그룹 (빈 단계 자동 숨김 + 재번호는 렌더링 시 idx+1)
+  const stepGroups = buildStepGroups(todo);
 
   const chk = checklistData[activeDate]?.[studentId] || checklistData[activeDate]?.[Number(studentId)] || {};
   const isChecked = (type, idx) => !!chk[`${type}_${idx}`];
 
-  const totalTasks = hwLines.length + acLines.length;
-  const doneTasks = [
-    ...hwLines.map((_, i) => isChecked("hw", i)),
-    ...acLines.map((_, i) => isChecked("ac", i)),
-  ].filter(Boolean).length;
+  // 진행률: 모든 step의 모든 item 합산 (체크 키는 hw_/ac_ 그대로)
+  const allItems = stepGroups.flatMap(s => s.items);
+  const totalTasks = allItems.length;
+  const doneTasks = allItems.filter(item => isChecked(item.type, item.idx)).length;
   const pct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
 
   const studentVideos = videos.filter(v => !v.studentId || v.studentId === studentId);
@@ -291,6 +346,7 @@ export default function App() {
   }
 
   const F = "'Pretendard Variable', -apple-system, sans-serif";
+
   return (
     <div style={{ minHeight: "100vh", background: "#f6f7fb", fontFamily: F }}>
       <div style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)", padding: "28px 24px 24px", color: "#fff" }}>
@@ -375,9 +431,18 @@ export default function App() {
                 {isToday(activeDate) && <span style={{ fontSize: 12, color: "#7c4dff", marginLeft: 8, fontWeight: 600 }}>TODAY</span>}
               </div>
             )}
-            <TaskSection label="숙제" color="#e84393" bg="#fdf2f8" lines={hwLines} type="hw" isChecked={isChecked} />
-            <TaskSection label="학원과제" color="#4a6cf7" bg="#eef1ff" lines={acLines} type="ac" isChecked={isChecked} />
-            {hwLines.length === 0 && acLines.length === 0 && (
+
+            {/* 5단계 렌더링 (빈 단계 자동 숨김 + 재번호 1,2,3...) */}
+            {stepGroups.map((step, idx) => (
+              <StepSection
+                key={step.key}
+                step={step}
+                displayNum={idx + 1}
+                isChecked={isChecked}
+              />
+            ))}
+
+            {stepGroups.length === 0 && (
               <div style={{ textAlign: "center", padding: "60px 20px", color: "#bbb" }}>
                 <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
                 <div style={{ fontSize: 15, fontWeight: 600, color: "#999" }}>
@@ -428,20 +493,39 @@ function extractPlaylistId(url) {
   return m ? m[1] : "";
 }
 
-function TaskSection({ label, color, bg, lines, type, isChecked }) {
-  if (lines.length === 0) return null;
+// ─── StepSection: 단계별 카드 (라벨 + 배지 + notice + 체크리스트) ───
+function StepSection({ step, displayNum, isChecked }) {
+  const { label, color, bg, badges = [], notice, items } = step;
   return (
     <div style={{ marginBottom: 20 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color, padding: "6px 12px", background: bg, borderRadius: "10px 10px 0 0", display: "inline-block", letterSpacing: 0.5 }}>
-        {label}
-      </div>
-      <div style={{ background: "#fff", borderRadius: "0 12px 12px 12px", boxShadow: "0 1px 4px rgba(0,0,0,0.04)", overflow: "hidden" }}>
-        {lines.map((line, i) => {
-          const done = isChecked(type, i);
+      {/* 헤더: 라벨 탭 + 배지 (한 줄) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color, padding: "6px 12px", background: bg, borderRadius: "10px 10px 0 0", letterSpacing: 0.5 }}>
+          {displayNum}. {label}
+        </div>
+        {badges.map(b => {
+          const bs = BADGE_STYLES[b] || { bg: "#eee", fg: "#666" };
           return (
-            <div key={i} style={{
+            <span key={b} style={{ background: bs.bg, color: bs.fg, fontSize: 11, padding: "3px 8px", borderRadius: 10, fontWeight: 600 }}>
+              {b}
+            </span>
+          );
+        })}
+      </div>
+
+      {/* 본문 카드 */}
+      <div style={{ background: "#fff", borderRadius: "0 12px 12px 12px", boxShadow: "0 1px 4px rgba(0,0,0,0.04)", overflow: "hidden" }}>
+        {notice && (
+          <div style={{ fontSize: 12, color: "#a16207", background: "#fffbeb", padding: "8px 14px", borderBottom: "1px solid #f5f5f5", lineHeight: 1.5 }}>
+            💡 {notice}
+          </div>
+        )}
+        {items.map((item, i) => {
+          const done = isChecked(item.type, item.idx);
+          return (
+            <div key={`${item.type}_${item.idx}`} style={{
               display: "flex", alignItems: "center", gap: 12, padding: "14px 16px",
-              borderBottom: i < lines.length - 1 ? "1px solid #f5f5f5" : "none",
+              borderBottom: i < items.length - 1 ? "1px solid #f5f5f5" : "none",
               background: done ? "#f0fdf4" : "#fff",
             }}>
               <div style={{
@@ -452,7 +536,7 @@ function TaskSection({ label, color, bg, lines, type, isChecked }) {
               }}>
                 {done && <span style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>✓</span>}
               </div>
-              <span style={{ fontSize: 14, lineHeight: 1.5, color: done ? "#999" : "#333", textDecoration: done ? "line-through" : "none" }}>{line}</span>
+              <span style={{ fontSize: 14, lineHeight: 1.5, color: done ? "#999" : "#333", textDecoration: done ? "line-through" : "none" }}>{item.text}</span>
             </div>
           );
         })}
