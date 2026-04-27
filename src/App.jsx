@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createClient } from '@supabase/supabase-js';
 
 // ─── Supabase 연결 (원장님 앱과 같은 DB) ───
@@ -87,6 +87,9 @@ const pickMotivation = () => {
 // ─── 학생 앱 가운데 정렬 폭 (PC 대응) ───
 const MAX_W = 600;
 
+// ─── 이탈 추적 임계값 (이 시간보다 짧은 이탈은 무시 — 카톡 알림 슬쩍 보고 돌아오는 경우) ───
+const MIN_AWAY_SEC = 5;
+
 // ─── todo → 단계별 그룹 ───
 // admin 앱은 step별 시각 그룹핑만 하고 체크 키는 hw_index/ac_index 유지 → 학생 앱도 동일
 // steps5 텍스트와 homework/academy 라인을 매칭해서 각 라인이 어느 step에 속하는지 결정
@@ -142,6 +145,14 @@ export default function App() {
   const [viewStartTime, setViewStartTime] = useState(null);
   const [videoWatch, setVideoWatch] = useState({});
 
+  // 이탈 추적용 ref (state로 안 쓰는 이유: 매 visibilitychange마다 리렌더 안 시키기 위함)
+  const awayStartRef = useRef(null);   // 이탈 시작 시각 (Date.now() 또는 null)
+  const activeSecRef = useRef(0);      // 영상 펼친 후 누적 활성 시간
+  const awaySecRef = useRef(0);        // 영상 펼친 후 누적 이탈 시간 (5초+ 만)
+  const awayCountRef = useRef(0);      // 이탈 횟수 (5초+ 만)
+  const longestAwayRef = useRef(0);    // 가장 길었던 이탈 (초)
+  const lastActiveAtRef = useRef(null); // 마지막 활성 측정 시각 (활성 시간 누적용)
+
   useEffect(() => {
     if (!studentId) { setLoading(false); return; }
     const load = async () => {
@@ -175,6 +186,13 @@ export default function App() {
       await closeVideo(); // 이전 영상 시청시간 저장하면서 닫기
     }
     if (!sameVideo) {
+      // 이탈 추적 ref 초기화
+      awayStartRef.current = null;
+      activeSecRef.current = 0;
+      awaySecRef.current = 0;
+      awayCountRef.current = 0;
+      longestAwayRef.current = 0;
+      lastActiveAtRef.current = Date.now();
       setViewingVideo(video);
       setViewStartTime(Date.now());
     }
@@ -184,17 +202,39 @@ export default function App() {
     console.log("closeVideo 호출됨", { viewingVideo, viewStartTime, studentId });
     if (viewingVideo && viewStartTime) {
       const elapsed = Math.round((Date.now() - viewStartTime) / 1000);
-      console.log("시청시간:", elapsed, "초, videoId:", viewingVideo.id);
+
+      // 이탈 추적: 마지막으로 활성 상태였다면 그 시간을 active에 더함
+      // 반대로 이탈 중이었다면(awayStartRef 존재) 그 시간을 away로 마감
+      if (awayStartRef.current) {
+        // 닫는 순간까지 이탈 중이었음 → away 마감
+        const awayDur = Math.round((Date.now() - awayStartRef.current) / 1000);
+        if (awayDur >= MIN_AWAY_SEC) {
+          awaySecRef.current += awayDur;
+          awayCountRef.current += 1;
+          if (awayDur > longestAwayRef.current) longestAwayRef.current = awayDur;
+        }
+        awayStartRef.current = null;
+      } else if (lastActiveAtRef.current) {
+        // 활성 상태로 닫음 → 마지막 활성 시간을 active에 더함
+        activeSecRef.current += Math.round((Date.now() - lastActiveAtRef.current) / 1000);
+      }
+
+      const activeSec = activeSecRef.current;
+      const awaySec = awaySecRef.current;
+      const awayCount = awayCountRef.current;
+      const longestAway = longestAwayRef.current;
+      console.log("시청시간:", elapsed, "초, active:", activeSec, "away:", awaySec, "(", awayCount, "회)", "videoId:", viewingVideo.id);
+
       try {
         const key = `vtime_${studentId}`;
         const existing = await db.get(key) || [];
-        existing.push({ videoId: viewingVideo.id, title: viewingVideo.title, seconds: elapsed, date: getTodayStr(), timestamp: new Date().toISOString() });
+        existing.push({ videoId: viewingVideo.id, title: viewingVideo.title, seconds: elapsed, activeSec, awaySec, awayCount, longestAwaySec: longestAway, date: getTodayStr(), timestamp: new Date().toISOString() });
         await db.set(key, existing);
         console.log("vtime 저장 완료");
         // video_watch 집계 업데이트
         const vw = await db.get("video_watch") || {};
         if (!vw[studentId]) vw[studentId] = {};
-        const prev = vw[studentId][viewingVideo.id] || { watchSec: 0, sessions: 0 };
+        const prev = vw[studentId][viewingVideo.id] || { watchSec: 0, sessions: 0, activeSec: 0, awaySec: 0, awayCount: 0, longestAwaySec: 0 };
         const totalSec = prev.watchSec + elapsed;
         const estDur = 720; // 12분 기본 추정
         vw[studentId][viewingVideo.id] = {
@@ -202,7 +242,12 @@ export default function App() {
           durSec: prev.durSec || estDur,
           pct: Math.min(100, Math.round(totalSec / estDur * 100)),
           lastAt: new Date().toISOString(),
-          sessions: prev.sessions + 1
+          sessions: prev.sessions + 1,
+          // 이탈 추적 누적
+          activeSec: (prev.activeSec || 0) + activeSec,
+          awaySec: (prev.awaySec || 0) + awaySec,
+          awayCount: (prev.awayCount || 0) + awayCount,
+          longestAwaySec: Math.max(prev.longestAwaySec || 0, longestAway),
         };
         await db.set("video_watch", vw);
         console.log("video_watch 저장 완료", vw);
@@ -211,18 +256,94 @@ export default function App() {
     } else {
       console.log("조건 불충족 - viewingVideo:", !!viewingVideo, "viewStartTime:", !!viewStartTime);
     }
+    // ref 초기화
+    awayStartRef.current = null;
+    activeSecRef.current = 0;
+    awaySecRef.current = 0;
+    awayCountRef.current = 0;
+    longestAwayRef.current = 0;
+    lastActiveAtRef.current = null;
     setViewingVideo(null);
     setViewStartTime(null);
   };
+
+  // ─── 이탈 추적: 사용자가 다른 앱/탭으로 갔다가 돌아올 때 측정 ───
+  // (visibilitychange 이벤트는 iOS/Android/PC 모두 지원하는 표준 API)
+  useEffect(() => {
+    if (!viewingVideo) return;
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        // 이탈 시작
+        // 활성 시간 누적 (visible → hidden 전환 시점)
+        if (lastActiveAtRef.current) {
+          activeSecRef.current += Math.round((Date.now() - lastActiveAtRef.current) / 1000);
+          lastActiveAtRef.current = null;
+        }
+        awayStartRef.current = Date.now();
+        // iOS Safari가 30초 후 JS 정지시킬 수 있어서, 이탈 시작 시각을 즉시 localStorage에 기록
+        // → 돌아왔을 때 또는 다음 방문 시 복구 가능
+        try {
+          localStorage.setItem("pending_away", JSON.stringify({
+            studentId, videoId: viewingVideo.id, title: viewingVideo.title,
+            awayStartedAt: awayStartRef.current,
+          }));
+        } catch (e) { /* ignore */ }
+      } else {
+        // 복귀
+        if (awayStartRef.current) {
+          const awayDur = Math.round((Date.now() - awayStartRef.current) / 1000);
+          // 5초 미만은 무시 (카톡 알림 슬쩍 보고 돌아오는 경우)
+          if (awayDur >= MIN_AWAY_SEC) {
+            awaySecRef.current += awayDur;
+            awayCountRef.current += 1;
+            if (awayDur > longestAwayRef.current) longestAwayRef.current = awayDur;
+          }
+          awayStartRef.current = null;
+        }
+        // 활성 측정 재시작
+        lastActiveAtRef.current = Date.now();
+        try { localStorage.removeItem("pending_away"); } catch (e) { /* ignore */ }
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [viewingVideo, studentId]);
 
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (viewingVideo && viewStartTime) {
         const elapsed = Math.round((Date.now() - viewStartTime) / 1000);
+
+        // 이탈 추적 마감 처리
+        let finalActive = activeSecRef.current;
+        let finalAway = awaySecRef.current;
+        let finalAwayCount = awayCountRef.current;
+        let finalLongestAway = longestAwayRef.current;
+        if (awayStartRef.current) {
+          // 이탈 중 페이지 떠남 → away 마감
+          const awayDur = Math.round((Date.now() - awayStartRef.current) / 1000);
+          if (awayDur >= MIN_AWAY_SEC) {
+            finalAway += awayDur;
+            finalAwayCount += 1;
+            if (awayDur > finalLongestAway) finalLongestAway = awayDur;
+          }
+        } else if (lastActiveAtRef.current) {
+          finalActive += Math.round((Date.now() - lastActiveAtRef.current) / 1000);
+        }
+
         try {
           const pending = JSON.parse(localStorage.getItem("pending_vtime") || "[]");
-          pending.push({ studentId, videoId: viewingVideo.id, title: viewingVideo.title, seconds: elapsed, date: getTodayStr(), timestamp: new Date().toISOString() });
+          pending.push({
+            studentId, videoId: viewingVideo.id, title: viewingVideo.title,
+            seconds: elapsed,
+            activeSec: finalActive, awaySec: finalAway,
+            awayCount: finalAwayCount, longestAwaySec: finalLongestAway,
+            date: getTodayStr(), timestamp: new Date().toISOString(),
+          });
           localStorage.setItem("pending_vtime", JSON.stringify(pending));
+          localStorage.removeItem("pending_away"); // 정상 처리됐으니 제거
         } catch (e) { /* ignore */ }
       }
     };
@@ -233,6 +354,33 @@ export default function App() {
   useEffect(() => {
     const flush = async () => {
       try {
+        // 1) pending_away 고아 데이터 복구 (앱이 강제 종료되어 visibility 복귀 처리 못 한 경우)
+        // 예: iOS가 백그라운드에서 JS 정지시켜서 돌아왔을 때 처리 못 한 경우
+        try {
+          const orphanAway = JSON.parse(localStorage.getItem("pending_away") || "null");
+          if (orphanAway && orphanAway.awayStartedAt) {
+            const awayDur = Math.round((Date.now() - orphanAway.awayStartedAt) / 1000);
+            if (awayDur >= MIN_AWAY_SEC && orphanAway.studentId && orphanAway.videoId) {
+              // 단, 비현실적으로 긴 이탈(24시간 이상)은 무시 — 학생이 그냥 앱 닫고 나간 것
+              const MAX_REALISTIC_AWAY = 86400; // 24h
+              if (awayDur < MAX_REALISTIC_AWAY) {
+                const vw = await db.get("video_watch") || {};
+                if (!vw[orphanAway.studentId]) vw[orphanAway.studentId] = {};
+                const prev = vw[orphanAway.studentId][orphanAway.videoId] || { watchSec: 0, sessions: 0, activeSec: 0, awaySec: 0, awayCount: 0, longestAwaySec: 0 };
+                vw[orphanAway.studentId][orphanAway.videoId] = {
+                  ...prev,
+                  awaySec: (prev.awaySec || 0) + awayDur,
+                  awayCount: (prev.awayCount || 0) + 1,
+                  longestAwaySec: Math.max(prev.longestAwaySec || 0, awayDur),
+                };
+                await db.set("video_watch", vw);
+              }
+            }
+          }
+          localStorage.removeItem("pending_away");
+        } catch (e) { /* ignore */ }
+
+        // 2) pending_vtime flush (기존 로직 + 이탈 데이터)
         const pending = JSON.parse(localStorage.getItem("pending_vtime") || "[]");
         if (pending.length === 0) return;
         const vw = await db.get("video_watch") || {};
@@ -241,12 +389,22 @@ export default function App() {
           const existing = await db.get(key) || [];
           existing.push(item);
           await db.set(key, existing);
-          // video_watch 집계
+          // video_watch 집계 (이탈 데이터 포함)
           if (!vw[item.studentId]) vw[item.studentId] = {};
-          const prev = vw[item.studentId][item.videoId] || { watchSec: 0, sessions: 0 };
+          const prev = vw[item.studentId][item.videoId] || { watchSec: 0, sessions: 0, activeSec: 0, awaySec: 0, awayCount: 0, longestAwaySec: 0 };
           const totalSec = prev.watchSec + item.seconds;
           const estDur = prev.durSec || 720;
-          vw[item.studentId][item.videoId] = { watchSec: totalSec, durSec: estDur, pct: Math.min(100, Math.round(totalSec / estDur * 100)), lastAt: item.timestamp, sessions: prev.sessions + 1 };
+          vw[item.studentId][item.videoId] = {
+            watchSec: totalSec,
+            durSec: estDur,
+            pct: Math.min(100, Math.round(totalSec / estDur * 100)),
+            lastAt: item.timestamp,
+            sessions: prev.sessions + 1,
+            activeSec: (prev.activeSec || 0) + (item.activeSec || 0),
+            awaySec: (prev.awaySec || 0) + (item.awaySec || 0),
+            awayCount: (prev.awayCount || 0) + (item.awayCount || 0),
+            longestAwaySec: Math.max(prev.longestAwaySec || 0, item.longestAwaySec || 0),
+          };
         }
         await db.set("video_watch", vw);
         localStorage.removeItem("pending_vtime");
