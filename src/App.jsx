@@ -42,6 +42,9 @@ const getTodayStr = () => { const t = new Date(); return `${t.getFullYear()}-${S
 // ─── stripLabels (원장님 앱과 동일) ───
 const stripLabels = (v) => v.split('\n').filter(l => !/^\s*\[(숙제|학원|학원과제)\]\s*$/.test(l)).join('\n');
 
+// ─── 줄 맨 앞의 'ㅁ' 글자 제거 (학생 표시용 — 왼쪽에 이미 체크박스 있어서 중복) ───
+const stripBox = (s) => s.replace(/^\s*ㅁ\s*/, '');
+
 // ─── 5단계 정의 (학생용 라벨/색상/배지) ───
 const STEP_DEFS = [
   { key: 'step1', label: '숙제',        color: '#e84393', bg: '#fdf2f8', badges: ['조교', '강사'] },
@@ -57,6 +60,33 @@ const BADGE_STYLES = {
   '강사': { bg: '#dbeafe', fg: '#1e40af' },
 };
 
+// ─── 동기부여 멘트 풀 (12개 — 매일 자정에 자동 변경, 학생 모두 같은 멘트) ───
+// 4가지 테마: 시작·꾸준함 / 슬럼프 극복 / 노력·집중 / 자기확신
+const MOTIVATION_MESSAGES = [
+  { quote: "The secret of getting ahead is getting started.",                                           translation: "앞서가는 비결은 일단 시작하는 것이다.",                  author: "Mark Twain" },
+  { quote: "Motivation is what gets you started. Habit is what keeps you going.",                       translation: "동기는 시작하게 만들고, 습관은 계속 나아가게 한다.",     author: "Jim Ryun" },
+  { quote: "You don't have to be great to start, but you have to start to be great.",                   translation: "위대해지려면 시작해야 한다.",                              author: "Zig Ziglar" },
+  { quote: "It always seems impossible until it's done.",                                               translation: "모든 일은 끝나기 전까진 불가능해 보인다.",                author: "Nelson Mandela" },
+  { quote: "Don't watch the clock; do what it does. Keep going.",                                       translation: "시계를 보지 마라. 시계처럼 계속 나아가라.",               author: "Sam Levenson" },
+  { quote: "Success is not final, failure is not fatal: it is the courage to continue that counts.",    translation: "중요한 것은 계속 나아가는 용기다.",                       author: "Winston Churchill" },
+  { quote: "There are no shortcuts to any place worth going.",                                          translation: "갈 가치가 있는 곳에는 지름길이 없다.",                    author: "Beverly Sills" },
+  { quote: "Do something today that your future self will thank you for.",                              translation: "미래의 내가 고마워할 일을 오늘 하라.",                    author: "Sean Patrick Flanery" },
+  { quote: "I find that the harder I work, the more luck I seem to have.",                              translation: "더 열심히 할수록 운도 더 따른다.",                        author: "Thomas Jefferson" },
+  { quote: "Believe you can and you're halfway there.",                                                 translation: "할 수 있다고 믿으면 이미 절반은 온 것이다.",              author: "Theodore Roosevelt" },
+  { quote: "Doubt kills more dreams than failure ever will.",                                           translation: "의심은 실패보다 더 많은 꿈을 죽인다.",                    author: "Suzy Kassem" },
+  { quote: "The future belongs to those who believe in the beauty of their dreams.",                    translation: "미래는 자신의 꿈을 믿는 자들의 것이다.",                  author: "Eleanor Roosevelt" },
+];
+
+// 오늘 날짜 기준 멘트 선택 (모든 학생이 같은 날 같은 멘트, 매일 자정에 변경)
+const pickMotivation = () => {
+  const now = new Date();
+  const dayKey = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
+  return MOTIVATION_MESSAGES[dayKey % MOTIVATION_MESSAGES.length];
+};
+
+// ─── 학생 앱 가운데 정렬 폭 (PC 대응) ───
+const MAX_W = 600;
+
 // ─── todo → 단계별 그룹 ───
 // admin 앱은 step별 시각 그룹핑만 하고 체크 키는 hw_index/ac_index 유지 → 학생 앱도 동일
 // steps5 텍스트와 homework/academy 라인을 매칭해서 각 라인이 어느 step에 속하는지 결정
@@ -65,8 +95,8 @@ const buildStepGroups = (todo) => {
   const hwLines = stripLabels(todo.homework || "").split("\n").filter(l => l.trim());
   const acLines = stripLabels(todo.academy || "").split("\n").filter(l => l.trim());
   const items = [
-    ...hwLines.map((text, i) => ({ text: text.trim(), type: 'hw', idx: i })),
-    ...acLines.map((text, i) => ({ text: text.trim(), type: 'ac', idx: i })),
+    ...hwLines.map((text, i) => ({ text: stripBox(text.trim()), type: 'hw', idx: i })),
+    ...acLines.map((text, i) => ({ text: stripBox(text.trim()), type: 'ac', idx: i })),
   ];
 
   // steps5 텍스트 → step 매핑 (admin의 stepKeyByText 패턴)
@@ -75,7 +105,7 @@ const buildStepGroups = (todo) => {
   if (steps5) {
     STEP_DEFS.forEach(def => {
       String(steps5[def.key] || "").split('\n').forEach(line => {
-        const t = line.trim();
+        const t = stripBox(line.trim());
         if (t && !stepKeyByText.has(t)) stepKeyByText.set(t, def.key);
       });
     });
@@ -317,7 +347,8 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", background: "#f6f7fb", fontFamily: F }}>
       <div style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)", padding: "28px 24px 24px", color: "#fff" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: pinnedMessages.length > 0 ? 16 : 0 }}>
+        <div style={{ maxWidth: MAX_W, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
           <div style={{ width: 48, height: 48, borderRadius: 14, background: "rgba(255,255,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 700, border: "1px solid rgba(255,255,255,0.1)" }}>
             {student.name?.[0] || "?"}
           </div>
@@ -328,8 +359,31 @@ export default function App() {
                 {student.school || ""} {student.grade || ""}
               </span>
             </div>
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", marginTop: 3 }}>
+              {fmtDateKR(getTodayStr())}
+            </div>
           </div>
         </div>
+
+        {/* 오늘의 영어 명언 (매일 자정에 자동 변경 — 학생 전원 동일) */}
+        {(() => {
+          const m = pickMotivation();
+          return (
+            <div style={{
+              background: "rgba(255,255,255,0.06)", borderRadius: 12,
+              padding: "12px 14px", marginBottom: pinnedMessages.length > 0 ? 12 : 0,
+              borderLeft: "3px solid rgba(255,255,255,0.35)",
+            }}>
+              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.95)", lineHeight: 1.5, fontStyle: "italic" }}>
+                "{m.quote}"
+              </div>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", marginTop: 4, lineHeight: 1.5 }}>
+                {m.translation} <span style={{ color: "rgba(255,255,255,0.45)" }}>— {m.author}</span>
+              </div>
+            </div>
+          );
+        })()}
+
         {pinnedMessages.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {pinnedMessages.map(([dateKey, rec]) => (
@@ -345,23 +399,27 @@ export default function App() {
             ))}
           </div>
         )}
+        </div>
       </div>
 
       {totalTasks > 0 && (
         <div style={{ padding: "14px 24px", background: "#fff", borderBottom: "1px solid #eee" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 12 }}>
-            <span style={{ color: "#999" }}>과제 진행률</span>
-            <span style={{ color: pct === 100 ? "#00b894" : "#333", fontWeight: 700 }}>
-              {doneTasks}/{totalTasks} ({pct}%){pct === 100 && " 🎉"}
-            </span>
-          </div>
-          <div style={{ height: 6, background: "#f0f0f0", borderRadius: 3, overflow: "hidden" }}>
-            <div style={{ height: "100%", borderRadius: 3, width: `${pct}%`, background: pct === 100 ? "linear-gradient(90deg, #00b894, #69f0ae)" : "linear-gradient(90deg, #4fc3f7, #7c4dff)", transition: "width 0.5s cubic-bezier(.4,0,.2,1)" }} />
+          <div style={{ maxWidth: MAX_W, margin: "0 auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 12 }}>
+              <span style={{ color: "#999" }}>과제 진행률</span>
+              <span style={{ color: pct === 100 ? "#00b894" : "#333", fontWeight: 700 }}>
+                {doneTasks}/{totalTasks} ({pct}%){pct === 100 && " 🎉"}
+              </span>
+            </div>
+            <div style={{ height: 6, background: "#f0f0f0", borderRadius: 3, overflow: "hidden" }}>
+              <div style={{ height: "100%", borderRadius: 3, width: `${pct}%`, background: pct === 100 ? "linear-gradient(90deg, #00b894, #69f0ae)" : "linear-gradient(90deg, #4fc3f7, #7c4dff)", transition: "width 0.5s cubic-bezier(.4,0,.2,1)" }} />
+            </div>
           </div>
         </div>
       )}
 
-      <div style={{ display: "flex", background: "#fff", borderBottom: "1px solid #eee", position: "sticky", top: 0, zIndex: 10 }}>
+      <div style={{ background: "#fff", borderBottom: "1px solid #eee", position: "sticky", top: 0, zIndex: 10 }}>
+        <div style={{ maxWidth: MAX_W, margin: "0 auto", display: "flex" }}>
         {[
           { key: "tasks", label: "📋 숙제/과제" },
           ...(studentVideos.length > 0 ? [{ key: "videos", label: "🎬 강의 영상" }] : []),
@@ -373,9 +431,11 @@ export default function App() {
             borderBottom: tab === t.key ? "2.5px solid #1a1a2e" : "2.5px solid transparent",
           }}>{t.label}</button>
         ))}
+        </div>
       </div>
 
       <div style={{ padding: "16px 16px 100px" }}>
+        <div style={{ maxWidth: MAX_W, margin: "0 auto" }}>
         {tab === "tasks" && (
           <>
             {allDates.length > 0 && (
@@ -477,6 +537,7 @@ export default function App() {
             })}
           </div>
         )}
+        </div>
       </div>
     </div>
   );
