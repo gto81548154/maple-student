@@ -89,10 +89,9 @@ const buildStepGroups = (todo) => {
     grouped[stepKey].push(item);
   });
 
-  // STEP_DEFS 순서대로 + 빈 단계 자동 숨김
+  // STEP_DEFS 순서대로 (빈 단계도 포함 — 학생이 전체 5단계 흐름을 보도록)
   return STEP_DEFS
-    .map(def => ({ ...def, items: grouped[def.key] }))
-    .filter(s => s.items.length > 0);
+    .map(def => ({ ...def, items: grouped[def.key] }));
 };
 
 // ─── Main App ───
@@ -139,9 +138,16 @@ export default function App() {
     return () => clearInterval(interval);
   }, [studentId]);
 
-  const openVideo = (video) => {
-    setViewingVideo(video);
-    setViewStartTime(Date.now());
+  // 인라인 확장 토글: 같은 카드 클릭 → 닫기 / 다른 카드 클릭 → 이전 닫고 새로 열기
+  const toggleVideo = async (video) => {
+    const sameVideo = viewingVideo?.id === video.id;
+    if (viewingVideo) {
+      await closeVideo(); // 이전 영상 시청시간 저장하면서 닫기
+    }
+    if (!sameVideo) {
+      setViewingVideo(video);
+      setViewStartTime(Date.now());
+    }
   };
 
   const closeVideo = async () => {
@@ -306,45 +312,6 @@ export default function App() {
 
   const studentVideos = videos.filter(v => !v.studentId || v.studentId === studentId);
 
-  if (viewingVideo) {
-    return (
-      <div style={{ minHeight: "100vh", background: "#0a0a0f", color: "#fff", fontFamily: "'Pretendard Variable', -apple-system, sans-serif" }}>
-        <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", gap: 12, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-          <button onClick={closeVideo} style={{ background: "rgba(255,255,255,0.08)", border: "none", color: "#fff", width: 36, height: 36, borderRadius: 10, fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>←</button>
-          <span style={{ fontSize: 15, fontWeight: 600 }}>{viewingVideo.title}</span>
-        </div>
-        <div style={{ padding: 20 }}>
-          {viewingVideo.type === "playlist" && viewingVideo.playlistUrl ? (
-            <div style={{ borderRadius: 16, overflow: "hidden", aspectRatio: "16/9", marginBottom: 20 }}>
-              <iframe
-                src={`https://www.youtube.com/embed/videoseries?list=${extractPlaylistId(viewingVideo.playlistUrl)}&rel=0`}
-                style={{ width: "100%", height: "100%", border: "none" }}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
-            </div>
-          ) : viewingVideo.url && viewingVideo.url.includes("youtu") ? (
-            <div style={{ borderRadius: 16, overflow: "hidden", aspectRatio: "16/9", marginBottom: 20 }}>
-              <iframe
-                src={`https://www.youtube.com/embed/${extractYoutubeId(viewingVideo.url)}?rel=0`}
-                style={{ width: "100%", height: "100%", border: "none" }}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
-            </div>
-          ) : (
-            <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 16, aspectRatio: "16/9", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(255,255,255,0.06)", marginBottom: 20 }}>
-              <a href={viewingVideo.url} target="_blank" rel="noreferrer" style={{ background: "#ff0033", color: "#fff", padding: "12px 28px", borderRadius: 12, textDecoration: "none", fontSize: 15, fontWeight: 600 }}>▶ 영상 보기</a>
-            </div>
-          )}
-          <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 14, padding: 16, border: "1px solid rgba(255,255,255,0.06)", fontSize: 13, color: "rgba(255,255,255,0.4)", lineHeight: 1.6 }}>
-            💡 이 페이지에서 영상을 시청하세요.<br />전체화면으로 보려면 영상 우측 하단 버튼을 누르세요.
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const F = "'Pretendard Variable', -apple-system, sans-serif";
 
   return (
@@ -455,20 +422,59 @@ export default function App() {
         {tab === "videos" && (
           <div>
             <div style={{ fontSize: 13, color: "#999", marginBottom: 16 }}>강의를 눌러 시청하세요.</div>
-            {studentVideos.map((v) => (
-              <div key={v.id} onClick={() => openVideo(v)} style={{
-                background: "#fff", borderRadius: 14, padding: 16, marginBottom: 12,
-                boxShadow: "0 1px 4px rgba(0,0,0,0.04)", cursor: "pointer",
-                display: "flex", alignItems: "center", gap: 14,
-              }}>
-                <div style={{ width: 48, height: 48, borderRadius: 12, flexShrink: 0, background: v.type === "playlist" ? "linear-gradient(135deg, #e74c3c, #e67e22)" : "linear-gradient(135deg, #667eea, #764ba2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{v.type === "playlist" ? "📋" : "▶️"}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 15, fontWeight: 600, color: "#1a1a2e" }}>{v.title}</div>
-                  <div style={{ fontSize: 12, color: "#bbb", marginTop: 3 }}>{v.type === "playlist" ? "재생목록 전체 보기" : (v.subject || "")}</div>
+            {studentVideos.map((v) => {
+              const isOpen = viewingVideo?.id === v.id;
+              return (
+                <div key={v.id} style={{
+                  background: "#fff", borderRadius: 14, marginBottom: 12,
+                  boxShadow: isOpen ? "0 4px 16px rgba(74,108,247,0.15)" : "0 1px 4px rgba(0,0,0,0.04)",
+                  border: isOpen ? "2px solid #4a6cf7" : "2px solid transparent",
+                  overflow: "hidden", transition: "box-shadow 0.2s, border-color 0.2s",
+                }}>
+                  {/* 카드 헤더 (클릭으로 토글) */}
+                  <div onClick={() => toggleVideo(v)} style={{
+                    padding: 16, cursor: "pointer",
+                    display: "flex", alignItems: "center", gap: 14,
+                  }}>
+                    <div style={{ width: 48, height: 48, borderRadius: 12, flexShrink: 0, background: v.type === "playlist" ? "linear-gradient(135deg, #e74c3c, #e67e22)" : "linear-gradient(135deg, #667eea, #764ba2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{v.type === "playlist" ? "📋" : "▶️"}</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: "#1a1a2e" }}>{v.title}</div>
+                      <div style={{ fontSize: 12, color: "#bbb", marginTop: 3 }}>{v.type === "playlist" ? "재생목록 전체 보기" : (v.subject || "")}</div>
+                    </div>
+                    <div style={{ color: isOpen ? "#4a6cf7" : "#ccc", fontSize: 18, transform: isOpen ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>›</div>
+                  </div>
+
+                  {/* 펼쳐진 영상 (인라인) */}
+                  {isOpen && (
+                    <div style={{ padding: "0 16px 16px" }}>
+                      {v.type === "playlist" && v.playlistUrl ? (
+                        <div style={{ borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", background: "#000" }}>
+                          <iframe
+                            src={`https://www.youtube.com/embed/videoseries?list=${extractPlaylistId(v.playlistUrl)}&rel=0`}
+                            style={{ width: "100%", height: "100%", border: "none" }}
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                          />
+                        </div>
+                      ) : v.url && v.url.includes("youtu") ? (
+                        <div style={{ borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", background: "#000" }}>
+                          <iframe
+                            src={`https://www.youtube.com/embed/${extractYoutubeId(v.url)}?rel=0`}
+                            style={{ width: "100%", height: "100%", border: "none" }}
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                          />
+                        </div>
+                      ) : (
+                        <div style={{ background: "#f5f5f5", borderRadius: 10, aspectRatio: "16/9", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <a href={v.url} target="_blank" rel="noreferrer" style={{ background: "#ff0033", color: "#fff", padding: "10px 24px", borderRadius: 10, textDecoration: "none", fontSize: 14, fontWeight: 600 }}>▶ 영상 보기</a>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div style={{ color: "#ccc", fontSize: 18 }}>›</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -520,7 +526,11 @@ function StepSection({ step, displayNum, isChecked }) {
             💡 {notice}
           </div>
         )}
-        {items.map((item, i) => {
+        {items.length === 0 ? (
+          <div style={{ padding: "18px 16px", fontSize: 13, color: "#bbb", textAlign: "center", fontStyle: "italic" }}>
+            오늘 없음
+          </div>
+        ) : items.map((item, i) => {
           const done = isChecked(item.type, item.idx);
           return (
             <div key={`${item.type}_${item.idx}`} style={{
