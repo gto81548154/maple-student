@@ -39,6 +39,99 @@ const fmtDateShort = (ds) => { if(!ds) return ""; const d = new Date(ds + "T00:0
 const isToday = (ds) => { const t = new Date(); return ds === `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`; };
 const getTodayStr = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`; };
 
+// ─── 등원일 계산용 (admin 앱과 동일한 데이터 구조) ───
+const DAYS_EN = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+
+// 한국 공휴일 2025-2027 (admin 앱과 동일)
+const HOLIDAYS = {
+  "2025-01-01":"신정","2025-01-28":"설날","2025-01-29":"설날","2025-01-30":"설날",
+  "2025-03-01":"삼일절","2025-05-05":"어린이날","2025-05-06":"대체공휴일","2025-06-06":"현충일",
+  "2025-08-15":"광복절","2025-10-03":"개천절","2025-10-05":"추석","2025-10-06":"추석","2025-10-07":"추석","2025-10-08":"대체공휴일",
+  "2025-10-09":"한글날","2025-12-25":"크리스마스",
+  "2026-01-01":"신정","2026-02-16":"설날","2026-02-17":"설날","2026-02-18":"설날",
+  "2026-03-01":"삼일절","2026-03-02":"대체공휴일","2026-05-05":"어린이날","2026-05-24":"석가탄신일",
+  "2026-06-06":"현충일","2026-08-15":"광복절","2026-09-24":"추석","2026-09-25":"추석","2026-09-26":"추석",
+  "2026-10-03":"개천절","2026-10-09":"한글날","2026-12-25":"크리스마스",
+  "2027-01-01":"신정","2027-02-06":"설날","2027-02-07":"설날","2027-02-08":"설날","2027-02-09":"대체공휴일",
+  "2027-03-01":"삼일절","2027-05-05":"어린이날","2027-05-13":"석가탄신일","2027-06-06":"현충일",
+  "2027-08-15":"광복절","2027-08-16":"대체공휴일","2027-10-03":"개천절","2027-10-09":"한글날",
+  "2027-10-14":"추석","2027-10-15":"추석","2027-10-16":"추석","2027-12-25":"크리스마스",
+};
+
+// 학생의 임시 시간표(tempSchedules) 처리 - admin과 동일
+const getEffectiveSchedule = (student, dateStr) => {
+  const ts = (student.tempSchedules || []).find(t => t.startDate && t.endDate && dateStr >= t.startDate && dateStr <= t.endDate);
+  if (ts) return { schedule: { ...(student.schedule || {}), ...(ts.schedule || {}) } };
+  return { schedule: student.schedule || {} };
+};
+
+// 시간 표기: "5:00" → "5시", "5:30" → "5시 30분"
+const fmtTime = (t) => {
+  if (!t) return "";
+  const [h, m] = String(t).split(":");
+  const hour = parseInt(h, 10);
+  const min = parseInt(m, 10) || 0;
+  if (isNaN(hour)) return "";
+  if (min === 0) return `${hour}시`;
+  return `${hour}시 ${min}분`;
+};
+
+// 날짜 → "4월 27일 월"
+const fmtAttDay = (d) => `${d.getMonth() + 1}월 ${d.getDate()}일 ${DK[d.getDay()]}`;
+
+// YYYY-MM-DD
+const fmtYMD = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+// ─── 다가올 등원일 계산 ───
+// 오늘 ~ 이번 주 일요일까지. 비어있으면 다음 주(월~일)로 자동 전환.
+// 공휴일/customHolidays/isHidden makeup 제외, 보충/시간변경 포함.
+const computeUpcomingAttendance = (student, makeups, customHolidays) => {
+  if (!student) return [];
+  const allHol = { ...HOLIDAYS, ...(customHolidays || {}) };
+  const sid = student.id;
+  const mks = (makeups || []).filter(m => String(m.studentId) === String(sid));
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dow = today.getDay(); // 0=일, 1=월, ..., 6=토
+  // 오늘부터 이번 주 일요일까지 일수 (월~일 주)
+  const daysToSun = dow === 0 ? 1 : 8 - dow;
+
+  const collect = (startOffset, days) => {
+    const out = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(today);
+      d.setDate(d.getDate() + startOffset + i);
+      const ds = fmtYMD(d);
+
+      // 공휴일 제외
+      if (allHol[ds]) continue;
+
+      const dayKey = DAYS_EN[d.getDay() === 0 ? 6 : d.getDay() - 1];
+
+      // 그 날의 등원 취소 여부 (isHidden)
+      const hidden = mks.some(m => m.date === ds && m.isHidden);
+
+      // 그 날의 표시 가능한 makeup (보충 또는 시간변경)
+      const visibleMk = mks.find(m => m.date === ds && !m.isHidden);
+
+      if (visibleMk) {
+        const isMakeup = visibleMk.isOverride !== true; // 순수 보충만 라벨
+        out.push({ date: ds, dateObj: new Date(d), time: visibleMk.time, isMakeup });
+      } else if (!hidden) {
+        const eff = getEffectiveSchedule(student, ds);
+        const t = eff.schedule[dayKey];
+        if (t) out.push({ date: ds, dateObj: new Date(d), time: t, isMakeup: false });
+      }
+    }
+    return out;
+  };
+
+  let result = collect(0, daysToSun);
+  if (result.length === 0) result = collect(daysToSun, 7); // 다음 주 월~일
+  return result;
+};
+
 // ─── stripLabels (원장님 앱과 동일) ───
 const stripLabels = (v) => v.split('\n').filter(l => !/^\s*\[(숙제|학원|학원과제)\]\s*$/.test(l)).join('\n');
 
@@ -139,6 +232,8 @@ export default function App() {
   const [checklistData, setChecklistData] = useState({});
   const [records, setRecords] = useState({});
   const [videos, setVideos] = useState([]);
+  const [makeups, setMakeups] = useState([]);
+  const [customHolidays, setCustomHolidays] = useState({});
   const [tab, setTab] = useState("tasks");
   const [selectedDate, setSelectedDate] = useState(null);
   const [viewingVideo, setViewingVideo] = useState(null);
@@ -157,8 +252,9 @@ export default function App() {
     if (!studentId) { setLoading(false); return; }
     const load = async () => {
       try {
-        const [stuData, todoData, chkData, recData, vidData, vwData] = await Promise.all([
+        const [stuData, todoData, chkData, recData, vidData, vwData, mkData, holData] = await Promise.all([
           db.get("stu3"), db.get("todo4"), db.get("chk3"), db.get("rec3"), db.get("student_videos"), db.get("video_watch"),
+          db.get("mkp3"), db.get("holi3"),
         ]);
         const found = (stuData || []).find(s => String(s.id) === String(studentId));
         if (!found) { setError("not_found"); setLoading(false); return; }
@@ -168,6 +264,8 @@ export default function App() {
         setRecords(recData || {});
         setVideos(vidData || []);
         setVideoWatch(vwData || {});
+        setMakeups(mkData || []);
+        setCustomHolidays(holData || {});
       } catch (e) {
         console.error("Load error:", e);
         setError("load_error");
@@ -500,6 +598,12 @@ export default function App() {
 
   const studentVideos = videos.filter(v => !v.studentId || v.studentId === studentId);
 
+  // 다가올 등원일 텍스트 (헤더 표시용)
+  const upcomingAtt = computeUpcomingAttendance(student, makeups, customHolidays);
+  const upcomingAttText = upcomingAtt
+    .map(a => `${fmtAttDay(a.dateObj)} ${fmtTime(a.time)}${a.isMakeup ? " (보충)" : ""}`)
+    .join(", ");
+
   const F = "'Pretendard Variable', -apple-system, sans-serif";
 
   return (
@@ -507,18 +611,18 @@ export default function App() {
       <div style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)", padding: "28px 24px 24px", color: "#fff" }}>
         <div style={{ maxWidth: MAX_W, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
-          <div style={{ width: 48, height: 48, borderRadius: 14, background: "rgba(255,255,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 700, border: "1px solid rgba(255,255,255,0.1)" }}>
+          <div style={{ width: 48, height: 48, borderRadius: 14, background: "rgba(255,255,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 700, border: "1px solid rgba(255,255,255,0.1)", flexShrink: 0 }}>
             {student.name?.[0] || "?"}
           </div>
-          <div>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: -0.5 }}>
               {student.name}
               <span style={{ fontSize: 13, fontWeight: 500, color: "rgba(255,255,255,0.5)", marginLeft: 8 }}>
                 {student.school || ""} {student.grade || ""}
               </span>
             </div>
-            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", marginTop: 3 }}>
-              {fmtDateKR(getTodayStr())}
+            <div style={{ marginTop: 3, color: "rgba(255,255,255,0.65)" }}>
+              <FitText text={upcomingAttText || "예정된 등원일이 없어요"} maxFont={13} minFont={9} />
             </div>
           </div>
         </div>
@@ -606,7 +710,7 @@ export default function App() {
                     color: d === activeDate ? "#fff" : "#666",
                     boxShadow: d === activeDate ? "0 2px 8px rgba(26,26,46,0.25)" : "0 1px 3px rgba(0,0,0,0.06)",
                     whiteSpace: "nowrap",
-                  }}>{isToday(d) ? "📌 오늘" : fmtDateShort(d)}</button>
+                  }}>{isToday(d) ? "오늘" : fmtDateShort(d)}</button>
                 ))}
               </div>
             )}
@@ -697,6 +801,50 @@ export default function App() {
         )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── FitText: 한 줄에 들어가도록 글씨 크기 자동 축소 ───
+function FitText({ text, maxFont = 13, minFont = 9, style = {} }) {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const fit = () => {
+      let s = maxFont;
+      el.style.fontSize = `${s}px`;
+      // 한 프레임 후 측정 (레이아웃 확정)
+      while (s > minFont && el.scrollWidth > el.clientWidth + 0.5) {
+        s -= 0.5;
+        el.style.fontSize = `${s}px`;
+      }
+    };
+
+    const raf = requestAnimationFrame(fit);
+
+    let ro;
+    if (typeof ResizeObserver !== "undefined" && el.parentElement) {
+      ro = new ResizeObserver(fit);
+      ro.observe(el.parentElement);
+    }
+    return () => {
+      cancelAnimationFrame(raf);
+      if (ro) ro.disconnect();
+    };
+  }, [text, maxFont, minFont]);
+
+  return (
+    <div ref={ref} style={{
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      fontSize: maxFont,
+      lineHeight: 1.4,
+      ...style,
+    }}>
+      {text}
     </div>
   );
 }
