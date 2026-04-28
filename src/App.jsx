@@ -596,14 +596,7 @@ export default function App() {
   const doneTasks = allItems.filter(item => isChecked(item.type, item.idx)).length;
   const pct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
 
-  const studentVideos = videos
-    .filter(v => !v.studentId || v.studentId === studentId)
-    .sort((a, b) => {
-      // 자연 정렬: 하이픈/언더스코어를 스페이스로 통일 후 숫자 인식 비교
-      // "천일문-기본-UNIT 1" 과 "천일문-기본 UNIT 3" 을 같은 형식으로 보고 1, 2, 3, ... 57, 63 순서로 정렬
-      const norm = s => String(s || '').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
-      return norm(a.title).localeCompare(norm(b.title), undefined, { numeric: true });
-    });
+  const studentVideos = videos.filter(v => !v.studentId || v.studentId === studentId);
 
   // 다가올 등원일 텍스트 (헤더 표시용)
   const upcomingAtt = computeUpcomingAttendance(student, makeups, customHolidays);
