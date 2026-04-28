@@ -239,6 +239,7 @@ export default function App() {
   const [viewingVideo, setViewingVideo] = useState(null);
   const [viewStartTime, setViewStartTime] = useState(null);
   const [videoWatch, setVideoWatch] = useState({});
+  const [selectedVideoBook, setSelectedVideoBook] = useState(null); // 영상 탭 책별 sub-tab 선택값 (null이면 첫 책 자동)
 
   // 이탈 추적용 ref (state로 안 쓰는 이유: 매 visibilitychange마다 리렌더 안 시키기 위함)
   const awayStartRef = useRef(null);   // 이탈 시작 시각 (Date.now() 또는 null)
@@ -596,7 +597,7 @@ export default function App() {
   const doneTasks = allItems.filter(item => isChecked(item.type, item.idx)).length;
   const pct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
 
-  const studentVideos = videos.filter(v => !v.studentId || v.studentId === studentId);
+  const studentVideos = videos.filter(v => !v.studentId || String(v.studentId) === String(studentId));
 
   // 다가올 등원일 텍스트 (헤더 표시용)
   const upcomingAtt = computeUpcomingAttendance(student, makeups, customHolidays);
@@ -728,6 +729,9 @@ export default function App() {
                 step={step}
                 displayNum={idx + 1}
                 isChecked={isChecked}
+                studentVideos={studentVideos}
+                viewingVideo={viewingVideo}
+                toggleVideo={toggleVideo}
               />
             ))}
 
@@ -741,10 +745,58 @@ export default function App() {
             )}
           </>
         )}
-        {tab === "videos" && (
+        {tab === "videos" && (() => {
+          // ─── 영상 탭 책별 자동 분류 ───
+          // 책(subject)별로 그룹핑. 책이 1개면 평면 리스트 (sub-tab 없음). 2개 이상이면 sub-tab으로 분류.
+          const videoGroups = {};
+          studentVideos.forEach(v => {
+            const key = v.subject || "기타";
+            if (!videoGroups[key]) videoGroups[key] = [];
+            videoGroups[key].push(v);
+          });
+          const bookNames = Object.keys(videoGroups);
+          const hasMultipleBooks = bookNames.length >= 2;
+          // 활성 책: 사용자가 고른 책을 우선 적용. 선택값이 없을 때만 현재 재생 중인 영상의 책으로 자동 이동.
+          // subject가 없는 영상은 "기타" 그룹으로 묶기 때문에 viewingVideo도 같은 규칙으로 찾는다.
+          let activeBook = null;
+          if (hasMultipleBooks) {
+            const viewingVideoBook = viewingVideo ? (viewingVideo.subject || "기타") : null;
+            if (selectedVideoBook && videoGroups[selectedVideoBook]) {
+              activeBook = selectedVideoBook;
+            } else if (viewingVideoBook && videoGroups[viewingVideoBook]) {
+              activeBook = viewingVideoBook;
+            } else {
+              activeBook = bookNames[0];
+            }
+          }
+          const visibleVideos = hasMultipleBooks ? (videoGroups[activeBook] || []) : studentVideos;
+          return (
           <div>
-            <div style={{ fontSize: 13, color: "#999", marginBottom: 16 }}>강의를 눌러 시청하세요.</div>
-            {studentVideos.map((v) => {
+            {/* 책별 sub-tab (책 ≥ 2개일 때만) */}
+            {hasMultipleBooks && (
+              <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 14, paddingBottom: 4, WebkitOverflowScrolling: "touch" }}>
+                {bookNames.map(bn => {
+                  const isActive = bn === activeBook;
+                  const count = videoGroups[bn].length;
+                  return (
+                    <button key={bn} onClick={() => setSelectedVideoBook(bn)} style={{
+                      flexShrink: 0, padding: "8px 14px", borderRadius: 20,
+                      border: isActive ? "1.5px solid #4a6cf7" : "1px solid #e0e0e0",
+                      background: isActive ? "#4a6cf7" : "#fff",
+                      color: isActive ? "#fff" : "#555",
+                      fontSize: 13, fontWeight: 700, cursor: "pointer",
+                      whiteSpace: "nowrap", transition: "all 0.15s",
+                    }}>
+                      {bn} <span style={{ fontSize: 11, opacity: 0.85, marginLeft: 3 }}>({count})</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <div style={{ fontSize: 13, color: "#999", marginBottom: 16 }}>
+              강의를 눌러 시청하세요.{hasMultipleBooks ? ` (${activeBook}: ${visibleVideos.length}개)` : ""}
+            </div>
+            {visibleVideos.map((v) => {
               const isOpen = viewingVideo?.id === v.id;
               return (
                 <div key={v.id} style={{
@@ -798,7 +850,8 @@ export default function App() {
               );
             })}
           </div>
-        )}
+          );
+        })()}
         </div>
       </div>
     </div>
@@ -849,6 +902,71 @@ function FitText({ text, maxFont = 13, minFont = 9, style = {} }) {
   );
 }
 
+// ─── 영상 매칭 헬퍼 (숙제 텍스트 → 학생의 영상들 매칭) ───
+// 사용처: 숙제 항목 옆에 ▶ 버튼 표시 + 인라인 영상 재생
+const VIDEO_TASK_KEYWORDS = ["수강", "시청", "강의", "영상"];
+
+function hasVideoKeyword(text) {
+  if (!text) return false;
+  return VIDEO_TASK_KEYWORDS.some(kw => text.includes(kw));
+}
+
+// 하이픈/언더스코어/콤마를 모두 스페이스로 통일 후 비교
+function normalizeForMatch(s) {
+  return String(s || "").replace(/[-_,]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+// 텍스트에서 숫자 추출 (예: "37 38" → [37, 38], "2,3" → [2, 3])
+function extractTaskNumbers(text) {
+  const m = (text || "").match(/\d+/g);
+  return m ? m.map(n => parseInt(n, 10)).filter(n => n > 0 && n < 10000) : [];
+}
+
+// 매칭 메인 함수
+// 반환: { hasKeyword, matched, bookCandidates }
+//   - hasKeyword: 시청 키워드 포함 여부 (▶ 버튼 표시 트리거)
+//   - matched: 책+숫자 모두 매칭된 영상들
+//   - bookCandidates: 책만 매칭된 영상들 (3단계에서 폴백용)
+function matchVideosForTask(taskText, studentVideos) {
+  const hasKw = hasVideoKeyword(taskText);
+  if (!hasKw || !studentVideos || studentVideos.length === 0) {
+    return { hasKeyword: hasKw, matched: [], bookCandidates: [] };
+  }
+  const taskNorm = normalizeForMatch(taskText);
+  const taskNumbers = extractTaskNumbers(taskText);
+
+  // 1단계: subject(책 이름)가 숙제 텍스트에 포함된 영상만 후보로
+  const bookCandidates = studentVideos.filter(v => {
+    const subj = normalizeForMatch(v.subject);
+    return subj && taskNorm.includes(subj);
+  });
+  if (bookCandidates.length === 0) {
+    return { hasKeyword: true, matched: [], bookCandidates: [] };
+  }
+
+  // 2단계: 후보 영상 중 제목 숫자가 숙제 숫자에 포함된 것만 매칭
+  // 단, 숙제에 숫자가 없으면 책의 영상 전체가 매칭 대상 (예: "천일문 고등 그래머 강의 듣기")
+  const matched = taskNumbers.length === 0
+    ? bookCandidates
+    : bookCandidates.filter(v => {
+        const titleNums = extractTaskNumbers(v.title);
+        return titleNums.some(tn => taskNumbers.includes(tn));
+      });
+
+  return { hasKeyword: true, matched, bookCandidates };
+}
+
+// 영상 제목에서 짧은 라벨 추출 (버튼에 표시할 용도)
+// 예: "천일문-기본 UNIT 37" → "UNIT 37"
+function getVideoShortLabel(video) {
+  const title = video.title || "";
+  const m = title.match(/(?:UNIT|Unit|unit|Lesson|lesson|LESSON|강|챕터|Chapter|chapter|CHAPTER|Day|DAY|day)\s*\d+/);
+  if (m) return m[0];
+  const nums = extractTaskNumbers(title);
+  if (nums.length > 0) return String(nums[nums.length - 1]);
+  return title.length > 12 ? title.slice(0, 12) + "…" : title;
+}
+
 function extractYoutubeId(url) {
   if (!url) return "";
   let m = url.match(/youtu\.be\/([^?&]+)/);
@@ -866,8 +984,139 @@ function extractPlaylistId(url) {
   return m ? m[1] : "";
 }
 
+// ─── HomeworkItem: 숙제 항목 한 줄 (영상 매칭 + 인라인 플레이어 + 폴백) ───
+function HomeworkItem({ item, isLast, isCheckedFn, studentVideos, viewingVideo, toggleVideo }) {
+  const [showAll, setShowAll] = useState(false);
+  const done = isCheckedFn(item.type, item.idx);
+  const { hasKeyword, matched, bookCandidates } = matchVideosForTask(item.text, studentVideos);
+  const hasMatch = matched.length > 0;
+  const showFallback = hasKeyword && bookCandidates.length > 0 && !!toggleVideo;
+  const showVideoButtons = hasMatch && !!toggleVideo;
+
+  // 현재 펼쳐진 영상 (matched 또는 폴백 펼침 모두 포함)
+  const openVideo = showFallback ? bookCandidates.find(v => viewingVideo?.id === v.id) : null;
+  const isAnyOpen = !!openVideo;
+
+  // 폴백 라벨용 책 이름 (보통 1개 책만 매칭됨)
+  const bookSubject = bookCandidates[0]?.subject || "";
+
+  return (
+    <div style={{ borderBottom: !isLast ? "1px solid #f5f5f5" : "none", background: done ? "#f0fdf4" : "#fff" }}>
+      {/* 항목 행 (체크박스 + 텍스트 + 매칭 ▶ 버튼들) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px" }}>
+        <div style={{
+          width: 22, height: 22, borderRadius: 7, flexShrink: 0,
+          border: done ? "none" : "2px solid #e0e0e0",
+          background: done ? "linear-gradient(135deg, #00b894, #00cec9)" : "#f9f9f9",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          {done && <span style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>✓</span>}
+        </div>
+        <span style={{ flex: 1, fontSize: 14, lineHeight: 1.5, color: done ? "#999" : "#333", textDecoration: done ? "line-through" : "none", minWidth: 0 }}>{item.text}</span>
+        {showVideoButtons && (
+          <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            {matched.map(v => {
+              const isOpen = viewingVideo?.id === v.id;
+              return (
+                <button key={v.id} onClick={(e) => { e.stopPropagation(); toggleVideo(v); }} style={{
+                  padding: "5px 11px", borderRadius: 7,
+                  border: isOpen ? "1.5px solid #4a6cf7" : "1px solid #d0d4e0",
+                  background: isOpen ? "#eef1ff" : "#fff",
+                  color: isOpen ? "#4a6cf7" : "#555",
+                  fontSize: 12, fontWeight: 700, cursor: "pointer",
+                  display: "inline-flex", alignItems: "center", gap: 4, transition: "all 0.15s", whiteSpace: "nowrap",
+                }}>
+                  <span style={{ fontSize: 10 }}>{isOpen ? "▼" : "▶"}</span> {getVideoShortLabel(v)}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* 폴백 안내/버튼: 매칭이 있어도 작은 링크로 항상 노출 (숫자 잘못 입력 안전망) */}
+      {showFallback && (hasMatch ? (
+        <div style={{ padding: "0 16px 10px", textAlign: "right" }}>
+          <button onClick={() => setShowAll(s => !s)} style={{
+            border: "none", background: "transparent", color: "#9ca3af",
+            fontSize: 11, padding: 0, cursor: "pointer", fontWeight: 600,
+          }}>
+            📚 다른 강의 보기 {showAll ? "▴" : "▾"}
+          </button>
+        </div>
+      ) : (
+        <div style={{ padding: "2px 16px 12px" }}>
+          <div style={{ fontSize: 11, color: "#999", marginBottom: 6, fontStyle: "italic" }}>
+            매칭되는 강의를 못 찾았어요. 직접 찾아보세요:
+          </div>
+          <button onClick={() => setShowAll(s => !s)} style={{
+            border: "1px solid #e0e0e0", background: "#f9fafb", color: "#374151",
+            fontSize: 12, padding: "6px 12px", borderRadius: 7, cursor: "pointer", fontWeight: 600,
+          }}>
+            📚 {bookSubject} 전체 강의 {showAll ? "닫기 ▴" : `보기 ▾ (${bookCandidates.length})`}
+          </button>
+        </div>
+      ))}
+
+      {/* 폴백 펼침: 책의 모든 영상 ▶ 버튼 그리드 (매칭됐던 영상은 노란 배경으로 강조) */}
+      {showFallback && showAll && (
+        <div style={{ padding: "0 16px 12px", display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {bookCandidates.map(v => {
+            const isOpen = viewingVideo?.id === v.id;
+            const isMatched = matched.some(m => m.id === v.id);
+            return (
+              <button key={v.id} onClick={(e) => { e.stopPropagation(); toggleVideo(v); }} style={{
+                padding: "4px 9px", borderRadius: 6,
+                border: isOpen ? "1.5px solid #4a6cf7" : (isMatched ? "1px solid #fde047" : "1px solid #e0e0e0"),
+                background: isOpen ? "#eef1ff" : (isMatched ? "#fef9c3" : "#fff"),
+                color: isOpen ? "#4a6cf7" : (isMatched ? "#854d0e" : "#666"),
+                fontSize: 11, fontWeight: 600, cursor: "pointer",
+                display: "inline-flex", alignItems: "center", gap: 3, transition: "all 0.15s", whiteSpace: "nowrap",
+              }}>
+                <span style={{ fontSize: 9 }}>{isOpen ? "▼" : "▶"}</span> {getVideoShortLabel(v)}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 인라인 영상 플레이어 */}
+      {isAnyOpen && (() => {
+        const v = openVideo;
+        return (
+          <div style={{ padding: "0 16px 16px", background: "#fafbff" }}>
+            {v.type === "playlist" && v.playlistUrl ? (
+              <div style={{ borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", background: "#000" }}>
+                <iframe
+                  src={`https://www.youtube.com/embed/videoseries?list=${extractPlaylistId(v.playlistUrl)}&rel=0`}
+                  style={{ width: "100%", height: "100%", border: "none" }}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              </div>
+            ) : v.url && v.url.includes("youtu") ? (
+              <div style={{ borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", background: "#000" }}>
+                <iframe
+                  src={`https://www.youtube.com/embed/${extractYoutubeId(v.url)}?rel=0`}
+                  style={{ width: "100%", height: "100%", border: "none" }}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              </div>
+            ) : (
+              <div style={{ background: "#f5f5f5", borderRadius: 10, aspectRatio: "16/9", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <a href={v.url} target="_blank" rel="noreferrer" style={{ background: "#ff0033", color: "#fff", padding: "10px 24px", borderRadius: 10, textDecoration: "none", fontSize: 14, fontWeight: 600 }}>▶ 영상 보기</a>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
 // ─── StepSection: 단계별 카드 (라벨 + 배지 + notice + 체크리스트) ───
-function StepSection({ step, displayNum, isChecked }) {
+function StepSection({ step, displayNum, isChecked, studentVideos = [], viewingVideo, toggleVideo }) {
   const { label, color, bg, badges = [], notice, items } = step;
   return (
     <div style={{ marginBottom: 20 }}>
@@ -897,26 +1146,17 @@ function StepSection({ step, displayNum, isChecked }) {
           <div style={{ padding: "18px 16px", fontSize: 13, color: "#bbb", textAlign: "center", fontStyle: "italic" }}>
             오늘 없음
           </div>
-        ) : items.map((item, i) => {
-          const done = isChecked(item.type, item.idx);
-          return (
-            <div key={`${item.type}_${item.idx}`} style={{
-              display: "flex", alignItems: "center", gap: 12, padding: "14px 16px",
-              borderBottom: i < items.length - 1 ? "1px solid #f5f5f5" : "none",
-              background: done ? "#f0fdf4" : "#fff",
-            }}>
-              <div style={{
-                width: 22, height: 22, borderRadius: 7, flexShrink: 0,
-                border: done ? "none" : "2px solid #e0e0e0",
-                background: done ? "linear-gradient(135deg, #00b894, #00cec9)" : "#f9f9f9",
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}>
-                {done && <span style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>✓</span>}
-              </div>
-              <span style={{ fontSize: 14, lineHeight: 1.5, color: done ? "#999" : "#333", textDecoration: done ? "line-through" : "none" }}>{item.text}</span>
-            </div>
-          );
-        })}
+        ) : items.map((item, i) => (
+          <HomeworkItem
+            key={`${item.type}_${item.idx}`}
+            item={item}
+            isLast={i === items.length - 1}
+            isCheckedFn={isChecked}
+            studentVideos={studentVideos}
+            viewingVideo={viewingVideo}
+            toggleVideo={toggleVideo}
+          />
+        ))}
       </div>
     </div>
   );
