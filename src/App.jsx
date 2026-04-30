@@ -589,12 +589,28 @@ export default function App() {
   const stepGroups = buildStepGroups(todo);
 
   const chk = checklistData[activeDate]?.[studentId] || checklistData[activeDate]?.[Number(studentId)] || {};
-  const isChecked = (type, idx) => !!chk[`${type}_${idx}`];
+  // 어드민과 동일한 3-상태 모델: undefined/false → none, true/"done" → done, "fail:사유..." → fail
+  const getCheckStatus = (type, idx) => {
+    const val = chk[`${type}_${idx}`];
+    if (!val) return "none";
+    if (val === true || val === "done") return "done";
+    if (typeof val === "string" && val.startsWith("fail:")) return "fail";
+    return "done";
+  };
+  const getFailReason = (type, idx) => {
+    const val = chk[`${type}_${idx}`];
+    if (typeof val === "string" && val.startsWith("fail:")) return val.slice(5);
+    return "";
+  };
+  const isChecked = (type, idx) => getCheckStatus(type, idx) === "done";
+  const isFailed = (type, idx) => getCheckStatus(type, idx) === "fail";
 
   // 진행률: 모든 step의 모든 item 합산 (체크 키는 hw_/ac_ 그대로)
   const allItems = stepGroups.flatMap(s => s.items);
-  const totalTasks = allItems.length;
-  const doneTasks = allItems.filter(item => isChecked(item.type, item.idx)).length;
+  // 미완료(fail) 항목은 진행률 계산에서 완전히 제외 (분모/분자 둘 다 빠짐)
+  const countableItems = allItems.filter(item => !isFailed(item.type, item.idx));
+  const totalTasks = countableItems.length;
+  const doneTasks = countableItems.filter(item => isChecked(item.type, item.idx)).length;
   const pct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
 
   const studentVideos = videos.filter(v => !v.studentId || String(v.studentId) === String(studentId));
@@ -729,6 +745,8 @@ export default function App() {
                 step={step}
                 displayNum={idx + 1}
                 isChecked={isChecked}
+                isFailed={isFailed}
+                getFailReason={getFailReason}
                 studentVideos={studentVideos}
                 viewingVideo={viewingVideo}
                 toggleVideo={toggleVideo}
@@ -985,9 +1003,11 @@ function extractPlaylistId(url) {
 }
 
 // ─── HomeworkItem: 숙제 항목 한 줄 (영상 매칭 + 인라인 플레이어 + 폴백) ───
-function HomeworkItem({ item, isLast, isCheckedFn, studentVideos, viewingVideo, toggleVideo }) {
+function HomeworkItem({ item, isLast, isCheckedFn, isFailedFn, getFailReasonFn, studentVideos, viewingVideo, toggleVideo }) {
   const [showAll, setShowAll] = useState(false);
   const done = isCheckedFn(item.type, item.idx);
+  const fail = isFailedFn ? isFailedFn(item.type, item.idx) : false;
+  const failReason = fail && getFailReasonFn ? getFailReasonFn(item.type, item.idx) : "";
   const { hasKeyword, matched, bookCandidates } = matchVideosForTask(item.text, studentVideos);
   const hasMatch = matched.length > 0;
   const showFallback = hasKeyword && bookCandidates.length > 0 && !!toggleVideo;
@@ -1001,16 +1021,17 @@ function HomeworkItem({ item, isLast, isCheckedFn, studentVideos, viewingVideo, 
   const bookSubject = bookCandidates[0]?.subject || "";
 
   return (
-    <div style={{ borderBottom: !isLast ? "1px solid #f5f5f5" : "none", background: done ? "#f0fdf4" : "#fff" }}>
+    <div style={{ borderBottom: !isLast ? "1px solid #f5f5f5" : "none", background: done ? "#f0fdf4" : fail ? "#fef2f2" : "#fff" }}>
       {/* 항목 행 (체크박스 + 텍스트 + 매칭 ▶ 버튼들) */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px" }}>
         <div style={{
           width: 22, height: 22, borderRadius: 7, flexShrink: 0,
-          border: done ? "none" : "2px solid #e0e0e0",
-          background: done ? "linear-gradient(135deg, #00b894, #00cec9)" : "#f9f9f9",
+          border: done || fail ? "none" : "2px solid #e0e0e0",
+          background: done ? "linear-gradient(135deg, #00b894, #00cec9)" : fail ? "linear-gradient(135deg, #ef4444, #f87171)" : "#f9f9f9",
           display: "flex", alignItems: "center", justifyContent: "center",
         }}>
           {done && <span style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>✓</span>}
+          {fail && <span style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>✕</span>}
         </div>
         {(() => {
           // "->" 또는 "→" 화살표 뒤의 부분을 보라색 뱃지로 분리 (예: "...준비 -> 수업-랜덤 해석 test")
@@ -1049,6 +1070,13 @@ function HomeworkItem({ item, isLast, isCheckedFn, studentVideos, viewingVideo, 
           </div>
         )}
       </div>
+
+      {/* 미완료 사유 표시 (fail이고 사유가 있을 때만) — 텍스트와 정렬되도록 padding-left 50 (체크박스 22 + gap 12 + padding 16) */}
+      {fail && failReason && (
+        <div style={{ padding: "0 16px 12px 50px", fontSize: 12, color: "#dc2626", lineHeight: 1.4 }}>
+          💬 {failReason}
+        </div>
+      )}
 
       {/* 폴백 안내/버튼: 매칭이 있어도 작은 링크로 항상 노출 (숫자 잘못 입력 안전망) */}
       {showFallback && (hasMatch ? (
@@ -1132,7 +1160,7 @@ function HomeworkItem({ item, isLast, isCheckedFn, studentVideos, viewingVideo, 
 }
 
 // ─── StepSection: 단계별 카드 (라벨 + 배지 + notice + 체크리스트) ───
-function StepSection({ step, displayNum, isChecked, studentVideos = [], viewingVideo, toggleVideo }) {
+function StepSection({ step, displayNum, isChecked, isFailed, getFailReason, studentVideos = [], viewingVideo, toggleVideo }) {
   const { label, color, bg, badges = [], notice, items } = step;
   return (
     <div style={{ marginBottom: 20 }}>
@@ -1168,6 +1196,8 @@ function StepSection({ step, displayNum, isChecked, studentVideos = [], viewingV
             item={item}
             isLast={i === items.length - 1}
             isCheckedFn={isChecked}
+            isFailedFn={isFailed}
+            getFailReasonFn={getFailReason}
             studentVideos={studentVideos}
             viewingVideo={viewingVideo}
             toggleVideo={toggleVideo}
