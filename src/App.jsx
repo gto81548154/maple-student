@@ -142,7 +142,7 @@ const stripBox = (s) => s.replace(/^\s*ㅁ\s*/, '');
 const STEP_DEFS = [
   { key: 'step1', label: '숙제',        color: '#e84393', bg: '#fdf2f8', badges: ['조교', '강사'] },
   { key: 'step2', label: '단어 TEST',   color: '#7c3aed', bg: '#f3e8ff', badges: ['조교'] },
-  { key: 'step3', label: '오늘 수업',   color: '#4a6cf7', bg: '#eef1ff', badges: ['강사'], notice: '→ 수업 준비되면 조교T 한테 말씀드리기' },
+  { key: 'step3', label: '오늘 수업',   color: '#4a6cf7', bg: '#eef1ff', badges: ['조교', '강사'], notice: '→ 수업 준비되면 조교T 한테 말씀드리기' },
   { key: 'step4', label: '마무리 TEST', color: '#00b894', bg: '#e8f8f5', badges: ['조교'] },
   { key: 'step5', label: '받을 자료',   color: '#e67e22', bg: '#fff4e6', badges: ['강사'] },
 ];
@@ -1012,7 +1012,23 @@ function HomeworkItem({ item, isLast, isCheckedFn, studentVideos, viewingVideo, 
         }}>
           {done && <span style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>✓</span>}
         </div>
-        <span style={{ flex: 1, fontSize: 14, lineHeight: 1.5, color: done ? "#999" : "#333", textDecoration: done ? "line-through" : "none", minWidth: 0 }}>{item.text}</span>
+        {(() => {
+          // "->" 또는 "→" 화살표 뒤의 부분을 보라색 뱃지로 분리 (예: "...준비 -> 수업-랜덤 해석 test")
+          const arrowSplit = item.text.split(/\s*(?:->|→)\s*/);
+          if (arrowSplit.length >= 2 && arrowSplit[0].trim() && arrowSplit.slice(1).join('').trim()) {
+            const mainText = arrowSplit[0].trim();
+            const badgeText = arrowSplit.slice(1).join(' → ').trim();
+            return (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0 }}>
+                <span style={{ fontSize: 14, lineHeight: 1.5, color: done ? "#999" : "#333", textDecoration: done ? "line-through" : "none" }}>{mainText}</span>
+                <span style={{ background: "#f3e8ff", color: "#7c3aed", fontSize: 11, padding: "3px 9px", borderRadius: 10, fontWeight: 600, whiteSpace: "nowrap" }}>{badgeText}</span>
+              </div>
+            );
+          }
+          return (
+            <span style={{ flex: 1, fontSize: 14, lineHeight: 1.5, color: done ? "#999" : "#333", textDecoration: done ? "line-through" : "none", minWidth: 0 }}>{item.text}</span>
+          );
+        })()}
         {showVideoButtons && (
           <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
             {matched.map(v => {
