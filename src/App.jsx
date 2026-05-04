@@ -32,6 +32,134 @@ const db = {
   },
 };
 
+// ─── 학생앱 동기화 API ───
+// 1순위: Worker API(Turso 원본 DB) / 2순위: 기존 Supabase fallback
+// .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
+const STUDENT_SYNC_API_URL =
+  import.meta.env.VITE_STUDENT_SYNC_API_URL ||
+  import.meta.env.VITE_STUDENT_BUNDLE_API_URL ||
+  "";
+
+const resolveStudentSyncUrl = (studentId) => {
+  if (!STUDENT_SYNC_API_URL) return "";
+  const u = new URL(STUDENT_SYNC_API_URL, window.location.origin);
+  u.searchParams.set("id", String(studentId));
+  u.searchParams.set("studentId", String(studentId));
+  u.searchParams.set("ts", String(Date.now()));
+  return u.toString();
+};
+
+const unwrapBundlePayload = (raw) => raw?.data || raw?.bundle || raw?.result || raw || {};
+
+const getStudentFromPayload = (payload, studentId) => {
+  if (payload.student && String(payload.student.id) === String(studentId) && !payload.student.deletedAt) return payload.student;
+  const students = payload.students || payload.stu3 || [];
+  return (students || []).find(s => String(s.id) === String(studentId) && !s.deletedAt) || null;
+};
+
+// Worker가 전체 원본(todo4/chk3)을 보내도, 학생 1명만 필터링해서 쓰고,
+// Worker가 이미 학생 1명 데이터만 보내도 기존 화면 구조({date:{sid:row}})로 맞춘다.
+const normalizeByDateForStudent = (source = {}, studentId) => {
+  const sid = String(studentId);
+  const out = {};
+  Object.entries(source || {}).forEach(([dateKey, value]) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return;
+    const direct = value[sid] ?? value[Number(studentId)];
+    if (direct !== undefined) {
+      out[dateKey] = { [sid]: direct };
+      return;
+    }
+    // 이미 학생 1명 row만 들어온 형태: {"2026-05-04": {homework, academy, steps5}}
+    if (value.homework !== undefined || value.academy !== undefined || value.steps5 !== undefined) {
+      out[dateKey] = { [sid]: value };
+      return;
+    }
+    // 이미 학생 1명 체크 row만 들어온 형태: {"2026-05-04": {ac_x:true, hw_x:"fail:..."}}
+    if (Object.keys(value).some(k => /^(?:hw|ac)_/.test(k))) {
+      out[dateKey] = { [sid]: value };
+    }
+  });
+  return out;
+};
+
+const normalizeRecordsForStudent = (source = {}, studentId) => {
+  const sid = String(studentId);
+  if (!source || typeof source !== "object" || Array.isArray(source)) return {};
+  const direct = source[sid] ?? source[Number(studentId)];
+  if (direct !== undefined) return { [sid]: direct };
+  // Worker가 해당 학생 record object만 보내는 경우
+  return Object.keys(source).length ? { [sid]: source } : {};
+};
+
+const normalizeVideoWatchForStudent = (source = {}, studentId) => {
+  const sid = String(studentId);
+  if (!source || typeof source !== "object" || Array.isArray(source)) return {};
+  const direct = source[sid] ?? source[Number(studentId)];
+  if (direct !== undefined) return { [sid]: direct };
+  // Worker가 해당 학생 videoWatch object만 보내는 경우
+  return Object.keys(source).length ? { [sid]: source } : {};
+};
+
+const loadStudentBundleFromWorker = async (studentId) => {
+  const url = resolveStudentSyncUrl(studentId);
+  if (!url) return null;
+  const resp = await fetch(url, { method: "GET", cache: "no-store" });
+  if (!resp.ok) throw new Error(`학생 동기화 API 오류: ${resp.status}`);
+  const raw = await resp.json();
+  const payload = unwrapBundlePayload(raw);
+  const student = getStudentFromPayload(payload, studentId);
+  if (!student) throw new Error("학생 정보를 찾을 수 없습니다");
+
+  const todoSource = payload.todos || payload.todo4 || {};
+  const chkSource = payload.checklistData || payload.chk3 || payload.checklist || {};
+  const recSource = payload.records || payload.rec3 || {};
+  const vwSource = payload.videoWatch || payload.video_watch || {};
+
+  return {
+    source: "worker",
+    student,
+    todos: normalizeByDateForStudent(todoSource, studentId),
+    checklistData: normalizeByDateForStudent(chkSource, studentId),
+    records: normalizeRecordsForStudent(recSource, studentId),
+    videos: payload.videos || payload.student_videos || [],
+    videoWatch: normalizeVideoWatchForStudent(vwSource, studentId),
+    makeups: payload.makeups || payload.mkp3 || [],
+    customHolidays: payload.customHolidays || payload.holi3 || {},
+  };
+};
+
+const loadStudentBundleFromSupabase = async (studentId) => {
+  const [stuData, todoData, chkData, recData, vidData, vwData, mkData, holData] = await Promise.all([
+    db.get("stu3"), db.get("todo4"), db.get("chk3"), db.get("rec3"), db.get("student_videos"), db.get("video_watch"),
+    db.get("mkp3"), db.get("holi3"),
+  ]);
+  const found = (stuData || []).find(s => String(s.id) === String(studentId) && !s.deletedAt);
+  if (!found) return null;
+  return {
+    source: "supabase",
+    student: found,
+    todos: todoData || {},
+    checklistData: chkData || {},
+    records: recData || {},
+    videos: vidData || [],
+    videoWatch: vwData || {},
+    makeups: mkData || [],
+    customHolidays: holData || {},
+  };
+};
+
+const loadStudentBundle = async (studentId) => {
+  try {
+    const fromWorker = await loadStudentBundleFromWorker(studentId);
+    if (fromWorker) return fromWorker;
+  } catch (e) {
+    console.warn("Worker 동기화 실패, Supabase fallback으로 전환:", e);
+  }
+  const fallback = await loadStudentBundleFromSupabase(studentId);
+  if (fallback) return fallback;
+  return null;
+};
+
 // ─── Helpers ───
 const DK = { 0: "일", 1: "월", 2: "화", 3: "수", 4: "목", 5: "금", 6: "토" };
 const fmtDateKR = (ds) => { const d = new Date(ds + "T00:00:00"); return `${d.getMonth() + 1}월 ${d.getDate()}일 ${DK[d.getDay()]}요일`; };
@@ -291,50 +419,179 @@ const mergeVideoWatchSnapshots = (remote = {}, local = {}) => {
 };
 
 // ─── todo → 단계별 그룹 ───
-// 핵심 수정:
-// steps5가 있으면 homework/academy 텍스트를 다시 매칭하지 않고, 원장앱에서 입력한 5칸 위치를 그대로 사용한다.
-// 같은 문장이 step1과 step2에 반복되어도 각각 원래 칸에 표시되도록 하기 위함.
-// 체크 키는 기존 호환을 위해 step1은 hw_index, step2~5는 academy 합산 순서의 ac_index를 유지한다.
-const buildStepGroups = (todo) => {
-  if (!todo) return [];
-  const grouped = { step1: [], step2: [], step3: [], step4: [], step5: [] };
-  const steps5 = todo.steps5;
-  const hasSteps5 = steps5 && STEP_DEFS.some(def => String(steps5[def.key] || "").trim());
+// 원장앱과 동일한 내용 기반 item.key를 만든다.
+// 단, 예전 학생앱 체크값(hw_0/ac_0)도 fallback으로 읽을 수 있게 legacyKey를 같이 보관한다.
+const TODO_SECTION_RE = /^\s*\[(숙제|학원|학원과제)\]\s*$/;
+const TODO_LESSON_PREFIX_RE = /^수업\s*-\s*/i;
+const EMPTY_STEPS5 = { step1: "", step2: "", step3: "", step4: "", step5: "" };
 
-  if (hasSteps5) {
-    let hwIdx = 0;
-    let acIdx = 0;
+const cleanTodoText = (v = "") => String(v).replace(/^[\s□☐●·\-]*/, "").trim();
+const makeItemKey = (type, text, seen) => {
+  const slug = String(text || "").replace(/[^가-힣a-zA-Z0-9]/g, "").slice(0, 20) || "item";
+  let key = `${type}_${slug}`;
+  let n = 1;
+  while (seen.has(key)) { n++; key = `${type}_${slug}${n}`; }
+  seen.add(key);
+  return key;
+};
 
-    STEP_DEFS.forEach(def => {
-      String(steps5[def.key] || "")
-        .split("\n")
-        .map(line => stripBox(line.trim()))
-        .filter(Boolean)
-        .forEach(text => {
-          const isHomeworkStep = def.key === "step1";
-          grouped[def.key].push({
-            text,
-            type: isHomeworkStep ? "hw" : "ac",
-            idx: isHomeworkStep ? hwIdx++ : acIdx++,
-          });
-        });
-    });
+const parseTodoLine = (line) => {
+  const normalized = cleanTodoText(line);
+  if (!normalized) return null;
+  const parts = normalized.split(/\s*(?:->|→)\s*/).map(cleanTodoText).filter(Boolean);
+  if (parts.length === 0) return null;
 
-    return STEP_DEFS.map(def => ({ ...def, items: grouped[def.key] }));
+  let homework = "", academy = "", lesson = "";
+  const last = parts[parts.length - 1] || "";
+  const hasLesson = TODO_LESSON_PREFIX_RE.test(last);
+
+  if (parts.length === 1) {
+    academy = parts[0];
+  } else if (parts.length === 2 && hasLesson) {
+    homework = parts[0];
+    academy = parts[0];
+    lesson = last.replace(TODO_LESSON_PREFIX_RE, "").trim();
+  } else if (parts.length === 2 && !hasLesson) {
+    homework = parts[0];
+    academy = parts[1];
+  } else if (parts.length >= 3 && hasLesson) {
+    homework = parts[0];
+    academy = parts.slice(1, -1).join(" / ");
+    lesson = last.replace(TODO_LESSON_PREFIX_RE, "").trim();
+  } else {
+    homework = parts[0];
+    academy = parts.slice(1).join(" / ");
   }
 
-  // 구버전 데이터 폴백: steps5가 없는 예전 todo는 기존 homework/academy 기준으로 표시
-  const hwLines = stripLabels(todo.homework || "").split("\n").filter(l => l.trim());
-  const acLines = stripLabels(todo.academy || "").split("\n").filter(l => l.trim());
+  return { raw: normalized, homework, academy, lesson };
+};
 
-  hwLines.forEach((text, i) => {
-    grouped.step1.push({ text: stripBox(text.trim()), type: "hw", idx: i });
-  });
-  acLines.forEach((text, i) => {
-    grouped.step3.push({ text: stripBox(text.trim()), type: "ac", idx: i });
+const normalizeVocabTestLine = (line) => {
+  const original = String(line ?? "");
+  if (!original.trim()) return original;
+  const prefixMatch = original.match(/^(\s*(?:[□☐●·\-]\s*)?)/);
+  const prefix = prefixMatch ? prefixMatch[1] : "";
+  const core = original.slice(prefix.length).trim();
+  if (!core) return original;
+  const m = core.match(/^(.+?)\s+((?:\d+\s*(?:[,，]|\s)\s*)*\d+)\s*(?:TEST|test|Test|테스트)?\s*$/i);
+  if (!m) return original;
+  const book = (m[1] || "").trim();
+  const nums = (m[2] || "").match(/\d+/g) || [];
+  if (!book || nums.length === 0) return original;
+  return `${prefix}${book} ${nums.join(", ")} TEST`;
+};
+const normalizeVocabTestText = (text) => String(text || "").split("\n").map(normalizeVocabTestLine).join("\n");
+const normalizeSteps5 = (steps5) => {
+  const s = { ...EMPTY_STEPS5, ...(steps5 || {}) };
+  return { ...s, step2: normalizeVocabTestText(s.step2) };
+};
+
+const splitTodoLines = (txt) => String(txt || "")
+  .split("\n")
+  .map(cleanTodoText)
+  .filter(l => l && !TODO_SECTION_RE.test(l));
+
+const buildTodoFlow = (homework = "", academy = "") => {
+  const seen = new Set();
+  const homeworkItems = [];
+  const academyItems = [];
+
+  splitTodoLines(homework).forEach(line => {
+    const parsed = parseTodoLine(line);
+    if (!parsed) return;
+    if (parsed.homework) {
+      homeworkItems.push({ key: makeItemKey("hw", parsed.homework, seen), text: parsed.homework });
+      if (parsed.academy) academyItems.push({ key: makeItemKey("ac", parsed.academy, seen), text: parsed.academy, lesson: parsed.lesson || "" });
+      else if (parsed.lesson) academyItems.push({ key: makeItemKey("ac", `수업${parsed.lesson}`, seen), text: `수업-${parsed.lesson}`, lesson: "", isDirectLesson: true });
+    } else {
+      homeworkItems.push({ key: makeItemKey("hw", line, seen), text: line });
+    }
   });
 
-  return STEP_DEFS.map(def => ({ ...def, items: grouped[def.key] }));
+  splitTodoLines(academy).forEach(line => {
+    const cleaned = cleanTodoText(line);
+    if (!cleaned) return;
+    const arrowParts = cleaned.split(/\s*(?:->|→)\s*/);
+    const last = arrowParts[arrowParts.length - 1] || "";
+    const hasLesson = arrowParts.length >= 2 && TODO_LESSON_PREFIX_RE.test(last);
+    if (hasLesson) {
+      const lesson = last.replace(TODO_LESSON_PREFIX_RE, "").trim();
+      const text = arrowParts.slice(0, -1).join(" / ").trim();
+      academyItems.push({ key: makeItemKey("ac", text, seen), text, lesson });
+    } else if (TODO_LESSON_PREFIX_RE.test(cleaned)) {
+      const lesson = cleaned.replace(TODO_LESSON_PREFIX_RE, "").trim();
+      academyItems.push({ key: makeItemKey("ac", `수업${lesson}`, seen), text: `수업-${lesson}`, lesson: "", isDirectLesson: true });
+    } else {
+      academyItems.push({ key: makeItemKey("ac", cleaned, seen), text: cleaned, lesson: "" });
+    }
+  });
+
+  academyItems.sort((a, b) => { const ad = /배포/.test(a.text); const bd = /배포/.test(b.text); return ad === bd ? 0 : ad ? 1 : -1; });
+  return { homeworkItems, academyItems };
+};
+
+const buildSteps5FromLegacy = (homework, academy) => {
+  const flow = buildTodoFlow(homework || "", academy || "");
+  const result = { ...EMPTY_STEPS5 };
+  result.step1 = (flow.homeworkItems || []).map(it => it.text).join("\n");
+  const buckets = { step2: [], step3: [], step4: [], step5: [] };
+  (flow.academyItems || []).forEach(item => {
+    const t = item.text || "";
+    let key;
+    if (/배포/.test(t)) key = "step5";
+    else if (/빈칸|픽스노트/.test(t)) key = "step4";
+    else if (/단어|어휘/.test(t)) key = "step2";
+    else key = "step3";
+    const line = item.lesson ? `${t} → 수업-${item.lesson}` : t;
+    buckets[key].push(line);
+  });
+  result.step2 = buckets.step2.join("\n");
+  result.step3 = buckets.step3.join("\n");
+  result.step4 = buckets.step4.join("\n");
+  result.step5 = buckets.step5.join("\n");
+  return result;
+};
+
+const buildStepGroups = (todo) => {
+  if (!todo) return [];
+  const steps5 = normalizeSteps5(todo.steps5 || buildSteps5FromLegacy(todo.homework || "", todo.academy || ""));
+  const seen = new Set();
+  let hwIdx = 0;
+  let acIdx = 0;
+
+  return STEP_DEFS.map(def => {
+    const type = def.key === "step1" ? "hw" : "ac";
+    const items = String(steps5[def.key] || "")
+      .split("\n")
+      .map(line => {
+        const raw = cleanTodoText(line);
+        if (!raw) return null;
+        const parsed = parseTodoLine(raw) || { raw };
+        let keyText;
+        let lesson = parsed.lesson || "";
+        if (lesson) {
+          keyText = type === "hw"
+            ? (parsed.homework || parsed.academy || parsed.raw || raw)
+            : (parsed.academy || parsed.homework || parsed.raw || raw);
+        } else {
+          keyText = parsed.raw || raw;
+        }
+        keyText = cleanTodoText(keyText);
+        if (!keyText) return null;
+        const idx = type === "hw" ? hwIdx++ : acIdx++;
+        return {
+          key: makeItemKey(type, keyText, seen),
+          legacyKey: `${type}_${idx}`,
+          text: lesson ? `${stripBox(keyText)} → 수업-${lesson}` : stripBox(keyText),
+          type,
+          idx,
+          lesson,
+          _sourceStep: def.key,
+        };
+      })
+      .filter(Boolean);
+    return { ...def, items };
+  });
 };
 
 // ─── Main App ───
@@ -359,6 +616,9 @@ export default function App() {
   const [selectedVideoBook, setSelectedVideoBook] = useState(null); // 영상 탭 책별 sub-tab 선택값 (null이면 첫 책 자동)
   const [pendingVideoCount, setPendingVideoCount] = useState(() => getPendingVideoWatch().length); // 저장 실패/대기 기록 개수
   const [lastVideoSaveStatus, setLastVideoSaveStatus] = useState(""); // 최근 영상 기록 저장 상태 표시
+  const [refreshing, setRefreshing] = useState(false); // 수동 새로고침 상태
+  const [syncSource, setSyncSource] = useState(""); // worker / supabase
+  const [lastLoadedAt, setLastLoadedAt] = useState(null); // 마지막 동기화 시각
 
   // 이탈 추적용 ref (state로 안 쓰는 이유: 매 visibilitychange마다 리렌더 안 시키기 위함)
   const awayStartRef = useRef(null);   // 이탈 시작 시각 (Date.now() 또는 null)
@@ -369,32 +629,42 @@ export default function App() {
   const lastActiveAtRef = useRef(null); // 마지막 활성 측정 시각 (활성 시간 누적용)
   const currentSessionIdRef = useRef(null); // 현재 열려 있는 영상 세션 ID(중복 저장 방지용)
 
-  useEffect(() => {
+  const applyBundle = (bundle) => {
+    setStudent(bundle.student);
+    setTodos(bundle.todos || {});
+    setChecklistData(bundle.checklistData || {});
+    setRecords(bundle.records || {});
+    setVideos(bundle.videos || []);
+    setVideoWatch(prev => mergeVideoWatchSnapshots(bundle.videoWatch || {}, prev || {}));
+    setMakeups(bundle.makeups || []);
+    setCustomHolidays(bundle.customHolidays || {});
+    setSyncSource(bundle.source || "");
+    setLastLoadedAt(new Date());
+  };
+
+  const loadData = async ({ manual = false } = {}) => {
     if (!studentId) { setLoading(false); return; }
-    const load = async () => {
-      try {
-        const [stuData, todoData, chkData, recData, vidData, vwData, mkData, holData] = await Promise.all([
-          db.get("stu3"), db.get("todo4"), db.get("chk3"), db.get("rec3"), db.get("student_videos"), db.get("video_watch"),
-          db.get("mkp3"), db.get("holi3"),
-        ]);
-        const found = (stuData || []).find(s => String(s.id) === String(studentId) && !s.deletedAt);
-        if (!found) { setError("not_found"); setLoading(false); return; }
-        setStudent(found);
-        setTodos(todoData || {});
-        setChecklistData(chkData || {});
-        setRecords(recData || {});
-        setVideos(vidData || []);
-        setVideoWatch(prev => mergeVideoWatchSnapshots(vwData || {}, prev || {}));
-        setMakeups(mkData || []);
-        setCustomHolidays(holData || {});
-      } catch (e) {
-        console.error("Load error:", e);
-        setError("load_error");
+    if (manual) setRefreshing(true);
+    try {
+      const bundle = await loadStudentBundle(studentId);
+      if (!bundle || !bundle.student) {
+        setError("not_found");
+        return;
       }
+      applyBundle(bundle);
+      setError(null);
+    } catch (e) {
+      console.error("Load error:", e);
+      setError("load_error");
+    } finally {
       setLoading(false);
-    };
-    load();
-    const interval = setInterval(load, 30000);
+      if (manual) setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+    const interval = setInterval(() => loadData(), 30000);
     return () => clearInterval(interval);
   }, [studentId]);
 
@@ -740,27 +1010,42 @@ export default function App() {
 
   const chk = checklistData[activeDate]?.[studentId] || checklistData[activeDate]?.[Number(studentId)] || {};
   // 어드민과 동일한 3-상태 모델: undefined/false → none, true/"done" → done, "fail:사유..." → fail
-  const getCheckStatus = (type, idx) => {
-    const val = chk[`${type}_${idx}`];
+  // 새 방식(item.key)을 먼저 보고, 없으면 예전 학생앱 방식(hw_0/ac_0)으로 fallback한다.
+  const getCheckValue = (itemOrType, idx) => {
+    const candidates = [];
+    if (itemOrType && typeof itemOrType === "object") {
+      if (itemOrType.key) candidates.push(itemOrType.key);
+      if (itemOrType.legacyKey) candidates.push(itemOrType.legacyKey);
+      if (itemOrType.type && itemOrType.idx !== undefined) candidates.push(`${itemOrType.type}_${itemOrType.idx}`);
+    } else if (itemOrType) {
+      candidates.push(`${itemOrType}_${idx}`);
+    }
+    for (const key of [...new Set(candidates)]) {
+      if (Object.prototype.hasOwnProperty.call(chk, key)) return chk[key];
+    }
+    return undefined;
+  };
+  const getCheckStatus = (itemOrType, idx) => {
+    const val = getCheckValue(itemOrType, idx);
     if (!val) return "none";
     if (val === true || val === "done") return "done";
     if (typeof val === "string" && val.startsWith("fail:")) return "fail";
     return "done";
   };
-  const getFailReason = (type, idx) => {
-    const val = chk[`${type}_${idx}`];
+  const getFailReason = (itemOrType, idx) => {
+    const val = getCheckValue(itemOrType, idx);
     if (typeof val === "string" && val.startsWith("fail:")) return val.slice(5);
     return "";
   };
-  const isChecked = (type, idx) => getCheckStatus(type, idx) === "done";
-  const isFailed = (type, idx) => getCheckStatus(type, idx) === "fail";
+  const isChecked = (itemOrType, idx) => getCheckStatus(itemOrType, idx) === "done";
+  const isFailed = (itemOrType, idx) => getCheckStatus(itemOrType, idx) === "fail";
 
-  // 진행률: 모든 step의 모든 item 합산 (체크 키는 hw_/ac_ 그대로)
+  // 진행률: 모든 step의 모든 item 합산
   const allItems = stepGroups.flatMap(s => s.items);
   // 미완료(fail) 항목은 진행률 계산에서 완전히 제외 (분모/분자 둘 다 빠짐)
-  const countableItems = allItems.filter(item => !isFailed(item.type, item.idx));
+  const countableItems = allItems.filter(item => !isFailed(item));
   const totalTasks = countableItems.length;
-  const doneTasks = countableItems.filter(item => isChecked(item.type, item.idx)).length;
+  const doneTasks = countableItems.filter(item => isChecked(item)).length;
   const pct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
 
   const studentVideos = videos.filter(v => !v.studentId || String(v.studentId) === String(studentId));
@@ -792,6 +1077,20 @@ export default function App() {
               <FitText text={upcomingAttText || "예정된 등원일이 없어요"} maxFont={13} minFont={9} />
             </div>
           </div>
+          <button
+            onClick={() => loadData({ manual: true })}
+            disabled={refreshing}
+            title={lastLoadedAt ? `마지막 동기화: ${lastLoadedAt.toLocaleTimeString()}${syncSource ? ` · ${syncSource}` : ""}` : "새로고침"}
+            style={{
+              width: 38, height: 38, borderRadius: 12, border: "1px solid rgba(255,255,255,0.16)",
+              background: refreshing ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.12)",
+              color: "#fff", cursor: refreshing ? "default" : "pointer", fontSize: 17, fontWeight: 700,
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+              opacity: refreshing ? 0.65 : 1,
+            }}
+          >
+            {refreshing ? "…" : "↻"}
+          </button>
         </div>
 
         {/* 오늘의 영어 명언 (매일 자정에 자동 변경 — 학생 전원 동일) */}
@@ -1160,9 +1459,9 @@ function extractPlaylistId(url) {
 // ─── HomeworkItem: 숙제 항목 한 줄 (영상 매칭 + 인라인 플레이어 + 폴백) ───
 function HomeworkItem({ item, isLast, isCheckedFn, isFailedFn, getFailReasonFn, studentVideos, viewingVideo, toggleVideo }) {
   const [showAll, setShowAll] = useState(false);
-  const done = isCheckedFn(item.type, item.idx);
-  const fail = isFailedFn ? isFailedFn(item.type, item.idx) : false;
-  const failReason = fail && getFailReasonFn ? getFailReasonFn(item.type, item.idx) : "";
+  const done = isCheckedFn(item);
+  const fail = isFailedFn ? isFailedFn(item) : false;
+  const failReason = fail && getFailReasonFn ? getFailReasonFn(item) : "";
   const { hasKeyword, matched, bookCandidates } = matchVideosForTask(item.text, studentVideos);
   const hasMatch = matched.length > 0;
   const showFallback = hasKeyword && bookCandidates.length > 0 && !!toggleVideo;
@@ -1347,7 +1646,7 @@ function StepSection({ step, displayNum, isChecked, isFailed, getFailReason, stu
           </div>
         ) : items.map((item, i) => (
           <HomeworkItem
-            key={`${item.type}_${item.idx}`}
+            key={item.key || item.legacyKey || `${item.type}_${item.idx}`}
             item={item}
             isLast={i === items.length - 1}
             isCheckedFn={isChecked}
