@@ -183,6 +183,113 @@ const MAX_W = 600;
 // ─── 이탈 추적 임계값 (이 시간보다 짧은 이탈은 무시 — 카톡 알림 슬쩍 보고 돌아오는 경우) ───
 const MIN_AWAY_SEC = 5;
 
+
+// ─── 영상 시청 기록 저장 API (Turso 원본 DB로 저장) ───
+// .env 예시: VITE_VIDEO_WATCH_API_URL=https://mapl-sync-worker.yourname.workers.dev/video-watch
+const VIDEO_WATCH_API_URL =
+  import.meta.env.VITE_VIDEO_WATCH_API_URL ||
+  import.meta.env.VITE_MAPL_SYNC_URL ||
+  "";
+const VIDEO_WATCH_API_KEY =
+  import.meta.env.VITE_VIDEO_WATCH_API_KEY ||
+  import.meta.env.VITE_MAPL_SYNC_API_KEY ||
+  "";
+
+const clampNum = (v, min = 0, max = 21600) => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return min;
+  return Math.max(min, Math.min(max, Math.round(n)));
+};
+
+const makeVideoSessionId = (studentId, videoId) =>
+  `${studentId}_${videoId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+const getPendingVideoWatch = () => {
+  try { return JSON.parse(localStorage.getItem("pending_video_watch") || "[]"); }
+  catch (e) { return []; }
+};
+
+const setPendingVideoWatch = (items) => {
+  try { localStorage.setItem("pending_video_watch", JSON.stringify(items || [])); }
+  catch (e) { /* ignore */ }
+};
+
+const queuePendingVideoWatch = (payload) => {
+  const pending = getPendingVideoWatch();
+  const sid = payload?.sessionId || `${payload?.studentId || ""}_${payload?.videoId || ""}_${payload?.timestamp || Date.now()}`;
+  if (!pending.some(x => (x.sessionId || "") === sid)) {
+    pending.push({ ...payload, sessionId: sid });
+    setPendingVideoWatch(pending.slice(-100)); // 기기 저장소 보호용: 최근 100개만 보관
+  }
+};
+
+const postVideoWatchToWorker = async (payload) => {
+  if (!VIDEO_WATCH_API_URL) throw new Error("VITE_VIDEO_WATCH_API_URL이 설정되지 않았습니다");
+  const headers = { "Content-Type": "application/json" };
+  if (VIDEO_WATCH_API_KEY) headers.Authorization = `Bearer ${VIDEO_WATCH_API_KEY}`;
+  const resp = await fetch(VIDEO_WATCH_API_URL, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) {
+    const msg = await resp.text().catch(() => "");
+    throw new Error(msg || `video-watch 저장 실패: ${resp.status}`);
+  }
+  return resp.json().catch(() => ({ success: true }));
+};
+
+const mergeVideoWatchEntry = (prev = {}, payload = {}) => {
+  const sec = clampNum(payload.seconds ?? payload.watchSec ?? 0);
+  const activeSec = clampNum(payload.activeSec ?? 0);
+  const awaySec = clampNum(payload.awaySec ?? 0, 0, 86400);
+  const awayCount = clampNum(payload.awayCount ?? 0, 0, 10000);
+  const longestAwaySec = clampNum(payload.longestAwaySec ?? 0, 0, 86400);
+  const durSec = clampNum(payload.durSec || prev.durSec || 720, 1, 86400);
+  const watchSec = (prev.watchSec || 0) + sec;
+  const sessionsToAdd = payload.eventType === "away" ? 0 : 1;
+  return {
+    ...prev,
+    title: payload.title || prev.title,
+    subject: payload.subject || prev.subject,
+    watchSec,
+    durSec,
+    pct: Math.min(100, Math.round((watchSec / durSec) * 100)),
+    lastAt: payload.timestamp || new Date().toISOString(),
+    sessions: (prev.sessions || 0) + sessionsToAdd,
+    activeSec: (prev.activeSec || 0) + activeSec,
+    awaySec: (prev.awaySec || 0) + awaySec,
+    awayCount: (prev.awayCount || 0) + awayCount,
+    longestAwaySec: Math.max(prev.longestAwaySec || 0, longestAwaySec),
+  };
+};
+
+const applyVideoWatchLocal = (allWatch = {}, payload = {}) => {
+  const sid = String(payload.studentId || "");
+  const vid = String(payload.videoId || "");
+  if (!sid || !vid) return allWatch || {};
+  const next = { ...(allWatch || {}) };
+  next[sid] = { ...(next[sid] || {}) };
+  next[sid][vid] = mergeVideoWatchEntry(next[sid][vid] || {}, payload);
+  return next;
+};
+
+const mergeVideoWatchSnapshots = (remote = {}, local = {}) => {
+  const merged = { ...(remote || {}) };
+  Object.entries(local || {}).forEach(([sid, byVideo]) => {
+    merged[sid] = { ...(merged[sid] || {}) };
+    Object.entries(byVideo || {}).forEach(([vid, localEntry]) => {
+      const remoteEntry = merged[sid][vid];
+      const remoteTime = remoteEntry?.lastAt ? new Date(remoteEntry.lastAt).getTime() : 0;
+      const localTime = localEntry?.lastAt ? new Date(localEntry.lastAt).getTime() : 0;
+      if (!remoteEntry || localTime > remoteTime || (localEntry.watchSec || 0) > (remoteEntry.watchSec || 0)) {
+        merged[sid][vid] = localEntry;
+      }
+    });
+  });
+  return merged;
+};
+
 // ─── todo → 단계별 그룹 ───
 // admin 앱은 step별 시각 그룹핑만 하고 체크 키는 hw_index/ac_index 유지 → 학생 앱도 동일
 // steps5 텍스트와 homework/academy 라인을 매칭해서 각 라인이 어느 step에 속하는지 결정
@@ -240,6 +347,8 @@ export default function App() {
   const [viewStartTime, setViewStartTime] = useState(null);
   const [videoWatch, setVideoWatch] = useState({});
   const [selectedVideoBook, setSelectedVideoBook] = useState(null); // 영상 탭 책별 sub-tab 선택값 (null이면 첫 책 자동)
+  const [pendingVideoCount, setPendingVideoCount] = useState(() => getPendingVideoWatch().length); // 저장 실패/대기 기록 개수
+  const [lastVideoSaveStatus, setLastVideoSaveStatus] = useState(""); // 최근 영상 기록 저장 상태 표시
 
   // 이탈 추적용 ref (state로 안 쓰는 이유: 매 visibilitychange마다 리렌더 안 시키기 위함)
   const awayStartRef = useRef(null);   // 이탈 시작 시각 (Date.now() 또는 null)
@@ -248,6 +357,7 @@ export default function App() {
   const awayCountRef = useRef(0);      // 이탈 횟수 (5초+ 만)
   const longestAwayRef = useRef(0);    // 가장 길었던 이탈 (초)
   const lastActiveAtRef = useRef(null); // 마지막 활성 측정 시각 (활성 시간 누적용)
+  const currentSessionIdRef = useRef(null); // 현재 열려 있는 영상 세션 ID(중복 저장 방지용)
 
   useEffect(() => {
     if (!studentId) { setLoading(false); return; }
@@ -264,7 +374,7 @@ export default function App() {
         setChecklistData(chkData || {});
         setRecords(recData || {});
         setVideos(vidData || []);
-        setVideoWatch(vwData || {});
+        setVideoWatch(prev => mergeVideoWatchSnapshots(vwData || {}, prev || {}));
         setMakeups(mkData || []);
         setCustomHolidays(holData || {});
       } catch (e) {
@@ -292,6 +402,7 @@ export default function App() {
       awayCountRef.current = 0;
       longestAwayRef.current = 0;
       lastActiveAtRef.current = Date.now();
+      currentSessionIdRef.current = makeVideoSessionId(studentId, video.id);
       setViewingVideo(video);
       setViewStartTime(Date.now());
     }
@@ -305,7 +416,6 @@ export default function App() {
       // 이탈 추적: 마지막으로 활성 상태였다면 그 시간을 active에 더함
       // 반대로 이탈 중이었다면(awayStartRef 존재) 그 시간을 away로 마감
       if (awayStartRef.current) {
-        // 닫는 순간까지 이탈 중이었음 → away 마감
         const awayDur = Math.round((Date.now() - awayStartRef.current) / 1000);
         if (awayDur >= MIN_AWAY_SEC) {
           awaySecRef.current += awayDur;
@@ -314,7 +424,6 @@ export default function App() {
         }
         awayStartRef.current = null;
       } else if (lastActiveAtRef.current) {
-        // 활성 상태로 닫음 → 마지막 활성 시간을 active에 더함
         activeSecRef.current += Math.round((Date.now() - lastActiveAtRef.current) / 1000);
       }
 
@@ -322,36 +431,41 @@ export default function App() {
       const awaySec = awaySecRef.current;
       const awayCount = awayCountRef.current;
       const longestAway = longestAwayRef.current;
-      console.log("시청시간:", elapsed, "초, active:", activeSec, "away:", awaySec, "(", awayCount, "회)", "videoId:", viewingVideo.id);
+      const timestamp = new Date().toISOString();
+      const payload = {
+        eventType: "session",
+        sessionId: currentSessionIdRef.current || makeVideoSessionId(studentId, viewingVideo.id),
+        studentId: String(studentId),
+        videoId: String(viewingVideo.id),
+        title: viewingVideo.title || "",
+        subject: viewingVideo.subject || "",
+        url: viewingVideo.url || viewingVideo.playlistUrl || "",
+        videoType: viewingVideo.type || "video",
+        seconds: clampNum(elapsed),
+        activeSec: clampNum(activeSec),
+        awaySec: clampNum(awaySec, 0, 86400),
+        awayCount: clampNum(awayCount, 0, 10000),
+        longestAwaySec: clampNum(longestAway, 0, 86400),
+        durSec: 720,
+        date: getTodayStr(),
+        timestamp,
+        source: "student_app",
+      };
 
+      console.log("시청 기록 저장 요청:", payload);
       try {
-        const key = `vtime_${studentId}`;
-        const existing = await db.get(key) || [];
-        existing.push({ videoId: viewingVideo.id, title: viewingVideo.title, seconds: elapsed, activeSec, awaySec, awayCount, longestAwaySec: longestAway, date: getTodayStr(), timestamp: new Date().toISOString() });
-        await db.set(key, existing);
-        console.log("vtime 저장 완료");
-        // video_watch 집계 업데이트
-        const vw = await db.get("video_watch") || {};
-        if (!vw[studentId]) vw[studentId] = {};
-        const prev = vw[studentId][viewingVideo.id] || { watchSec: 0, sessions: 0, activeSec: 0, awaySec: 0, awayCount: 0, longestAwaySec: 0 };
-        const totalSec = prev.watchSec + elapsed;
-        const estDur = 720; // 12분 기본 추정
-        vw[studentId][viewingVideo.id] = {
-          watchSec: totalSec,
-          durSec: prev.durSec || estDur,
-          pct: Math.min(100, Math.round(totalSec / estDur * 100)),
-          lastAt: new Date().toISOString(),
-          sessions: prev.sessions + 1,
-          // 이탈 추적 누적
-          activeSec: (prev.activeSec || 0) + activeSec,
-          awaySec: (prev.awaySec || 0) + awaySec,
-          awayCount: (prev.awayCount || 0) + awayCount,
-          longestAwaySec: Math.max(prev.longestAwaySec || 0, longestAway),
-        };
-        await db.set("video_watch", vw);
-        console.log("video_watch 저장 완료", vw);
-        setVideoWatch(vw);
-      } catch (e) { console.error("체류시간 저장 실패:", e); }
+        await postVideoWatchToWorker(payload);
+        console.log("video-watch Worker 저장 완료");
+        setLastVideoSaveStatus("영상 기록 저장 완료");
+      } catch (e) {
+        console.error("video-watch Worker 저장 실패, 로컬 대기열에 보관:", e);
+        queuePendingVideoWatch(payload);
+        setPendingVideoCount(getPendingVideoWatch().length);
+        setLastVideoSaveStatus("저장 대기 중");
+      }
+      // Supabase에 직접 쓰지 않는다. Turso 원본 저장은 Worker가 담당하고, 화면은 즉시 로컬 반영만 한다.
+      setVideoWatch(prev => applyVideoWatchLocal(prev || {}, payload));
+      try { localStorage.removeItem("pending_away"); } catch (e) { /* ignore */ }
     } else {
       console.log("조건 불충족 - viewingVideo:", !!viewingVideo, "viewStartTime:", !!viewStartTime);
     }
@@ -362,6 +476,7 @@ export default function App() {
     awayCountRef.current = 0;
     longestAwayRef.current = 0;
     lastActiveAtRef.current = null;
+    currentSessionIdRef.current = null;
     setViewingVideo(null);
     setViewStartTime(null);
   };
@@ -421,7 +536,6 @@ export default function App() {
         let finalAwayCount = awayCountRef.current;
         let finalLongestAway = longestAwayRef.current;
         if (awayStartRef.current) {
-          // 이탈 중 페이지 떠남 → away 마감
           const awayDur = Math.round((Date.now() - awayStartRef.current) / 1000);
           if (awayDur >= MIN_AWAY_SEC) {
             finalAway += awayDur;
@@ -432,18 +546,29 @@ export default function App() {
           finalActive += Math.round((Date.now() - lastActiveAtRef.current) / 1000);
         }
 
-        try {
-          const pending = JSON.parse(localStorage.getItem("pending_vtime") || "[]");
-          pending.push({
-            studentId, videoId: viewingVideo.id, title: viewingVideo.title,
-            seconds: elapsed,
-            activeSec: finalActive, awaySec: finalAway,
-            awayCount: finalAwayCount, longestAwaySec: finalLongestAway,
-            date: getTodayStr(), timestamp: new Date().toISOString(),
-          });
-          localStorage.setItem("pending_vtime", JSON.stringify(pending));
-          localStorage.removeItem("pending_away"); // 정상 처리됐으니 제거
-        } catch (e) { /* ignore */ }
+        const payload = {
+          eventType: "session",
+          sessionId: currentSessionIdRef.current || makeVideoSessionId(studentId, viewingVideo.id),
+          studentId: String(studentId),
+          videoId: String(viewingVideo.id),
+          title: viewingVideo.title || "",
+          subject: viewingVideo.subject || "",
+          url: viewingVideo.url || viewingVideo.playlistUrl || "",
+          videoType: viewingVideo.type || "video",
+          seconds: clampNum(elapsed),
+          activeSec: clampNum(finalActive),
+          awaySec: clampNum(finalAway, 0, 86400),
+          awayCount: clampNum(finalAwayCount, 0, 10000),
+          longestAwaySec: clampNum(finalLongestAway, 0, 86400),
+          durSec: 720,
+          date: getTodayStr(),
+          timestamp: new Date().toISOString(),
+          source: "student_app_beforeunload",
+        };
+
+        // beforeunload에서는 async fetch를 기다릴 수 없으므로 로컬 대기열에 저장 후 다음 접속 때 Worker로 전송
+        queuePendingVideoWatch(payload);
+        try { localStorage.removeItem("pending_away"); } catch (e) { /* ignore */ }
       }
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
@@ -453,63 +578,78 @@ export default function App() {
   useEffect(() => {
     const flush = async () => {
       try {
-        // 1) pending_away 고아 데이터 복구 (앱이 강제 종료되어 visibility 복귀 처리 못 한 경우)
-        // 예: iOS가 백그라운드에서 JS 정지시켜서 돌아왔을 때 처리 못 한 경우
+        // 1) pending_away 고아 데이터 복구: 앱이 이탈 상태에서 강제 종료된 경우, 다음 접속 때 이탈 기록만 Worker로 보냄
         try {
           const orphanAway = JSON.parse(localStorage.getItem("pending_away") || "null");
-          if (orphanAway && orphanAway.awayStartedAt) {
+          if (orphanAway && orphanAway.awayStartedAt && orphanAway.studentId && orphanAway.videoId) {
             const awayDur = Math.round((Date.now() - orphanAway.awayStartedAt) / 1000);
-            if (awayDur >= MIN_AWAY_SEC && orphanAway.studentId && orphanAway.videoId) {
-              // 단, 비현실적으로 긴 이탈(24시간 이상)은 무시 — 학생이 그냥 앱 닫고 나간 것
-              const MAX_REALISTIC_AWAY = 86400; // 24h
-              if (awayDur < MAX_REALISTIC_AWAY) {
-                const vw = await db.get("video_watch") || {};
-                if (!vw[orphanAway.studentId]) vw[orphanAway.studentId] = {};
-                const prev = vw[orphanAway.studentId][orphanAway.videoId] || { watchSec: 0, sessions: 0, activeSec: 0, awaySec: 0, awayCount: 0, longestAwaySec: 0 };
-                vw[orphanAway.studentId][orphanAway.videoId] = {
-                  ...prev,
-                  awaySec: (prev.awaySec || 0) + awayDur,
-                  awayCount: (prev.awayCount || 0) + 1,
-                  longestAwaySec: Math.max(prev.longestAwaySec || 0, awayDur),
-                };
-                await db.set("video_watch", vw);
-              }
+            const MAX_REALISTIC_AWAY = 86400; // 24h
+            if (awayDur >= MIN_AWAY_SEC && awayDur < MAX_REALISTIC_AWAY) {
+              queuePendingVideoWatch({
+                eventType: "away",
+                sessionId: makeVideoSessionId(orphanAway.studentId, orphanAway.videoId) + "_away",
+                studentId: String(orphanAway.studentId),
+                videoId: String(orphanAway.videoId),
+                title: orphanAway.title || "",
+                seconds: 0,
+                activeSec: 0,
+                awaySec: awayDur,
+                awayCount: 1,
+                longestAwaySec: awayDur,
+                date: getTodayStr(),
+                timestamp: new Date().toISOString(),
+                source: "student_app_orphan_away",
+              });
             }
           }
           localStorage.removeItem("pending_away");
         } catch (e) { /* ignore */ }
 
-        // 2) pending_vtime flush (기존 로직 + 이탈 데이터)
-        const pending = JSON.parse(localStorage.getItem("pending_vtime") || "[]");
+        // 2) 구버전 pending_vtime → 새 Worker 대기열로 이관
+        try {
+          const legacyPending = JSON.parse(localStorage.getItem("pending_vtime") || "[]");
+          legacyPending.forEach(item => {
+            queuePendingVideoWatch({
+              eventType: "session",
+              sessionId: item.sessionId || makeVideoSessionId(item.studentId, item.videoId),
+              studentId: String(item.studentId),
+              videoId: String(item.videoId),
+              title: item.title || "",
+              seconds: clampNum(item.seconds || 0),
+              activeSec: clampNum(item.activeSec || 0),
+              awaySec: clampNum(item.awaySec || 0, 0, 86400),
+              awayCount: clampNum(item.awayCount || 0, 0, 10000),
+              longestAwaySec: clampNum(item.longestAwaySec || 0, 0, 86400),
+              durSec: item.durSec || 720,
+              date: item.date || getTodayStr(),
+              timestamp: item.timestamp || new Date().toISOString(),
+              source: "legacy_pending_vtime",
+            });
+          });
+          if (legacyPending.length > 0) localStorage.removeItem("pending_vtime");
+        } catch (e) { /* ignore */ }
+
+        // 3) 새 대기열을 Worker로 순차 전송. 실패한 항목만 다시 보관.
+        const pending = getPendingVideoWatch();
+        setPendingVideoCount(pending.length);
         if (pending.length === 0) return;
-        const vw = await db.get("video_watch") || {};
+        const failed = [];
         for (const item of pending) {
-          const key = `vtime_${item.studentId}`;
-          const existing = await db.get(key) || [];
-          existing.push(item);
-          await db.set(key, existing);
-          // video_watch 집계 (이탈 데이터 포함)
-          if (!vw[item.studentId]) vw[item.studentId] = {};
-          const prev = vw[item.studentId][item.videoId] || { watchSec: 0, sessions: 0, activeSec: 0, awaySec: 0, awayCount: 0, longestAwaySec: 0 };
-          const totalSec = prev.watchSec + item.seconds;
-          const estDur = prev.durSec || 720;
-          vw[item.studentId][item.videoId] = {
-            watchSec: totalSec,
-            durSec: estDur,
-            pct: Math.min(100, Math.round(totalSec / estDur * 100)),
-            lastAt: item.timestamp,
-            sessions: prev.sessions + 1,
-            activeSec: (prev.activeSec || 0) + (item.activeSec || 0),
-            awaySec: (prev.awaySec || 0) + (item.awaySec || 0),
-            awayCount: (prev.awayCount || 0) + (item.awayCount || 0),
-            longestAwaySec: Math.max(prev.longestAwaySec || 0, item.longestAwaySec || 0),
-          };
+          try {
+            await postVideoWatchToWorker(item);
+            setVideoWatch(prev => applyVideoWatchLocal(prev || {}, item));
+          } catch (e) {
+            failed.push(item);
+          }
         }
-        await db.set("video_watch", vw);
-        localStorage.removeItem("pending_vtime");
+        setPendingVideoWatch(failed.slice(-100));
+        setPendingVideoCount(failed.length);
+        setLastVideoSaveStatus(failed.length > 0 ? `저장 대기 ${failed.length}개` : "대기 기록 전송 완료");
       } catch (e) { /* ignore */ }
     };
     flush();
+    const pendingTimer = setInterval(() => setPendingVideoCount(getPendingVideoWatch().length), 5000);
+    return () => clearInterval(pendingTimer);
   }, []);
 
   if (loading) {
@@ -809,6 +949,11 @@ export default function App() {
                     </button>
                   );
                 })}
+              </div>
+            )}
+            {(pendingVideoCount > 0 || lastVideoSaveStatus) && (
+              <div style={{ marginBottom: 12, padding: "9px 12px", borderRadius: 10, background: pendingVideoCount > 0 ? "#fff7ed" : "#f0fdf4", border: pendingVideoCount > 0 ? "1px solid #fed7aa" : "1px solid #bbf7d0", color: pendingVideoCount > 0 ? "#c2410c" : "#047857", fontSize: 12, fontWeight: 700, lineHeight: 1.5 }}>
+                {pendingVideoCount > 0 ? `영상 기록 저장 대기 ${pendingVideoCount}개 · 인터넷 연결 후 자동 재전송됩니다.` : lastVideoSaveStatus}
               </div>
             )}
             <div style={{ fontSize: 13, color: "#999", marginBottom: 16 }}>
