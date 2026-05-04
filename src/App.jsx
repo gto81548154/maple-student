@@ -329,6 +329,213 @@ const clampNum = (v, min = 0, max = 21600) => {
   return Math.max(min, Math.min(max, Math.round(n)));
 };
 
+
+// ─── YouTube IFrame Player API 기반 실제 재생시간 측정 ───
+// 핵심: 영상 화면을 열어둔 시간이 아니라, 플레이어가 PLAYING 상태였던 시간만 누적한다.
+const YT_STATE = {
+  UNSTARTED: -1,
+  ENDED: 0,
+  PLAYING: 1,
+  PAUSED: 2,
+  BUFFERING: 3,
+  CUED: 5,
+};
+
+let _youtubeIframeApiPromise = null;
+const loadYouTubeIframeApi = () => {
+  if (typeof window === "undefined") return Promise.reject(new Error("window 객체가 없습니다"));
+  if (window.YT && window.YT.Player) return Promise.resolve(window.YT);
+  if (_youtubeIframeApiPromise) return _youtubeIframeApiPromise;
+
+  _youtubeIframeApiPromise = new Promise((resolve, reject) => {
+    const prevReady = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      if (typeof prevReady === "function") prevReady();
+      if (window.YT && window.YT.Player) resolve(window.YT);
+      else reject(new Error("YouTube IFrame API 로드 실패"));
+    };
+
+    const existing = document.querySelector('script[src="https://www.youtube.com/iframe_api"]');
+    if (!existing) {
+      const tag = document.createElement("script");
+      tag.src = "https://www.youtube.com/iframe_api";
+      tag.async = true;
+      tag.onerror = () => reject(new Error("YouTube IFrame API 스크립트를 불러오지 못했습니다"));
+      document.head.appendChild(tag);
+    }
+
+    // 스크립트가 이미 있었는데 ready 콜백이 지나간 경우를 위한 보정
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      if (window.YT && window.YT.Player) {
+        clearInterval(timer);
+        resolve(window.YT);
+      } else if (Date.now() - startedAt > 10000) {
+        clearInterval(timer);
+        reject(new Error("YouTube IFrame API 로드 시간 초과"));
+      }
+    }, 100);
+  });
+
+  return _youtubeIframeApiPromise;
+};
+
+const dispatchVideoPlayerEvent = (name, detail) => {
+  try {
+    window.dispatchEvent(new CustomEvent(name, { detail }));
+  } catch (e) { /* ignore */ }
+};
+
+function TrackedYoutubePlayer({ video }) {
+  const mountRef = useRef(null);
+  const playerRef = useRef(null);
+  const timerRef = useRef(null);
+  const lastPlayerTimeRef = useRef(0);
+  const lastWallTimeRef = useRef(Date.now());
+  const destroyedRef = useRef(false);
+
+  const clearTickTimer = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const startTickTimer = () => {
+    if (timerRef.current) return;
+    lastWallTimeRef.current = Date.now();
+    try { lastPlayerTimeRef.current = Number(playerRef.current?.getCurrentTime?.() || 0); }
+    catch (e) { lastPlayerTimeRef.current = 0; }
+
+    timerRef.current = setInterval(() => {
+      const player = playerRef.current;
+      if (!player || destroyedRef.current) return;
+
+      let state = -999;
+      let currentSec = 0;
+      let durationSec = 0;
+      try {
+        state = Number(player.getPlayerState?.());
+        currentSec = Number(player.getCurrentTime?.() || 0);
+        durationSec = Math.round(Number(player.getDuration?.() || 0));
+      } catch (e) {
+        return;
+      }
+
+      const now = Date.now();
+      const wallDelta = Math.max(0, (now - lastWallTimeRef.current) / 1000);
+      const rawDelta = Math.max(0, currentSec - lastPlayerTimeRef.current);
+
+      // 정상 재생은 currentTime 증가분으로 기록한다.
+      // 단, 학생이 재생바를 앞으로 끌어당긴 경우 rawDelta가 과도하게 커질 수 있으므로 wallDelta 기준으로 보정한다.
+      let deltaSec = 0;
+      if (state === YT_STATE.PLAYING) {
+        if (rawDelta <= wallDelta + 3) deltaSec = rawDelta;
+        else deltaSec = Math.min(wallDelta, 3);
+      }
+
+      lastWallTimeRef.current = now;
+      lastPlayerTimeRef.current = currentSec;
+
+      if (deltaSec > 0.2) {
+        dispatchVideoPlayerEvent("mapl:yt-tick", {
+          videoId: String(video?.id || ""),
+          deltaSec,
+          currentSec,
+          durationSec,
+          state,
+        });
+      }
+    }, 1000);
+  };
+
+  useEffect(() => {
+    destroyedRef.current = false;
+    const videoId = video?.type === "playlist" ? "" : extractYoutubeId(video?.url || "");
+    const playlistId = video?.type === "playlist" ? extractPlaylistId(video?.playlistUrl || video?.url || "") : "";
+
+    if (!mountRef.current || (!videoId && !playlistId)) return undefined;
+
+    loadYouTubeIframeApi().then((YT) => {
+      if (destroyedRef.current || !mountRef.current) return;
+      const playerVars = {
+        rel: 0,
+        playsinline: 1,
+        modestbranding: 1,
+      };
+      if (playlistId) {
+        playerVars.listType = "playlist";
+        playerVars.list = playlistId;
+      }
+
+      playerRef.current = new YT.Player(mountRef.current, {
+        width: "100%",
+        height: "100%",
+        videoId: videoId || undefined,
+        playerVars,
+        events: {
+          onReady: (event) => {
+            let durationSec = 0;
+            try { durationSec = Math.round(Number(event.target.getDuration?.() || 0)); }
+            catch (e) { durationSec = 0; }
+            dispatchVideoPlayerEvent("mapl:yt-ready", {
+              videoId: String(video?.id || ""),
+              durationSec,
+              currentSec: 0,
+            });
+          },
+          onStateChange: (event) => {
+            const state = Number(event.data);
+            let durationSec = 0;
+            let currentSec = 0;
+            try {
+              durationSec = Math.round(Number(event.target.getDuration?.() || 0));
+              currentSec = Number(event.target.getCurrentTime?.() || 0);
+            } catch (e) { /* ignore */ }
+
+            dispatchVideoPlayerEvent("mapl:yt-state", {
+              videoId: String(video?.id || ""),
+              state,
+              durationSec,
+              currentSec,
+            });
+
+            if (state === YT_STATE.PLAYING) {
+              lastPlayerTimeRef.current = currentSec;
+              lastWallTimeRef.current = Date.now();
+              startTickTimer();
+            } else {
+              clearTickTimer();
+              lastPlayerTimeRef.current = currentSec;
+              lastWallTimeRef.current = Date.now();
+            }
+          },
+          onError: (event) => {
+            dispatchVideoPlayerEvent("mapl:yt-error", {
+              videoId: String(video?.id || ""),
+              errorCode: event?.data,
+            });
+          },
+        },
+      });
+    }).catch((e) => {
+      dispatchVideoPlayerEvent("mapl:yt-error", {
+        videoId: String(video?.id || ""),
+        message: e?.message || "YouTube 플레이어 로드 실패",
+      });
+    });
+
+    return () => {
+      destroyedRef.current = true;
+      clearTickTimer();
+      try { playerRef.current?.destroy?.(); } catch (e) { /* ignore */ }
+      playerRef.current = null;
+    };
+  }, [video?.id, video?.url, video?.playlistUrl, video?.type]);
+
+  return <div ref={mountRef} style={{ width: "100%", height: "100%" }} />;
+}
+
 const makeVideoSessionId = (studentId, videoId) =>
   `${studentId}_${videoId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
@@ -621,13 +828,17 @@ export default function App() {
   const [lastLoadedAt, setLastLoadedAt] = useState(null); // 마지막 동기화 시각
 
   // 이탈 추적용 ref (state로 안 쓰는 이유: 매 visibilitychange마다 리렌더 안 시키기 위함)
-  const awayStartRef = useRef(null);   // 이탈 시작 시각 (Date.now() 또는 null)
-  const activeSecRef = useRef(0);      // 영상 펼친 후 누적 활성 시간
-  const awaySecRef = useRef(0);        // 영상 펼친 후 누적 이탈 시간 (5초+ 만)
-  const awayCountRef = useRef(0);      // 이탈 횟수 (5초+ 만)
-  const longestAwayRef = useRef(0);    // 가장 길었던 이탈 (초)
-  const lastActiveAtRef = useRef(null); // 마지막 활성 측정 시각 (활성 시간 누적용)
+  const awayStartRef = useRef(null);   // 영상 재생 중 이탈 시작 시각(Date.now() 또는 null)
+  const activeSecRef = useRef(0);      // 실제 재생 + 화면 활성 상태였던 시간
+  const awaySecRef = useRef(0);        // 실제 재생 중 이탈 시간(5초+ 만)
+  const awayCountRef = useRef(0);      // 실제 재생 중 이탈 횟수(5초+ 만)
+  const longestAwayRef = useRef(0);    // 가장 길었던 이탈(초)
+  const lastActiveAtRef = useRef(null); // 구버전 호환용: 새 방식에서는 직접 누적하지 않음
   const currentSessionIdRef = useRef(null); // 현재 열려 있는 영상 세션 ID(중복 저장 방지용)
+  const ytPlaySecRef = useRef(0);      // YouTube PLAYING 상태에서만 누적한 실제 재생시간
+  const ytFocusSecRef = useRef(0);     // PLAYING + 학생앱 화면이 보이는 시간
+  const ytDurationSecRef = useRef(0);  // YouTube 플레이어가 알려준 실제 영상 길이
+  const ytPlayerStateRef = useRef(null); // 마지막 YouTube 플레이어 상태값
 
   const applyBundle = (bundle) => {
     setStudent(bundle.student);
@@ -668,87 +879,160 @@ export default function App() {
     return () => clearInterval(interval);
   }, [studentId]);
 
+  const finishAwayMeasurement = () => {
+    if (!awayStartRef.current) return;
+    const awayDur = Math.round((Date.now() - awayStartRef.current) / 1000);
+    if (awayDur >= MIN_AWAY_SEC) {
+      awaySecRef.current += awayDur;
+      awayCountRef.current += 1;
+      if (awayDur > longestAwayRef.current) longestAwayRef.current = awayDur;
+    }
+    awayStartRef.current = null;
+    try { localStorage.removeItem("pending_away"); } catch (e) { /* ignore */ }
+  };
+
+  const startAwayMeasurementIfPlaying = () => {
+    if (ytPlayerStateRef.current !== YT_STATE.PLAYING) return;
+    if (awayStartRef.current) return;
+    awayStartRef.current = Date.now();
+    try {
+      localStorage.setItem("pending_away", JSON.stringify({
+        studentId,
+        videoId: viewingVideo?.id,
+        title: viewingVideo?.title,
+        awayStartedAt: awayStartRef.current,
+      }));
+    } catch (e) { /* ignore */ }
+  };
+
   // 인라인 확장 토글: 같은 카드 클릭 → 닫기 / 다른 카드 클릭 → 이전 닫고 새로 열기
   const toggleVideo = async (video) => {
     const sameVideo = viewingVideo?.id === video.id;
     if (viewingVideo) {
-      await closeVideo(); // 이전 영상 시청시간 저장하면서 닫기
+      await closeVideo(); // 이전 영상 실제 재생시간 저장하면서 닫기
     }
     if (!sameVideo) {
-      // 이탈 추적 ref 초기화
+      // 실제 재생시간/이탈 추적 ref 초기화
       awayStartRef.current = null;
       activeSecRef.current = 0;
       awaySecRef.current = 0;
       awayCountRef.current = 0;
       longestAwayRef.current = 0;
-      lastActiveAtRef.current = Date.now();
+      lastActiveAtRef.current = null;
+      ytPlaySecRef.current = 0;
+      ytFocusSecRef.current = 0;
+      ytDurationSecRef.current = Number(video?.durSec || 0) || 0;
+      ytPlayerStateRef.current = null;
       currentSessionIdRef.current = makeVideoSessionId(studentId, video.id);
       setViewingVideo(video);
       setViewStartTime(Date.now());
+      setLastVideoSaveStatus("재생 버튼을 누르면 실제 재생시간만 기록됩니다");
     }
   };
 
-  const closeVideo = async () => {
-    console.log("closeVideo 호출됨", { viewingVideo, viewStartTime, studentId });
-    if (viewingVideo && viewStartTime) {
-      const elapsed = Math.round((Date.now() - viewStartTime) / 1000);
+  // YouTube 플레이어 이벤트 수신: 실제 PLAYING 시간만 누적
+  useEffect(() => {
+    const isCurrentVideo = (detail) => viewingVideo && String(detail?.videoId || "") === String(viewingVideo.id);
 
-      // 이탈 추적: 마지막으로 활성 상태였다면 그 시간을 active에 더함
-      // 반대로 이탈 중이었다면(awayStartRef 존재) 그 시간을 away로 마감
-      if (awayStartRef.current) {
-        const awayDur = Math.round((Date.now() - awayStartRef.current) / 1000);
-        if (awayDur >= MIN_AWAY_SEC) {
-          awaySecRef.current += awayDur;
-          awayCountRef.current += 1;
-          if (awayDur > longestAwayRef.current) longestAwayRef.current = awayDur;
-        }
-        awayStartRef.current = null;
-      } else if (lastActiveAtRef.current) {
-        activeSecRef.current += Math.round((Date.now() - lastActiveAtRef.current) / 1000);
+    const handleReady = (event) => {
+      const detail = event.detail || {};
+      if (!isCurrentVideo(detail)) return;
+      if (detail.durationSec) ytDurationSecRef.current = detail.durationSec;
+    };
+
+    const handleState = (event) => {
+      const detail = event.detail || {};
+      if (!isCurrentVideo(detail)) return;
+      ytPlayerStateRef.current = Number(detail.state);
+      if (detail.durationSec) ytDurationSecRef.current = detail.durationSec;
+
+      if (ytPlayerStateRef.current === YT_STATE.PLAYING) {
+        if (document.hidden) startAwayMeasurementIfPlaying();
+        else finishAwayMeasurement();
+      } else {
+        finishAwayMeasurement();
       }
+    };
 
-      const activeSec = activeSecRef.current;
+    const handleTick = (event) => {
+      const detail = event.detail || {};
+      if (!isCurrentVideo(detail)) return;
+      const deltaSec = Math.max(0, Math.min(3600, Number(detail.deltaSec) || 0));
+      if (deltaSec <= 0) return;
+      ytPlaySecRef.current += deltaSec;
+      if (!document.hidden) ytFocusSecRef.current += deltaSec;
+      if (detail.durationSec) ytDurationSecRef.current = detail.durationSec;
+    };
+
+    const handleError = (event) => {
+      const detail = event.detail || {};
+      if (!isCurrentVideo(detail)) return;
+      setLastVideoSaveStatus("유튜브 플레이어를 불러오지 못했습니다. 영상 링크를 확인해 주세요.");
+    };
+
+    window.addEventListener("mapl:yt-ready", handleReady);
+    window.addEventListener("mapl:yt-state", handleState);
+    window.addEventListener("mapl:yt-tick", handleTick);
+    window.addEventListener("mapl:yt-error", handleError);
+    return () => {
+      window.removeEventListener("mapl:yt-ready", handleReady);
+      window.removeEventListener("mapl:yt-state", handleState);
+      window.removeEventListener("mapl:yt-tick", handleTick);
+      window.removeEventListener("mapl:yt-error", handleError);
+    };
+  }, [viewingVideo, studentId]);
+
+  const closeVideo = async () => {
+    if (viewingVideo && viewStartTime) {
+      finishAwayMeasurement();
+
+      const openSec = Math.round((Date.now() - viewStartTime) / 1000);
+      const actualWatchSec = Math.round(ytPlaySecRef.current);
+      const focusSec = Math.round(ytFocusSecRef.current);
       const awaySec = awaySecRef.current;
       const awayCount = awayCountRef.current;
       const longestAway = longestAwayRef.current;
-      const timestamp = new Date().toISOString();
-      const payload = {
-        eventType: "session",
-        sessionId: currentSessionIdRef.current || makeVideoSessionId(studentId, viewingVideo.id),
-        studentId: String(studentId),
-        videoId: String(viewingVideo.id),
-        title: viewingVideo.title || "",
-        subject: viewingVideo.subject || "",
-        url: viewingVideo.url || viewingVideo.playlistUrl || "",
-        videoType: viewingVideo.type || "video",
-        seconds: clampNum(elapsed),
-        activeSec: clampNum(activeSec),
-        awaySec: clampNum(awaySec, 0, 86400),
-        awayCount: clampNum(awayCount, 0, 10000),
-        longestAwaySec: clampNum(longestAway, 0, 86400),
-        durSec: 720,
-        date: getTodayStr(),
-        timestamp,
-        source: "student_app",
-      };
+      const durationSec = clampNum(ytDurationSecRef.current || viewingVideo.durSec || 720, 1, 86400);
 
-      console.log("시청 기록 저장 요청:", payload);
-      try {
-        await postVideoWatchToWorker(payload);
-        console.log("video-watch Worker 저장 완료");
-        setLastVideoSaveStatus("영상 기록 저장 완료");
-      } catch (e) {
-        console.error("video-watch Worker 저장 실패, 로컬 대기열에 보관:", e);
-        queuePendingVideoWatch(payload);
-        setPendingVideoCount(getPendingVideoWatch().length);
-        setLastVideoSaveStatus("저장 대기 중");
+      if (actualWatchSec > 0 || awaySec > 0) {
+        const timestamp = new Date().toISOString();
+        const payload = {
+          eventType: "session",
+          sessionId: currentSessionIdRef.current || makeVideoSessionId(studentId, viewingVideo.id),
+          studentId: String(studentId),
+          videoId: String(viewingVideo.id),
+          title: viewingVideo.title || "",
+          subject: viewingVideo.subject || "",
+          url: viewingVideo.url || viewingVideo.playlistUrl || "",
+          videoType: viewingVideo.type || "video",
+          seconds: clampNum(actualWatchSec),
+          activeSec: clampNum(focusSec),
+          awaySec: clampNum(awaySec, 0, 86400),
+          awayCount: clampNum(awayCount, 0, 10000),
+          longestAwaySec: clampNum(longestAway, 0, 86400),
+          durSec: durationSec,
+          date: getTodayStr(),
+          timestamp,
+          source: "student_app_youtube_iframe_api",
+          openSec: clampNum(openSec, 0, 86400),
+        };
+
+        try {
+          await postVideoWatchToWorker(payload);
+          setLastVideoSaveStatus("실제 재생시간 기준으로 영상 기록 저장 완료");
+        } catch (e) {
+          console.error("video-watch Worker 저장 실패, 로컬 대기열에 보관:", e);
+          queuePendingVideoWatch(payload);
+          setPendingVideoCount(getPendingVideoWatch().length);
+          setLastVideoSaveStatus("저장 대기 중");
+        }
+        setVideoWatch(prev => applyVideoWatchLocal(prev || {}, payload));
+      } else {
+        setLastVideoSaveStatus("재생한 시간이 없어 시청 기록을 저장하지 않았습니다");
       }
-      // Supabase에 직접 쓰지 않는다. Turso 원본 저장은 Worker가 담당하고, 화면은 즉시 로컬 반영만 한다.
-      setVideoWatch(prev => applyVideoWatchLocal(prev || {}, payload));
       try { localStorage.removeItem("pending_away"); } catch (e) { /* ignore */ }
-    } else {
-      console.log("조건 불충족 - viewingVideo:", !!viewingVideo, "viewStartTime:", !!viewStartTime);
     }
+
     // ref 초기화
     awayStartRef.current = null;
     activeSecRef.current = 0;
@@ -756,48 +1040,25 @@ export default function App() {
     awayCountRef.current = 0;
     longestAwayRef.current = 0;
     lastActiveAtRef.current = null;
+    ytPlaySecRef.current = 0;
+    ytFocusSecRef.current = 0;
+    ytDurationSecRef.current = 0;
+    ytPlayerStateRef.current = null;
     currentSessionIdRef.current = null;
     setViewingVideo(null);
     setViewStartTime(null);
   };
 
-  // ─── 이탈 추적: 사용자가 다른 앱/탭으로 갔다가 돌아올 때 측정 ───
+  // ─── 이탈 추적: 영상이 실제 재생 중일 때 다른 앱/탭으로 나간 시간만 측정 ───
   // (visibilitychange 이벤트는 iOS/Android/PC 모두 지원하는 표준 API)
   useEffect(() => {
     if (!viewingVideo) return;
 
     const handleVisibility = () => {
       if (document.hidden) {
-        // 이탈 시작
-        // 활성 시간 누적 (visible → hidden 전환 시점)
-        if (lastActiveAtRef.current) {
-          activeSecRef.current += Math.round((Date.now() - lastActiveAtRef.current) / 1000);
-          lastActiveAtRef.current = null;
-        }
-        awayStartRef.current = Date.now();
-        // iOS Safari가 30초 후 JS 정지시킬 수 있어서, 이탈 시작 시각을 즉시 localStorage에 기록
-        // → 돌아왔을 때 또는 다음 방문 시 복구 가능
-        try {
-          localStorage.setItem("pending_away", JSON.stringify({
-            studentId, videoId: viewingVideo.id, title: viewingVideo.title,
-            awayStartedAt: awayStartRef.current,
-          }));
-        } catch (e) { /* ignore */ }
+        startAwayMeasurementIfPlaying();
       } else {
-        // 복귀
-        if (awayStartRef.current) {
-          const awayDur = Math.round((Date.now() - awayStartRef.current) / 1000);
-          // 5초 미만은 무시 (카톡 알림 슬쩍 보고 돌아오는 경우)
-          if (awayDur >= MIN_AWAY_SEC) {
-            awaySecRef.current += awayDur;
-            awayCountRef.current += 1;
-            if (awayDur > longestAwayRef.current) longestAwayRef.current = awayDur;
-          }
-          awayStartRef.current = null;
-        }
-        // 활성 측정 재시작
-        lastActiveAtRef.current = Date.now();
-        try { localStorage.removeItem("pending_away"); } catch (e) { /* ignore */ }
+        finishAwayMeasurement();
       }
     };
 
@@ -808,10 +1069,6 @@ export default function App() {
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (viewingVideo && viewStartTime) {
-        const elapsed = Math.round((Date.now() - viewStartTime) / 1000);
-
-        // 이탈 추적 마감 처리
-        let finalActive = activeSecRef.current;
         let finalAway = awaySecRef.current;
         let finalAwayCount = awayCountRef.current;
         let finalLongestAway = longestAwayRef.current;
@@ -822,9 +1079,11 @@ export default function App() {
             finalAwayCount += 1;
             if (awayDur > finalLongestAway) finalLongestAway = awayDur;
           }
-        } else if (lastActiveAtRef.current) {
-          finalActive += Math.round((Date.now() - lastActiveAtRef.current) / 1000);
         }
+
+        const actualWatchSec = Math.round(ytPlaySecRef.current);
+        const focusSec = Math.round(ytFocusSecRef.current);
+        if (actualWatchSec <= 0 && finalAway <= 0) return;
 
         const payload = {
           eventType: "session",
@@ -835,15 +1094,16 @@ export default function App() {
           subject: viewingVideo.subject || "",
           url: viewingVideo.url || viewingVideo.playlistUrl || "",
           videoType: viewingVideo.type || "video",
-          seconds: clampNum(elapsed),
-          activeSec: clampNum(finalActive),
+          seconds: clampNum(actualWatchSec),
+          activeSec: clampNum(focusSec),
           awaySec: clampNum(finalAway, 0, 86400),
           awayCount: clampNum(finalAwayCount, 0, 10000),
           longestAwaySec: clampNum(finalLongestAway, 0, 86400),
-          durSec: 720,
+          durSec: clampNum(ytDurationSecRef.current || viewingVideo.durSec || 720, 1, 86400),
           date: getTodayStr(),
           timestamp: new Date().toISOString(),
-          source: "student_app_beforeunload",
+          source: "student_app_youtube_iframe_api_beforeunload",
+          openSec: clampNum(Math.round((Date.now() - viewStartTime) / 1000), 0, 86400),
         };
 
         // beforeunload에서는 async fetch를 기다릴 수 없으므로 로컬 대기열에 저장 후 다음 접속 때 Worker로 전송
@@ -1266,7 +1526,7 @@ export default function App() {
               </div>
             )}
             <div style={{ fontSize: 13, color: "#999", marginBottom: 16 }}>
-              강의를 눌러 시청하세요.{hasMultipleBooks ? ` (${activeBook}: ${visibleVideos.length}개)` : ""}
+              강의를 누른 뒤 재생 버튼을 눌러야 실제 재생시간이 기록됩니다.{hasMultipleBooks ? ` (${activeBook}: ${visibleVideos.length}개)` : ""}
             </div>
             {visibleVideos.map((v) => {
               const isOpen = viewingVideo?.id === v.id;
@@ -1295,21 +1555,11 @@ export default function App() {
                     <div style={{ padding: "0 16px 16px" }}>
                       {v.type === "playlist" && v.playlistUrl ? (
                         <div style={{ borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", background: "#000" }}>
-                          <iframe
-                            src={`https://www.youtube.com/embed/videoseries?list=${extractPlaylistId(v.playlistUrl)}&rel=0`}
-                            style={{ width: "100%", height: "100%", border: "none" }}
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowFullScreen
-                          />
+                          <TrackedYoutubePlayer video={v} />
                         </div>
                       ) : v.url && v.url.includes("youtu") ? (
                         <div style={{ borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", background: "#000" }}>
-                          <iframe
-                            src={`https://www.youtube.com/embed/${extractYoutubeId(v.url)}?rel=0`}
-                            style={{ width: "100%", height: "100%", border: "none" }}
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowFullScreen
-                          />
+                          <TrackedYoutubePlayer video={v} />
                         </div>
                       ) : (
                         <div style={{ background: "#f5f5f5", borderRadius: 10, aspectRatio: "16/9", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1585,21 +1835,11 @@ function HomeworkItem({ item, isLast, isCheckedFn, isFailedFn, getFailReasonFn, 
           <div style={{ padding: "0 16px 16px", background: "#fafbff" }}>
             {v.type === "playlist" && v.playlistUrl ? (
               <div style={{ borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", background: "#000" }}>
-                <iframe
-                  src={`https://www.youtube.com/embed/videoseries?list=${extractPlaylistId(v.playlistUrl)}&rel=0`}
-                  style={{ width: "100%", height: "100%", border: "none" }}
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
+                <TrackedYoutubePlayer video={v} />
               </div>
             ) : v.url && v.url.includes("youtu") ? (
               <div style={{ borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", background: "#000" }}>
-                <iframe
-                  src={`https://www.youtube.com/embed/${extractYoutubeId(v.url)}?rel=0`}
-                  style={{ width: "100%", height: "100%", border: "none" }}
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
+                <TrackedYoutubePlayer video={v} />
               </div>
             ) : (
               <div style={{ background: "#f5f5f5", borderRadius: 10, aspectRatio: "16/9", display: "flex", alignItems: "center", justifyContent: "center" }}>
