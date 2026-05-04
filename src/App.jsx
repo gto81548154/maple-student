@@ -291,40 +291,50 @@ const mergeVideoWatchSnapshots = (remote = {}, local = {}) => {
 };
 
 // ─── todo → 단계별 그룹 ───
-// admin 앱은 step별 시각 그룹핑만 하고 체크 키는 hw_index/ac_index 유지 → 학생 앱도 동일
-// steps5 텍스트와 homework/academy 라인을 매칭해서 각 라인이 어느 step에 속하는지 결정
+// 핵심 수정:
+// steps5가 있으면 homework/academy 텍스트를 다시 매칭하지 않고, 원장앱에서 입력한 5칸 위치를 그대로 사용한다.
+// 같은 문장이 step1과 step2에 반복되어도 각각 원래 칸에 표시되도록 하기 위함.
+// 체크 키는 기존 호환을 위해 step1은 hw_index, step2~5는 academy 합산 순서의 ac_index를 유지한다.
 const buildStepGroups = (todo) => {
   if (!todo) return [];
-  const hwLines = stripLabels(todo.homework || "").split("\n").filter(l => l.trim());
-  const acLines = stripLabels(todo.academy || "").split("\n").filter(l => l.trim());
-  const items = [
-    ...hwLines.map((text, i) => ({ text: stripBox(text.trim()), type: 'hw', idx: i })),
-    ...acLines.map((text, i) => ({ text: stripBox(text.trim()), type: 'ac', idx: i })),
-  ];
-
-  // steps5 텍스트 → step 매핑 (admin의 stepKeyByText 패턴)
+  const grouped = { step1: [], step2: [], step3: [], step4: [], step5: [] };
   const steps5 = todo.steps5;
-  const stepKeyByText = new Map();
-  if (steps5) {
+  const hasSteps5 = steps5 && STEP_DEFS.some(def => String(steps5[def.key] || "").trim());
+
+  if (hasSteps5) {
+    let hwIdx = 0;
+    let acIdx = 0;
+
     STEP_DEFS.forEach(def => {
-      String(steps5[def.key] || "").split('\n').forEach(line => {
-        const t = stripBox(line.trim());
-        if (t && !stepKeyByText.has(t)) stepKeyByText.set(t, def.key);
-      });
+      String(steps5[def.key] || "")
+        .split("\n")
+        .map(line => stripBox(line.trim()))
+        .filter(Boolean)
+        .forEach(text => {
+          const isHomeworkStep = def.key === "step1";
+          grouped[def.key].push({
+            text,
+            type: isHomeworkStep ? "hw" : "ac",
+            idx: isHomeworkStep ? hwIdx++ : acIdx++,
+          });
+        });
     });
+
+    return STEP_DEFS.map(def => ({ ...def, items: grouped[def.key] }));
   }
 
-  // 각 라인을 step 버킷에 분류 (매칭 실패 시 폴백: hw→step1, ac→step3)
-  const grouped = { step1: [], step2: [], step3: [], step4: [], step5: [] };
-  items.forEach(item => {
-    const stepKey = stepKeyByText.get(item.text)
-      || (item.type === 'hw' ? 'step1' : 'step3');
-    grouped[stepKey].push(item);
+  // 구버전 데이터 폴백: steps5가 없는 예전 todo는 기존 homework/academy 기준으로 표시
+  const hwLines = stripLabels(todo.homework || "").split("\n").filter(l => l.trim());
+  const acLines = stripLabels(todo.academy || "").split("\n").filter(l => l.trim());
+
+  hwLines.forEach((text, i) => {
+    grouped.step1.push({ text: stripBox(text.trim()), type: "hw", idx: i });
+  });
+  acLines.forEach((text, i) => {
+    grouped.step3.push({ text: stripBox(text.trim()), type: "ac", idx: i });
   });
 
-  // STEP_DEFS 순서대로 (빈 단계도 포함 — 학생이 전체 5단계 흐름을 보도록)
-  return STEP_DEFS
-    .map(def => ({ ...def, items: grouped[def.key] }));
+  return STEP_DEFS.map(def => ({ ...def, items: grouped[def.key] }));
 };
 
 // ─── Main App ───
