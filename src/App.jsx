@@ -377,7 +377,7 @@ export default function App() {
           db.get("stu3"), db.get("todo4"), db.get("chk3"), db.get("rec3"), db.get("student_videos"), db.get("video_watch"),
           db.get("mkp3"), db.get("holi3"),
         ]);
-        const found = (stuData || []).find(s => String(s.id) === String(studentId));
+        const found = (stuData || []).find(s => String(s.id) === String(studentId) && !s.deletedAt);
         if (!found) { setError("not_found"); setLoading(false); return; }
         setStudent(found);
         setTodos(todoData || {});
