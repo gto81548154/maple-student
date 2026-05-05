@@ -114,6 +114,7 @@ const loadStudentBundleFromWorker = async (studentId) => {
   const chkSource = payload.checklistData || payload.chk3 || payload.checklist || {};
   const recSource = payload.records || payload.rec3 || {};
   const vwSource = payload.videoWatch || payload.video_watch || {};
+  const examSource = payload.exams || payload.exam3 || [];
 
   return {
     source: "worker",
@@ -125,13 +126,14 @@ const loadStudentBundleFromWorker = async (studentId) => {
     videoWatch: normalizeVideoWatchForStudent(vwSource, studentId),
     makeups: payload.makeups || payload.mkp3 || [],
     customHolidays: payload.customHolidays || payload.holi3 || {},
+    exams: Array.isArray(examSource) ? examSource : [],
   };
 };
 
 const loadStudentBundleFromSupabase = async (studentId) => {
-  const [stuData, todoData, chkData, recData, vidData, vwData, mkData, holData] = await Promise.all([
+  const [stuData, todoData, chkData, recData, vidData, vwData, mkData, holData, examData] = await Promise.all([
     db.get("stu3"), db.get("todo4"), db.get("chk3"), db.get("rec3"), db.get("student_videos"), db.get("video_watch"),
-    db.get("mkp3"), db.get("holi3"),
+    db.get("mkp3"), db.get("holi3"), db.get("exam3"),
   ]);
   const found = (stuData || []).find(s => String(s.id) === String(studentId) && !s.deletedAt);
   if (!found) return null;
@@ -145,6 +147,7 @@ const loadStudentBundleFromSupabase = async (studentId) => {
     videoWatch: vwData || {},
     makeups: mkData || [],
     customHolidays: holData || {},
+    exams: examData || [],
   };
 };
 
@@ -259,6 +262,181 @@ const computeUpcomingAttendance = (student, makeups, customHolidays) => {
   if (result.length === 0) result = collect(daysToSun, 7); // 다음 주 월~일
   return result;
 };
+
+
+// ─── 학생앱 시험 D-Day: 스케줄러(exam3) 연동 ───
+// 중학생: 내신만 / 고등학생: 내신 + 모의고사
+const normalizeDdayText = (v = "") => String(v || "").replace(/\s+/g, "").trim();
+const normalizeSchoolForDday = (v = "") => normalizeDdayText(v)
+  .replace(/중학교/g, "중")
+  .replace(/고등학교/g, "고")
+  .replace(/고교/g, "고")
+  .replace(/[123]학년/g, "")
+  .replace(/[123]학/g, "")
+  .replace(/([중고])[123]$/g, "$1");
+
+const getStudentLevelForDday = (student = {}) => {
+  const text = `${student.school || ""} ${student.grade || ""} ${student.name || ""}`;
+  if (/중/.test(text)) return "middle";
+  if (/고/.test(text)) return "high";
+  return "high"; // 학교 구분이 애매하면 기존 고등 기준으로 처리
+};
+
+const getStudentGradeForDday = (student = {}) => {
+  const text = `${student.school || ""} ${student.grade || ""} ${student.name || ""}`;
+  const m = text.match(/(?:중|고)?\s*([123])\s*(?:학년|학)?/) || text.match(/([123])(?:\D*)$/);
+  return m ? m[1] : "";
+};
+
+const getStudentSchoolForDday = (student = {}) => {
+  const fromSchool = student.school || "";
+  if (fromSchool) return normalizeSchoolForDday(fromSchool);
+  const namePart = String(student.name || "").split("-")[1] || "";
+  return normalizeSchoolForDday(namePart);
+};
+
+const getExamStartEndForDday = (exam = {}) => {
+  const start = exam.date || exam.startDate || exam.start || "";
+  const end = exam.endDate || exam.end || start;
+  return { start, end: end || start };
+};
+
+const getExamTargetDateForDday = (exam = {}, student = {}) => {
+  const grade = getStudentGradeForDday(student);
+  const gradeDate = grade && (
+    exam.engDates?.[grade] ||
+    exam.englishDates?.[grade] ||
+    exam.gradeDates?.[grade] ||
+    exam.byGrade?.[grade]
+  );
+  const { start } = getExamStartEndForDday(exam);
+  return gradeDate || start;
+};
+
+const dateDiffDaysForDday = (targetDate) => {
+  if (!targetDate) return null;
+  const today = new Date(getTodayStr() + "T00:00:00");
+  const target = new Date(String(targetDate).slice(0, 10) + "T00:00:00");
+  if (Number.isNaN(target.getTime())) return null;
+  return Math.round((target.getTime() - today.getTime()) / 86400000);
+};
+
+const formatDdayLabel = (diff) => {
+  if (diff === null || diff === undefined) return "";
+  if (diff === 0) return "D-Day";
+  if (diff > 0) return `D-${diff}`;
+  return `D+${Math.abs(diff)}`;
+};
+
+const examMatchesStudentSchoolForDday = (exam = {}, student = {}) => {
+  const stuSchool = getStudentSchoolForDday(student);
+  if (!stuSchool) return true;
+  const examText = normalizeSchoolForDday(`${exam.school || ""} ${exam.schoolName || ""} ${exam.name || ""}`);
+  // 시험명/학교명에 학교 정보가 없으면 공통 일정으로 간주
+  if (!/[중고]/.test(examText)) return true;
+  return examText.includes(stuSchool) || stuSchool.includes(examText);
+};
+
+const mockExamMatchesGradeForDday = (exam = {}, student = {}) => {
+  const grade = getStudentGradeForDday(student);
+  if (!grade) return true;
+  const text = `${exam.name || ""} ${exam.grade || ""} ${exam.targetGrade || ""}`;
+  const gradeMention = text.match(/(?:고\s*)?([123])\s*(?:학년|학)?/);
+  if (!gradeMention) return true;
+  return gradeMention[1] === grade;
+};
+
+const isExamVisibleForStudentDday = (exam = {}, student = {}) => {
+  const type = String(exam.type || "").trim();
+  const level = getStudentLevelForDday(student);
+  if (type === "모의고사") return level === "high" && mockExamMatchesGradeForDday(exam, student);
+  if (type === "내신") return examMatchesStudentSchoolForDday(exam, student);
+  return false;
+};
+
+const buildStudentExamDdays = (student, exams = [], limit = 3) => {
+  if (!student || !Array.isArray(exams)) return [];
+  const today = getTodayStr();
+  return exams
+    .filter(exam => exam && !exam.deletedAt && isExamVisibleForStudentDday(exam, student))
+    .map(exam => {
+      const { start, end } = getExamStartEndForDday(exam);
+      const targetDate = getExamTargetDateForDday(exam, student);
+      const diff = dateDiffDaysForDday(targetDate);
+      if (diff === null) return null;
+      const ended = end && String(end).slice(0, 10) < today;
+      if (ended) return null;
+      const ongoing = start && end && String(start).slice(0, 10) <= today && today <= String(end).slice(0, 10);
+      const type = String(exam.type || "");
+      const dateLabel = start && end && start !== end ? `${fmtDateShort(start)} ~ ${fmtDateShort(end)}` : fmtDateShort(targetDate);
+      return {
+        id: exam.id || `${exam.name || type}_${targetDate}`,
+        name: exam.name || (type === "모의고사" ? "모의고사" : "내신 시험"),
+        type,
+        targetDate,
+        start,
+        end,
+        diff,
+        ongoing,
+        ddayLabel: ongoing && diff < 0 ? "진행 중" : formatDdayLabel(diff),
+        dateLabel,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => {
+      const ad = Math.max(a.diff, 0);
+      const bd = Math.max(b.diff, 0);
+      return ad - bd || String(a.targetDate).localeCompare(String(b.targetDate));
+    })
+    .slice(0, limit);
+};
+
+function StudentExamDdaySection({ items }) {
+  if (!items || items.length === 0) return null;
+  return (
+    <div style={{
+      background: "rgba(255,255,255,0.075)", border: "1px solid rgba(255,255,255,0.12)",
+      borderRadius: 16, padding: "13px 14px", marginBottom: 12,
+      boxShadow: "0 8px 22px rgba(0,0,0,0.08)",
+    }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(255,255,255,0.95)", marginBottom: 9 }}>
+        📅 다가오는 시험
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {items.map(item => (
+          <div key={item.id} style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+            background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.10)",
+            borderRadius: 12, padding: "10px 11px",
+          }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <span style={{
+                  fontSize: 10, fontWeight: 800, padding: "2px 6px", borderRadius: 999,
+                  background: item.type === "모의고사" ? "rgba(124,58,237,0.22)" : "rgba(0,184,148,0.22)",
+                  color: "rgba(255,255,255,0.9)",
+                }}>{item.type}</span>
+                {item.ongoing && <span style={{ fontSize: 10, fontWeight: 800, color: "#fef3c7" }}>진행 중</span>}
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#fff", marginTop: 4, lineHeight: 1.35, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {item.name}
+              </div>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.62)", marginTop: 2 }}>{item.dateLabel}</div>
+            </div>
+            <div style={{
+              flexShrink: 0, minWidth: 60, textAlign: "center", borderRadius: 12,
+              padding: "7px 8px", background: "rgba(255,255,255,0.14)",
+              color: "#fff", fontWeight: 900, fontSize: item.ddayLabel === "D-Day" ? 15 : 16,
+              letterSpacing: -0.4,
+            }}>
+              {item.ddayLabel}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // ─── stripLabels (원장님 앱과 동일) ───
 const stripLabels = (v) => v.split('\n').filter(l => !/^\s*\[(숙제|학원|학원과제)\]\s*$/.test(l)).join('\n');
@@ -815,6 +993,7 @@ export default function App() {
   const [videos, setVideos] = useState([]);
   const [makeups, setMakeups] = useState([]);
   const [customHolidays, setCustomHolidays] = useState({});
+  const [exams, setExams] = useState([]);
   const [tab, setTab] = useState("tasks");
   const [selectedDate, setSelectedDate] = useState(null);
   const [viewingVideo, setViewingVideo] = useState(null);
@@ -849,6 +1028,7 @@ export default function App() {
     setVideoWatch(prev => mergeVideoWatchSnapshots(bundle.videoWatch || {}, prev || {}));
     setMakeups(bundle.makeups || []);
     setCustomHolidays(bundle.customHolidays || {});
+    setExams(Array.isArray(bundle.exams || bundle.exam3) ? (bundle.exams || bundle.exam3) : []);
     setSyncSource(bundle.source || "");
     setLastLoadedAt(new Date());
   };
@@ -1315,6 +1495,7 @@ export default function App() {
   const upcomingAttText = upcomingAtt
     .map(a => `${fmtAttDay(a.dateObj)} ${fmtTime(a.time)}${a.isMakeup ? " (보충)" : ""}`)
     .join(", ");
+  const examDdays = buildStudentExamDdays(student, exams);
 
   const F = "'Pretendard Variable', -apple-system, sans-serif";
 
@@ -1353,6 +1534,7 @@ export default function App() {
           </button>
         </div>
 
+        <StudentExamDdaySection items={examDdays} />
         {/* 오늘의 영어 명언 (매일 자정에 자동 변경 — 학생 전원 동일) */}
         {(() => {
           const m = pickMotivation();
