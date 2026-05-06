@@ -420,60 +420,58 @@ function StudentExamDdaySection({ items }) {
   if (!items || items.length === 0) return null;
   return (
     <div style={{
-      background: "rgba(255,255,255,0.075)", border: "1px solid rgba(255,255,255,0.13)",
-      borderRadius: 18, padding: "14px 14px 15px", marginBottom: 12,
-      boxShadow: "0 8px 22px rgba(0,0,0,0.08)",
+      background: "rgba(255,255,255,0.035)",
+      borderRadius: 12,
+      padding: "12px 14px",
+      marginBottom: 12,
     }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
-        <div style={{ fontSize: 14, fontWeight: 900, color: "rgba(255,255,255,0.96)", letterSpacing: -0.2 }}>
-          🗓️ 다가오는 시험
+        <div style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.85)", letterSpacing: -0.2 }}>
+          다가오는 시험
         </div>
-        <div style={{ fontSize: 10, fontWeight: 800, color: "rgba(255,255,255,0.55)" }}>
-          최대 2개 표시
+        <div style={{ fontSize: 10, fontWeight: 500, color: "rgba(255,255,255,0.4)" }}>
+          최대 2개
         </div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: items.length >= 2 ? "repeat(2, minmax(0, 1fr))" : "1fr", gap: 8 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         {items.map(item => {
           const isMock = item.type === "모의고사";
           const accent = isMock ? "#a78bfa" : "#34d399";
-          const softBg = isMock ? "rgba(124,58,237,0.16)" : "rgba(16,185,129,0.15)";
-          const icon = isMock ? "📄" : "📘";
+          const ddayColor = item.ongoing ? "#fde68a" : accent;
           return (
             <div key={item.id} style={{
-              position: "relative", minHeight: 126, overflow: "hidden",
-              display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 8,
-              background: "linear-gradient(135deg, rgba(255,255,255,0.105), rgba(255,255,255,0.055))",
-              border: "1px solid rgba(255,255,255,0.13)", borderLeft: `4px solid ${accent}`,
-              borderRadius: 15, padding: "12px 10px 11px",
+              display: "flex", alignItems: "center", gap: 10,
+              borderLeft: `2px solid ${accent}`,
+              padding: "8px 0 8px 11px",
+              minWidth: 0,
             }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-                  <span style={{ fontSize: 18, lineHeight: 1 }}>{icon}</span>
-                  <span style={{
-                    fontSize: 10, fontWeight: 900, padding: "3px 7px", borderRadius: 999,
-                    background: softBg, color: accent, border: `1px solid ${isMock ? "rgba(167,139,250,0.25)" : "rgba(52,211,153,0.24)"}`,
-                  }}>{item.type}</span>
-                  {item.ongoing && <span style={{ fontSize: 10, fontWeight: 900, color: "#fde68a" }}>진행 중</span>}
-                </div>
-                <div style={{
-                  fontSize: 14, fontWeight: 900, color: "#fff", lineHeight: 1.32, letterSpacing: -0.3,
-                  display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
-                  minHeight: 37,
-                }}>
-                  {item.name}
-                </div>
-                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.62)", marginTop: 5, lineHeight: 1.35 }}>
-                  {item.dateLabel}
-                </div>
-              </div>
-              <div style={{
-                alignSelf: "flex-start", minWidth: 70, textAlign: "center", borderRadius: 13,
-                padding: "7px 10px", background: "rgba(255,255,255,0.13)",
-                color: accent, fontWeight: 950, fontSize: item.ddayLabel === "D-Day" ? 16 : 19,
-                letterSpacing: -0.6, boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.06)",
+              <span style={{
+                fontSize: 10, fontWeight: 700, color: accent,
+                flexShrink: 0, letterSpacing: 0.3,
+              }}>
+                {item.type}
+              </span>
+              <span style={{
+                fontSize: 13, fontWeight: 700, color: "#fff",
+                flex: 1, minWidth: 0,
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                letterSpacing: -0.2,
+              }}>
+                {item.name}
+              </span>
+              <span style={{
+                fontSize: 11, color: "rgba(255,255,255,0.5)",
+                flexShrink: 0,
+              }}>
+                {item.dateLabel}
+              </span>
+              <span style={{
+                fontSize: 13, fontWeight: 800, color: ddayColor,
+                flexShrink: 0, minWidth: 48, textAlign: "right",
+                letterSpacing: -0.3,
               }}>
                 {item.ddayLabel}
-              </div>
+              </span>
             </div>
           );
         })}
