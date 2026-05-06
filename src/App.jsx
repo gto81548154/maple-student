@@ -267,13 +267,28 @@ const computeUpcomingAttendance = (student, makeups, customHolidays) => {
 // ─── 학생앱 시험 D-Day: 스케줄러(exam3) 연동 ───
 // 중학생: 내신만 / 고등학생: 내신 + 모의고사
 const normalizeDdayText = (v = "") => String(v || "").replace(/\s+/g, "").trim();
-const normalizeSchoolForDday = (v = "") => normalizeDdayText(v)
+const compactSchoolTextForDday = (v = "") => normalizeDdayText(v)
   .replace(/중학교/g, "중")
   .replace(/고등학교/g, "고")
-  .replace(/고교/g, "고")
-  .replace(/[123]학년/g, "")
-  .replace(/[123]학/g, "")
-  .replace(/([중고])[123]$/g, "$1");
+  .replace(/고교/g, "고");
+
+const isBadSchoolTokenForDday = (v = "") => {
+  const t = normalizeDdayText(v);
+  if (!t || t === "중" || t === "고") return true;
+  // 시험명에 들어가는 일반 단어가 학교명처럼 잡히는 경우 방지
+  return /(모의고|기말고|중간고|정기고|고사)$/.test(t);
+};
+
+const extractSchoolTokenForDday = (v = "") => {
+  const text = compactSchoolTextForDday(v);
+  const matches = [...text.matchAll(/([가-힣A-Za-z0-9]+?(?:중|고))/g)]
+    .map(m => m[1])
+    .map(t => t.replace(/[123](?:학년|학기|학)?$/g, ""))
+    .filter(t => !isBadSchoolTokenForDday(t));
+  return matches[0] || "";
+};
+
+const normalizeSchoolForDday = (v = "") => extractSchoolTokenForDday(v);
 
 const getStudentLevelForDday = (student = {}) => {
   const text = `${student.school || ""} ${student.grade || ""} ${student.name || ""}`;
@@ -283,16 +298,25 @@ const getStudentLevelForDday = (student = {}) => {
 };
 
 const getStudentGradeForDday = (student = {}) => {
-  const text = `${student.school || ""} ${student.grade || ""} ${student.name || ""}`;
-  const m = text.match(/(?:중|고)?\s*([123])\s*(?:학년|학)?/) || text.match(/([123])(?:\D*)$/);
+  const text = `${student.grade || ""} ${student.school || ""} ${student.name || ""}`;
+  const m = text.match(/(?:중|고)?\s*([123])\s*(?:학년|학)?/) || text.match(/(?:중|고)([123])/) || text.match(/([123])(?:\D*)$/);
   return m ? m[1] : "";
 };
 
 const getStudentSchoolForDday = (student = {}) => {
-  const fromSchool = student.school || "";
-  if (fromSchool) return normalizeSchoolForDday(fromSchool);
-  const namePart = String(student.name || "").split("-")[1] || "";
-  return normalizeSchoolForDday(namePart);
+  // student.school 값이 "고등학교"처럼 일반 구분만 들어오는 경우가 있어,
+  // 실제 학교명은 학생명 뒤의 "-남한고1" 형태까지 같이 확인한다.
+  const candidates = [
+    student.schoolName,
+    student.school,
+    String(student.name || "").split("-").slice(1).join("-"),
+    student.name,
+  ];
+  for (const c of candidates) {
+    const token = extractSchoolTokenForDday(c || "");
+    if (token && !isBadSchoolTokenForDday(token)) return token;
+  }
+  return "";
 };
 
 const getExamStartEndForDday = (exam = {}) => {
@@ -330,11 +354,12 @@ const formatDdayLabel = (diff) => {
 
 const examMatchesStudentSchoolForDday = (exam = {}, student = {}) => {
   const stuSchool = getStudentSchoolForDday(student);
-  if (!stuSchool) return true;
-  const examText = normalizeSchoolForDday(`${exam.school || ""} ${exam.schoolName || ""} ${exam.name || ""}`);
-  // 시험명/학교명에 학교 정보가 없으면 공통 일정으로 간주
-  if (!/[중고]/.test(examText)) return true;
-  return examText.includes(stuSchool) || stuSchool.includes(examText);
+  if (!stuSchool) return false;
+  const examSchool = extractSchoolTokenForDday(`${exam.school || ""} ${exam.schoolName || ""} ${exam.name || ""}`);
+  // 내신은 학교명이 확인될 때만 학생 학교와 비교한다.
+  // 학교명이 없는 내신을 공통 일정처럼 뿌리면 다른 학교 시험이 섞일 수 있다.
+  if (!examSchool) return false;
+  return examSchool === stuSchool || examSchool.includes(stuSchool) || stuSchool.includes(examSchool);
 };
 
 const mockExamMatchesGradeForDday = (exam = {}, student = {}) => {
@@ -354,7 +379,7 @@ const isExamVisibleForStudentDday = (exam = {}, student = {}) => {
   return false;
 };
 
-const buildStudentExamDdays = (student, exams = [], limit = 3) => {
+const buildStudentExamDdays = (student, exams = [], limit = 2) => {
   if (!student || !Array.isArray(exams)) return [];
   const today = getTodayStr();
   return exams
@@ -395,44 +420,63 @@ function StudentExamDdaySection({ items }) {
   if (!items || items.length === 0) return null;
   return (
     <div style={{
-      background: "rgba(255,255,255,0.075)", border: "1px solid rgba(255,255,255,0.12)",
-      borderRadius: 16, padding: "13px 14px", marginBottom: 12,
+      background: "rgba(255,255,255,0.075)", border: "1px solid rgba(255,255,255,0.13)",
+      borderRadius: 18, padding: "14px 14px 15px", marginBottom: 12,
       boxShadow: "0 8px 22px rgba(0,0,0,0.08)",
     }}>
-      <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(255,255,255,0.95)", marginBottom: 9 }}>
-        📅 다가오는 시험
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+        <div style={{ fontSize: 14, fontWeight: 900, color: "rgba(255,255,255,0.96)", letterSpacing: -0.2 }}>
+          🗓️ 다가오는 시험
+        </div>
+        <div style={{ fontSize: 10, fontWeight: 800, color: "rgba(255,255,255,0.55)" }}>
+          최대 2개 표시
+        </div>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {items.map(item => (
-          <div key={item.id} style={{
-            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
-            background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.10)",
-            borderRadius: 12, padding: "10px 11px",
-          }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                <span style={{
-                  fontSize: 10, fontWeight: 800, padding: "2px 6px", borderRadius: 999,
-                  background: item.type === "모의고사" ? "rgba(124,58,237,0.22)" : "rgba(0,184,148,0.22)",
-                  color: "rgba(255,255,255,0.9)",
-                }}>{item.type}</span>
-                {item.ongoing && <span style={{ fontSize: 10, fontWeight: 800, color: "#fef3c7" }}>진행 중</span>}
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: "#fff", marginTop: 4, lineHeight: 1.35, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {item.name}
-              </div>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.62)", marginTop: 2 }}>{item.dateLabel}</div>
-            </div>
-            <div style={{
-              flexShrink: 0, minWidth: 60, textAlign: "center", borderRadius: 12,
-              padding: "7px 8px", background: "rgba(255,255,255,0.14)",
-              color: "#fff", fontWeight: 900, fontSize: item.ddayLabel === "D-Day" ? 15 : 16,
-              letterSpacing: -0.4,
+      <div style={{ display: "grid", gridTemplateColumns: items.length >= 2 ? "repeat(2, minmax(0, 1fr))" : "1fr", gap: 8 }}>
+        {items.map(item => {
+          const isMock = item.type === "모의고사";
+          const accent = isMock ? "#a78bfa" : "#34d399";
+          const softBg = isMock ? "rgba(124,58,237,0.16)" : "rgba(16,185,129,0.15)";
+          const icon = isMock ? "📄" : "📘";
+          return (
+            <div key={item.id} style={{
+              position: "relative", minHeight: 126, overflow: "hidden",
+              display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 8,
+              background: "linear-gradient(135deg, rgba(255,255,255,0.105), rgba(255,255,255,0.055))",
+              border: "1px solid rgba(255,255,255,0.13)", borderLeft: `4px solid ${accent}`,
+              borderRadius: 15, padding: "12px 10px 11px",
             }}>
-              {item.ddayLabel}
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                  <span style={{ fontSize: 18, lineHeight: 1 }}>{icon}</span>
+                  <span style={{
+                    fontSize: 10, fontWeight: 900, padding: "3px 7px", borderRadius: 999,
+                    background: softBg, color: accent, border: `1px solid ${isMock ? "rgba(167,139,250,0.25)" : "rgba(52,211,153,0.24)"}`,
+                  }}>{item.type}</span>
+                  {item.ongoing && <span style={{ fontSize: 10, fontWeight: 900, color: "#fde68a" }}>진행 중</span>}
+                </div>
+                <div style={{
+                  fontSize: 14, fontWeight: 900, color: "#fff", lineHeight: 1.32, letterSpacing: -0.3,
+                  display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
+                  minHeight: 37,
+                }}>
+                  {item.name}
+                </div>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.62)", marginTop: 5, lineHeight: 1.35 }}>
+                  {item.dateLabel}
+                </div>
+              </div>
+              <div style={{
+                alignSelf: "flex-start", minWidth: 70, textAlign: "center", borderRadius: 13,
+                padding: "7px 10px", background: "rgba(255,255,255,0.13)",
+                color: accent, fontWeight: 950, fontSize: item.ddayLabel === "D-Day" ? 16 : 19,
+                letterSpacing: -0.6, boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.06)",
+              }}>
+                {item.ddayLabel}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1495,7 +1539,7 @@ export default function App() {
   const upcomingAttText = upcomingAtt
     .map(a => `${fmtAttDay(a.dateObj)} ${fmtTime(a.time)}${a.isMakeup ? " (보충)" : ""}`)
     .join(", ");
-  const examDdays = buildStudentExamDdays(student, exams);
+  const examDdays = buildStudentExamDdays(student, exams, 2);
 
   const F = "'Pretendard Variable', -apple-system, sans-serif";
 
