@@ -1,44 +1,30 @@
 import { useState, useEffect, useRef } from "react";
-import { createClient } from '@supabase/supabase-js';
-
-// ─── Supabase 연결 (원장님 앱과 같은 DB) ───
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-);
-
-const db = {
-  async get(k) {
-    try {
-      const { data, error } = await supabase
-        .from("kv_store")
-        .select("value")
-        .eq("key", k)
-        .maybeSingle();
-      if (error || !data) return null;
-      if (typeof data.value === 'string') {
-        return JSON.parse(data.value);
-      }
-      return data.value;
-    } catch (e) { console.error("DB get error:", e); return null; }
-  },
-  async set(k, v) {
-    try {
-      const { error } = await supabase
-        .from("kv_store")
-        .upsert({ key: k, value: JSON.stringify(v) }, { onConflict: "key" });
-      if (error) console.error("DB set error for key:", k, error);
-    } catch (e) { console.error("DB set error:", e); }
-  },
-};
-
 // ─── 학생앱 동기화 API ───
-// 1순위: Worker API(Turso 원본 DB) / 2순위: 기존 Supabase fallback
+// Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
 const STUDENT_SYNC_API_URL =
   import.meta.env.VITE_STUDENT_SYNC_API_URL ||
   import.meta.env.VITE_STUDENT_BUNDLE_API_URL ||
   "";
+
+if (!STUDENT_SYNC_API_URL) {
+  console.error("[CONFIG ERROR] VITE_STUDENT_SYNC_API_URL이 설정되지 않았습니다. 학생앱은 maple-sync /student-bundle Worker URL이 필요합니다.");
+}
+
+const fetchWithTimeout = async (url, options = {}, timeoutMs = 10000) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (e) {
+    if (e?.name === "AbortError") {
+      throw new Error(`학생 동기화 API 응답 지연: ${Math.round(timeoutMs / 1000)}초 초과`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+};
 
 const resolveStudentSyncUrl = (studentId) => {
   if (!STUDENT_SYNC_API_URL) return "";
@@ -102,8 +88,8 @@ const normalizeVideoWatchForStudent = (source = {}, studentId) => {
 
 const loadStudentBundleFromWorker = async (studentId) => {
   const url = resolveStudentSyncUrl(studentId);
-  if (!url) return null;
-  const resp = await fetch(url, { method: "GET", cache: "no-store" });
+  if (!url) throw new Error("STUDENT_SYNC_API_URL 미설정");
+  const resp = await fetchWithTimeout(url, { method: "GET", cache: "no-store" }, 10000);
   if (!resp.ok) throw new Error(`학생 동기화 API 오류: ${resp.status}`);
   const raw = await resp.json();
   const payload = unwrapBundlePayload(raw);
@@ -130,37 +116,8 @@ const loadStudentBundleFromWorker = async (studentId) => {
   };
 };
 
-const loadStudentBundleFromSupabase = async (studentId) => {
-  const [stuData, todoData, chkData, recData, vidData, vwData, mkData, holData, examData] = await Promise.all([
-    db.get("stu3"), db.get("todo4"), db.get("chk3"), db.get("rec3"), db.get("student_videos"), db.get("video_watch"),
-    db.get("mkp3"), db.get("holi3"), db.get("exam3"),
-  ]);
-  const found = (stuData || []).find(s => String(s.id) === String(studentId) && !s.deletedAt);
-  if (!found) return null;
-  return {
-    source: "supabase",
-    student: found,
-    todos: todoData || {},
-    checklistData: chkData || {},
-    records: recData || {},
-    videos: vidData || [],
-    videoWatch: vwData || {},
-    makeups: mkData || [],
-    customHolidays: holData || {},
-    exams: examData || [],
-  };
-};
-
 const loadStudentBundle = async (studentId) => {
-  try {
-    const fromWorker = await loadStudentBundleFromWorker(studentId);
-    if (fromWorker) return fromWorker;
-  } catch (e) {
-    console.warn("Worker 동기화 실패, Supabase fallback으로 전환:", e);
-  }
-  const fallback = await loadStudentBundleFromSupabase(studentId);
-  if (fallback) return fallback;
-  return null;
+  return await loadStudentBundleFromWorker(studentId);
 };
 
 // ─── Helpers ───
@@ -1045,8 +1002,9 @@ export default function App() {
   const [pendingVideoCount, setPendingVideoCount] = useState(() => getPendingVideoWatch().length); // 저장 실패/대기 기록 개수
   const [lastVideoSaveStatus, setLastVideoSaveStatus] = useState(""); // 최근 영상 기록 저장 상태 표시
   const [refreshing, setRefreshing] = useState(false); // 수동 새로고침 상태
-  const [syncSource, setSyncSource] = useState(""); // worker / supabase
+  const [syncSource, setSyncSource] = useState(""); // worker
   const [lastLoadedAt, setLastLoadedAt] = useState(null); // 마지막 동기화 시각
+  const loadInFlightRef = useRef(false); // 30초 polling 중복 호출 방지
 
   // 이탈 추적용 ref (state로 안 쓰는 이유: 매 visibilitychange마다 리렌더 안 시키기 위함)
   const awayStartRef = useRef(null);   // 영상 재생 중 이탈 시작 시각(Date.now() 또는 null)
@@ -1077,6 +1035,11 @@ export default function App() {
 
   const loadData = async ({ manual = false } = {}) => {
     if (!studentId) { setLoading(false); return; }
+    if (loadInFlightRef.current) {
+      if (manual) setRefreshing(false);
+      return;
+    }
+    loadInFlightRef.current = true;
     if (manual) setRefreshing(true);
     try {
       const bundle = await loadStudentBundle(studentId);
@@ -1090,6 +1053,7 @@ export default function App() {
       console.error("Load error:", e);
       setError("load_error");
     } finally {
+      loadInFlightRef.current = false;
       setLoading(false);
       if (manual) setRefreshing(false);
     }
@@ -2125,4 +2089,3 @@ function StepSection({ step, displayNum, isChecked, isFailed, getFailReason, stu
     </div>
   );
 }
-
