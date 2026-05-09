@@ -1953,6 +1953,8 @@ function extractPlaylistId(url) {
 }
 
 // ─── HomeworkItem: 숙제 항목 한 줄 (영상 매칭 + 인라인 플레이어 + 폴백) ───
+// [디자인 수정] 영상 매칭 ▶ 버튼들을 텍스트 행에서 분리하여 별도 줄(체크박스와 좌측 정렬)에 배치.
+// 이전엔 매칭 영상이 4개 이상이면 텍스트가 한 글자씩 세로로 쪼개지는 버그가 있었음.
 function HomeworkItem({ item, isLast, isCheckedFn, isFailedFn, getFailReasonFn, studentVideos, viewingVideo, toggleVideo }) {
   const [showAll, setShowAll] = useState(false);
   const done = isCheckedFn(item);
@@ -1970,10 +1972,13 @@ function HomeworkItem({ item, isLast, isCheckedFn, isFailedFn, getFailReasonFn, 
   // 폴백 라벨용 책 이름 (보통 1개 책만 매칭됨)
   const bookSubject = bookCandidates[0]?.subject || "";
 
+  // 들여쓰기: 체크박스(22) + gap(12) + 좌측 padding(16) = 50px. fail reason과 동일한 정렬.
+  const INDENT_LEFT = 50;
+
   return (
     <div style={{ borderBottom: !isLast ? "1px solid #f5f5f5" : "none", background: done ? "#f0fdf4" : fail ? "#fef2f2" : "#fff" }}>
-      {/* 항목 행 (체크박스 + 텍스트 + 매칭 ▶ 버튼들) */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px" }}>
+      {/* 항목 행 (체크박스 + 텍스트만). 영상 ▶ 버튼이 같이 있으면 다음 줄에 자리를 비워줘야 하므로 paddingBottom을 줄인다. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: showVideoButtons ? "14px 16px 8px" : "14px 16px" }}>
         <div style={{
           width: 22, height: 22, borderRadius: 7, flexShrink: 0,
           border: done || fail ? "none" : "2px solid #e0e0e0",
@@ -2000,30 +2005,32 @@ function HomeworkItem({ item, isLast, isCheckedFn, isFailedFn, getFailReasonFn, 
             <span style={{ flex: 1, fontSize: 14, lineHeight: 1.5, color: done ? "#999" : "#333", textDecoration: done ? "line-through" : "none", minWidth: 0 }}>{item.text}</span>
           );
         })()}
-        {showVideoButtons && (
-          <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
-            {matched.map(v => {
-              const isOpen = viewingVideo?.id === v.id;
-              return (
-                <button key={v.id} onClick={(e) => { e.stopPropagation(); toggleVideo(v); }} style={{
-                  padding: "5px 11px", borderRadius: 7,
-                  border: isOpen ? "1.5px solid #4a6cf7" : "1px solid #d0d4e0",
-                  background: isOpen ? "#eef1ff" : "#fff",
-                  color: isOpen ? "#4a6cf7" : "#555",
-                  fontSize: 12, fontWeight: 700, cursor: "pointer",
-                  display: "inline-flex", alignItems: "center", gap: 4, transition: "all 0.15s", whiteSpace: "nowrap",
-                }}>
-                  <span style={{ fontSize: 10 }}>{isOpen ? "▼" : "▶"}</span> {getVideoShortLabel(v)}
-                </button>
-              );
-            })}
-          </div>
-        )}
       </div>
+
+      {/* 매칭된 영상 ▶ 버튼들: 텍스트 아래 별도 줄. 체크박스와 좌측 정렬되도록 padding-left로 들여씀. */}
+      {showVideoButtons && (
+        <div style={{ padding: `0 16px 12px ${INDENT_LEFT}px`, display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {matched.map(v => {
+            const isOpen = viewingVideo?.id === v.id;
+            return (
+              <button key={v.id} onClick={(e) => { e.stopPropagation(); toggleVideo(v); }} style={{
+                padding: "5px 11px", borderRadius: 7,
+                border: isOpen ? "1.5px solid #4a6cf7" : "1px solid #d0d4e0",
+                background: isOpen ? "#eef1ff" : "#fff",
+                color: isOpen ? "#4a6cf7" : "#555",
+                fontSize: 12, fontWeight: 700, cursor: "pointer",
+                display: "inline-flex", alignItems: "center", gap: 4, transition: "all 0.15s", whiteSpace: "nowrap",
+              }}>
+                <span style={{ fontSize: 10 }}>{isOpen ? "▼" : "▶"}</span> {getVideoShortLabel(v)}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* 미완료 사유 표시 (fail이고 사유가 있을 때만) — 텍스트와 정렬되도록 padding-left 50 (체크박스 22 + gap 12 + padding 16) */}
       {fail && failReason && (
-        <div style={{ padding: "0 16px 12px 50px", fontSize: 12, color: "#dc2626", lineHeight: 1.4 }}>
+        <div style={{ padding: `0 16px 12px ${INDENT_LEFT}px`, fontSize: 12, color: "#dc2626", lineHeight: 1.4 }}>
           💬 {failReason}
         </div>
       )}
