@@ -319,27 +319,85 @@ const examMatchesStudentSchoolForDday = (exam = {}, student = {}) => {
   return examSchool === stuSchool || examSchool.includes(stuSchool) || stuSchool.includes(examSchool);
 };
 
+const MOCK_DDAY_ALLOWED_MONTHS_BY_GRADE = {
+  // 학생앱 D-DAY 정책: 고등학생 모의고사는 3·6·9·10월만 표시한다.
+  // 7월 등 학년/학교에서 실제 응시하지 않는 모의고사가 학생앱에 뜨는 것을 방지한다.
+  "1": [3, 6, 9, 10],
+  "2": [3, 6, 9, 10],
+  "3": [3, 6, 9, 10],
+};
+
+const getMockExamMonthForDday = (exam = {}) => {
+  const direct = exam.month ?? exam.mockMonth ?? exam.examMonth;
+  const directNum = Number(String(direct || "").replace(/[^0-9]/g, ""));
+  if (directNum >= 1 && directNum <= 12) return directNum;
+
+  const text = `${exam.name || ""} ${exam.title || ""} ${exam.memo || ""} ${exam.label || ""}`;
+  const monthFromText = text.match(/(?:^|[^0-9])(1[0-2]|[1-9])\s*(?:월|모)/);
+  if (monthFromText) return Number(monthFromText[1]);
+
+  const { start } = getExamStartEndForDday(exam);
+  if (start) {
+    const d = new Date(String(start).slice(0, 10) + "T00:00:00");
+    if (!Number.isNaN(d.getTime())) return d.getMonth() + 1;
+  }
+  return null;
+};
+
+const getMockExamGradeTargetsForDday = (exam = {}) => {
+  const out = new Set();
+  const pushGrade = (v) => {
+    const text = String(v ?? "").trim();
+    if (!text) return;
+    if (/^[123]$/.test(text)) out.add(text);
+    [...text.matchAll(/고\s*([123])\s*(?:학년|학)?/g)].forEach(m => out.add(m[1]));
+    [...text.matchAll(/([123])\s*(?:학년|학)/g)].forEach(m => out.add(m[1]));
+  };
+
+  [exam.grade, exam.targetGrade, exam.targetGrades, exam.grades, exam.name, exam.title, exam.memo, exam.label]
+    .forEach(v => Array.isArray(v) ? v.forEach(pushGrade) : pushGrade(v));
+
+  return [...out];
+};
+
 const mockExamMatchesGradeForDday = (exam = {}, student = {}) => {
   const grade = getStudentGradeForDday(student);
   if (!grade) return true;
-  const text = `${exam.name || ""} ${exam.grade || ""} ${exam.targetGrade || ""}`;
-  const gradeMention = text.match(/(?:고\s*)?([123])\s*(?:학년|학)?/);
-  if (!gradeMention) return true;
-  return gradeMention[1] === grade;
+  const targets = getMockExamGradeTargetsForDday(exam);
+  if (targets.length === 0) return true;
+  return targets.includes(grade);
+};
+
+const mockExamMatchesMonthPolicyForDday = (exam = {}, student = {}) => {
+  const grade = getStudentGradeForDday(student);
+  const allowed = MOCK_DDAY_ALLOWED_MONTHS_BY_GRADE[grade] || [3, 6, 9, 10];
+  const month = getMockExamMonthForDday(exam);
+  if (!month) return true;
+  return allowed.includes(month);
 };
 
 const isExamVisibleForStudentDday = (exam = {}, student = {}) => {
   const type = String(exam.type || "").trim();
   const level = getStudentLevelForDday(student);
-  if (type === "모의고사") return level === "high" && mockExamMatchesGradeForDday(exam, student);
+  if (type === "모의고사") {
+    return level === "high" &&
+      mockExamMatchesGradeForDday(exam, student) &&
+      mockExamMatchesMonthPolicyForDday(exam, student);
+  }
   if (type === "내신") return examMatchesStudentSchoolForDday(exam, student);
   return false;
+};
+
+const sortExamDdayItems = (a, b) => {
+  const ad = Math.max(a.diff, 0);
+  const bd = Math.max(b.diff, 0);
+  return ad - bd || String(a.targetDate).localeCompare(String(b.targetDate));
 };
 
 const buildStudentExamDdays = (student, exams = [], limit = 2) => {
   if (!student || !Array.isArray(exams)) return [];
   const today = getTodayStr();
-  return exams
+  const items = exams
     .filter(exam => exam && !exam.deletedAt && isExamVisibleForStudentDday(exam, student))
     .map(exam => {
       const { start, end } = getExamStartEndForDday(exam);
@@ -364,13 +422,13 @@ const buildStudentExamDdays = (student, exams = [], limit = 2) => {
         dateLabel,
       };
     })
-    .filter(Boolean)
-    .sort((a, b) => {
-      const ad = Math.max(a.diff, 0);
-      const bd = Math.max(b.diff, 0);
-      return ad - bd || String(a.targetDate).localeCompare(String(b.targetDate));
-    })
-    .slice(0, limit);
+    .filter(Boolean);
+
+  const nextSchoolExam = items.filter(x => x.type === "내신").sort(sortExamDdayItems)[0] || null;
+  const nextMockExam = items.filter(x => x.type === "모의고사").sort(sortExamDdayItems)[0] || null;
+
+  // 학생 화면은 복잡하지 않게 내신 1개 + 모의고사 1개만 보여준다.
+  return [nextSchoolExam, nextMockExam].filter(Boolean).slice(0, limit);
 };
 
 function StudentExamDdaySection({ items }) {
@@ -387,7 +445,7 @@ function StudentExamDdaySection({ items }) {
           다가오는 시험
         </div>
         <div style={{ fontSize: 10, fontWeight: 500, color: "rgba(255,255,255,0.4)" }}>
-          최대 2개
+          내신 1 · 모의 1
         </div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
