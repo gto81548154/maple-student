@@ -247,27 +247,59 @@ const extractSchoolTokenForDday = (v = "") => {
 
 const normalizeSchoolForDday = (v = "") => extractSchoolTokenForDday(v);
 
+// student.name은 검사 대상에서 제외한다.
+// (예: "이중수"의 '중', "고석원"의 '고'가 학교 종류로 오인식되는 문제 방지)
 const getStudentLevelForDday = (student = {}) => {
-  const text = `${student.school || ""} ${student.grade || ""} ${student.name || ""}`;
-  if (/중/.test(text)) return "middle";
-  if (/고/.test(text)) return "high";
-  return "high"; // 학교 구분이 애매하면 기존 고등 기준으로 처리
+  const schoolText = String(student.school || "");
+  const gradeText = String(student.grade || "");
+
+  // 1) school에 명확한 키워드("중학교"/"고등학교")가 있으면 우선
+  if (/중학교|중학생/.test(schoolText)) return "middle";
+  if (/고등학교|고등학생/.test(schoolText)) return "high";
+
+  // 2) grade에 "중1", "고2" 같은 패턴이 있으면 사용
+  if (/중\s*[123]/.test(gradeText)) return "middle";
+  if (/고\s*[123]/.test(gradeText)) return "high";
+
+  // 3) school 텍스트의 단일 글자 fallback
+  if (/중/.test(schoolText) && !/고/.test(schoolText)) return "middle";
+  if (/고/.test(schoolText)) return "high";
+
+  return "high"; // 학교 구분이 애매하면 기존과 같이 고등 기준
 };
 
+// student.name은 검사 대상에서 제외 (이름의 숫자가 학년으로 잡히는 것 방지).
+// 학년 컨텍스트("중1", "1학년", grade 단독값)가 명확한 패턴만 인정한다.
 const getStudentGradeForDday = (student = {}) => {
-  const text = `${student.grade || ""} ${student.school || ""} ${student.name || ""}`;
-  const m = text.match(/(?:중|고)?\s*([123])\s*(?:학년|학)?/) || text.match(/(?:중|고)([123])/) || text.match(/([123])(?:\D*)$/);
-  return m ? m[1] : "";
+  const gradeText = String(student.grade || "");
+  const schoolText = String(student.school || "");
+
+  // 1) grade 필드에서 명확한 패턴 우선
+  let m = gradeText.match(/(?:중|고)\s*([123])/);
+  if (m) return m[1];
+  m = gradeText.match(/([123])\s*학년/);
+  if (m) return m[1];
+  m = gradeText.match(/^\s*([123])\s*$/);
+  if (m) return m[1];
+
+  // 2) school 필드에서 같은 패턴 fallback
+  m = schoolText.match(/(?:중|고)\s*([123])/);
+  if (m) return m[1];
+  m = schoolText.match(/([123])\s*학년/);
+  if (m) return m[1];
+
+  return "";
 };
 
+// student.name 자체는 학교명 추출 후보에서 제외한다.
+// (예: "이중수" → "이중"이 학교로 잘못 추출되는 문제 방지)
+// 단, "박상우-남한고1" 형태로 하이픈 뒤에 학교명이 붙은 경우는 추출한다.
 const getStudentSchoolForDday = (student = {}) => {
-  // student.school 값이 "고등학교"처럼 일반 구분만 들어오는 경우가 있어,
-  // 실제 학교명은 학생명 뒤의 "-남한고1" 형태까지 같이 확인한다.
+  const fromHyphenSuffix = String(student.name || "").split("-").slice(1).join("-");
   const candidates = [
     student.schoolName,
     student.school,
-    String(student.name || "").split("-").slice(1).join("-"),
-    student.name,
+    fromHyphenSuffix, // 하이픈이 없으면 빈 문자열이라 자동 skip
   ];
   for (const c of candidates) {
     const token = extractSchoolTokenForDday(c || "");
@@ -313,10 +345,11 @@ const examMatchesStudentSchoolForDday = (exam = {}, student = {}) => {
   const stuSchool = getStudentSchoolForDday(student);
   if (!stuSchool) return false;
   const examSchool = extractSchoolTokenForDday(`${exam.school || ""} ${exam.schoolName || ""} ${exam.name || ""}`);
-  // 내신은 학교명이 확인될 때만 학생 학교와 비교한다.
-  // 학교명이 없는 내신을 공통 일정처럼 뿌리면 다른 학교 시험이 섞일 수 있다.
   if (!examSchool) return false;
-  return examSchool === stuSchool || examSchool.includes(stuSchool) || stuSchool.includes(examSchool);
+  // 양방향 includes는 "남한고" ↔ "남한산고" 같은 부분 일치 오매칭의 원인이라 제거.
+  // 학교 토큰은 extractSchoolTokenForDday에서 학년 접미사가 제거된 정규형이므로
+  // 정확 일치만 허용한다.
+  return examSchool === stuSchool;
 };
 
 const MOCK_DDAY_ALLOWED_MONTHS_BY_GRADE = {
@@ -333,7 +366,9 @@ const getMockExamMonthForDday = (exam = {}) => {
   if (directNum >= 1 && directNum <= 12) return directNum;
 
   const text = `${exam.name || ""} ${exam.title || ""} ${exam.memo || ""} ${exam.label || ""}`;
-  const monthFromText = text.match(/(?:^|[^0-9])(1[0-2]|[1-9])\s*(?:월|모)/);
+  // "3월 모의고사", "9월 모의" 같이 "월"이 명시된 표기만 인식한다.
+  // "3모의" 같은 약식은 모호하므로 월 fallback(시험 시작일 기준)으로 처리되도록 둔다.
+  const monthFromText = text.match(/(?:^|[^0-9])(1[0-2]|[1-9])\s*월/);
   if (monthFromText) return Number(monthFromText[1]);
 
   const { start } = getExamStartEndForDday(exam);
@@ -1509,7 +1544,8 @@ export default function App() {
   const activeDate = selectedDate || allDates[0] || getTodayStr();
   const todo = todos[activeDate]?.[studentId] || todos[activeDate]?.[Number(studentId)] || {};
 
-  // 5단계 그룹 (빈 단계 자동 숨김 + 재번호는 렌더링 시 idx+1)
+  // 5단계 그룹
+  // 빈 단계도 "오늘 없음"으로 보여줘 학생이 전체 학습 흐름을 확인할 수 있게 한다.
   const stepGroups = buildStepGroups(todo);
 
   const chk = checklistData[activeDate]?.[studentId] || checklistData[activeDate]?.[Number(studentId)] || {};
@@ -1693,7 +1729,7 @@ export default function App() {
               </div>
             )}
 
-            {/* 5단계 렌더링 (빈 단계 자동 숨김 + 재번호 1,2,3...) */}
+            {/* 5단계 렌더링 (빈 단계는 StepSection 내부에서 "오늘 없음"으로 표시) */}
             {stepGroups.map((step, idx) => (
               <StepSection
                 key={step.key}
