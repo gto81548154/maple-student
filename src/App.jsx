@@ -551,35 +551,15 @@ const BADGE_STYLES = {
   '강사': { bg: '#dbeafe', fg: '#1e40af' },
 };
 
-// ─── 동기부여 멘트 풀 (12개 — 매일 자정에 자동 변경, 학생 모두 같은 멘트) ───
-// 4가지 테마: 시작·꾸준함 / 슬럼프 극복 / 노력·집중 / 자기확신
-const MOTIVATION_MESSAGES = [
-  { quote: "The secret of getting ahead is getting started.",                                           translation: "앞서가는 비결은 일단 시작하는 것이다.",                  author: "Mark Twain" },
-  { quote: "Motivation is what gets you started. Habit is what keeps you going.",                       translation: "동기는 시작하게 만들고, 습관은 계속 나아가게 한다.",     author: "Jim Ryun" },
-  { quote: "You don't have to be great to start, but you have to start to be great.",                   translation: "위대해지려면 시작해야 한다.",                              author: "Zig Ziglar" },
-  { quote: "It always seems impossible until it's done.",                                               translation: "모든 일은 끝나기 전까진 불가능해 보인다.",                author: "Nelson Mandela" },
-  { quote: "Don't watch the clock; do what it does. Keep going.",                                       translation: "시계를 보지 마라. 시계처럼 계속 나아가라.",               author: "Sam Levenson" },
-  { quote: "Success is not final, failure is not fatal: it is the courage to continue that counts.",    translation: "중요한 것은 계속 나아가는 용기다.",                       author: "Winston Churchill" },
-  { quote: "There are no shortcuts to any place worth going.",                                          translation: "갈 가치가 있는 곳에는 지름길이 없다.",                    author: "Beverly Sills" },
-  { quote: "Do something today that your future self will thank you for.",                              translation: "미래의 내가 고마워할 일을 오늘 하라.",                    author: "Sean Patrick Flanery" },
-  { quote: "I find that the harder I work, the more luck I seem to have.",                              translation: "더 열심히 할수록 운도 더 따른다.",                        author: "Thomas Jefferson" },
-  { quote: "Believe you can and you're halfway there.",                                                 translation: "할 수 있다고 믿으면 이미 절반은 온 것이다.",              author: "Theodore Roosevelt" },
-  { quote: "Doubt kills more dreams than failure ever will.",                                           translation: "의심은 실패보다 더 많은 꿈을 죽인다.",                    author: "Suzy Kassem" },
-  { quote: "The future belongs to those who believe in the beauty of their dreams.",                    translation: "미래는 자신의 꿈을 믿는 자들의 것이다.",                  author: "Eleanor Roosevelt" },
-];
-
-// 오늘 날짜 기준 멘트 선택 (모든 학생이 같은 날 같은 멘트, 매일 자정에 변경)
-const pickMotivation = () => {
-  const now = new Date();
-  const dayKey = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
-  return MOTIVATION_MESSAGES[dayKey % MOTIVATION_MESSAGES.length];
-};
 
 // ─── 학생 앱 가운데 정렬 폭 (PC 대응) ───
 const MAX_W = 600;
 
 // ─── 이탈 추적 임계값 (이 시간보다 짧은 이탈은 무시 — 카톡 알림 슬쩍 보고 돌아오는 경우) ───
 const MIN_AWAY_SEC = 5;
+// 영상 시청 기록 자동 저장 기준: 카드를 닫지 않아도 UNIT별 기록이 남도록 보정
+const VIDEO_PROGRESS_SAVE_MIN_SEC = 5;
+const VIDEO_PROGRESS_AUTOSAVE_SEC = 15;
 
 
 // ─── 영상 시청 기록 저장 API (Turso 원본 DB로 저장) ───
@@ -852,7 +832,8 @@ const mergeVideoWatchEntry = (prev = {}, payload = {}) => {
   const longestAwaySec = clampNum(payload.longestAwaySec ?? 0, 0, 86400);
   const durSec = clampNum(payload.durSec || prev.durSec || 720, 1, 86400);
   const watchSec = (prev.watchSec || 0) + sec;
-  const sessionsToAdd = payload.eventType === "away" ? 0 : 1;
+  // 자동 저장/중간 저장 조각은 같은 시청 세션의 일부이므로 세션 수를 계속 늘리지 않는다.
+  const sessionsToAdd = payload.eventType === "session" && !payload.partialSave ? 1 : 0;
   return {
     ...prev,
     title: payload.title || prev.title,
@@ -1111,6 +1092,12 @@ export default function App() {
   const ytFocusSecRef = useRef(0);     // PLAYING + 학생앱 화면이 보이는 시간
   const ytDurationSecRef = useRef(0);  // YouTube 플레이어가 알려준 실제 영상 길이
   const ytPlayerStateRef = useRef(null); // 마지막 YouTube 플레이어 상태값
+  const lastSavedPlaySecRef = useRef(0);   // Worker/대기열에 이미 반영한 실제 재생시간
+  const lastSavedFocusSecRef = useRef(0);  // Worker/대기열에 이미 반영한 화면 활성 재생시간
+  const lastSavedAwaySecRef = useRef(0);   // Worker/대기열에 이미 반영한 이탈 시간
+  const lastSavedAwayCountRef = useRef(0); // Worker/대기열에 이미 반영한 이탈 횟수
+  const videoSaveChunkSeqRef = useRef(0);  // 자동 저장 조각 ID 충돌 방지
+  const videoSaveInFlightRef = useRef(false); // 자동 저장 중복 호출 방지
 
   const applyBundle = (bundle) => {
     setStudent(bundle.student);
@@ -1202,11 +1189,86 @@ export default function App() {
       ytFocusSecRef.current = 0;
       ytDurationSecRef.current = Number(video?.durSec || 0) || 0;
       ytPlayerStateRef.current = null;
+      lastSavedPlaySecRef.current = 0;
+      lastSavedFocusSecRef.current = 0;
+      lastSavedAwaySecRef.current = 0;
+      lastSavedAwayCountRef.current = 0;
+      videoSaveChunkSeqRef.current = 0;
+      videoSaveInFlightRef.current = false;
       currentSessionIdRef.current = makeVideoSessionId(studentId, video.id);
       setViewingVideo(video);
       setViewStartTime(Date.now());
       setLastVideoSaveStatus("재생 버튼을 누르면 실제 재생시간만 기록됩니다");
     }
+  };
+
+  const saveCurrentVideoProgress = async ({ reason = "manual", minDeltaSec = 1, partialSave = true } = {}) => {
+    if (!viewingVideo || !viewStartTime) return false;
+    if (videoSaveInFlightRef.current) return false;
+
+    const totalPlaySec = Math.round(ytPlaySecRef.current);
+    const totalFocusSec = Math.round(ytFocusSecRef.current);
+    const totalAwaySec = Math.round(awaySecRef.current);
+    const totalAwayCount = Math.round(awayCountRef.current);
+    const longestAway = Math.round(longestAwayRef.current);
+    const deltaPlaySec = Math.max(0, totalPlaySec - lastSavedPlaySecRef.current);
+    const deltaFocusSec = Math.max(0, totalFocusSec - lastSavedFocusSecRef.current);
+    const deltaAwaySec = Math.max(0, totalAwaySec - lastSavedAwaySecRef.current);
+    const deltaAwayCount = Math.max(0, totalAwayCount - lastSavedAwayCountRef.current);
+
+    if (deltaPlaySec < minDeltaSec && deltaAwaySec <= 0) return false;
+
+    const rootSessionId = currentSessionIdRef.current || makeVideoSessionId(studentId, viewingVideo.id);
+    currentSessionIdRef.current = rootSessionId;
+    const chunkSeq = videoSaveChunkSeqRef.current + 1;
+    const timestamp = new Date().toISOString();
+    const payload = {
+      eventType: "session",
+      sessionId: `${rootSessionId}_${reason}_${chunkSeq}`,
+      rootSessionId,
+      studentId: String(studentId),
+      videoId: String(viewingVideo.id),
+      title: viewingVideo.title || "",
+      subject: viewingVideo.subject || "",
+      url: viewingVideo.url || viewingVideo.playlistUrl || "",
+      videoType: viewingVideo.type || "video",
+      seconds: clampNum(deltaPlaySec),
+      activeSec: clampNum(deltaFocusSec),
+      awaySec: clampNum(deltaAwaySec, 0, 86400),
+      awayCount: clampNum(deltaAwayCount, 0, 10000),
+      longestAwaySec: clampNum(longestAway, 0, 86400),
+      durSec: clampNum(ytDurationSecRef.current || viewingVideo.durSec || 720, 1, 86400),
+      date: getTodayStr(),
+      timestamp,
+      source: `student_app_youtube_iframe_api_${reason}`,
+      openSec: clampNum(Math.round((Date.now() - viewStartTime) / 1000), 0, 86400),
+      partialSave,
+    };
+
+    videoSaveInFlightRef.current = true;
+    try {
+      await postVideoWatchToWorker(payload);
+      if (reason === "autosave") setLastVideoSaveStatus("시청 중 자동 저장됨");
+      else if (reason === "pause") setLastVideoSaveStatus("일시정지 시점까지 저장 완료");
+      else if (reason === "ended") setLastVideoSaveStatus("영상 종료 시점까지 저장 완료");
+      else if (reason === "hidden") setLastVideoSaveStatus("앱을 나가기 전 시청 기록 저장 완료");
+      else setLastVideoSaveStatus("실제 재생시간 기준으로 영상 기록 저장 완료");
+    } catch (e) {
+      console.error("video-watch Worker 저장 실패, 로컬 대기열에 보관:", e);
+      queuePendingVideoWatch(payload);
+      setPendingVideoCount(getPendingVideoWatch().length);
+      setLastVideoSaveStatus("저장 대기 중");
+    } finally {
+      videoSaveInFlightRef.current = false;
+    }
+
+    videoSaveChunkSeqRef.current = chunkSeq;
+    lastSavedPlaySecRef.current = totalPlaySec;
+    lastSavedFocusSecRef.current = totalFocusSec;
+    lastSavedAwaySecRef.current = totalAwaySec;
+    lastSavedAwayCountRef.current = totalAwayCount;
+    setVideoWatch(prev => applyVideoWatchLocal(prev || {}, payload));
+    return true;
   };
 
   // YouTube 플레이어 이벤트 수신: 실제 PLAYING 시간만 누적
@@ -1230,6 +1292,12 @@ export default function App() {
         else finishAwayMeasurement();
       } else {
         finishAwayMeasurement();
+        if (ytPlayerStateRef.current === YT_STATE.PAUSED) {
+          saveCurrentVideoProgress({ reason: "pause", minDeltaSec: VIDEO_PROGRESS_SAVE_MIN_SEC, partialSave: true });
+        }
+        if (ytPlayerStateRef.current === YT_STATE.ENDED) {
+          saveCurrentVideoProgress({ reason: "ended", minDeltaSec: 1, partialSave: false });
+        }
       }
     };
 
@@ -1241,6 +1309,11 @@ export default function App() {
       ytPlaySecRef.current += deltaSec;
       if (!document.hidden) ytFocusSecRef.current += deltaSec;
       if (detail.durationSec) ytDurationSecRef.current = detail.durationSec;
+
+      const unsavedPlaySec = Math.round(ytPlaySecRef.current - lastSavedPlaySecRef.current);
+      if (!document.hidden && unsavedPlaySec >= VIDEO_PROGRESS_AUTOSAVE_SEC) {
+        saveCurrentVideoProgress({ reason: "autosave", minDeltaSec: VIDEO_PROGRESS_AUTOSAVE_SEC, partialSave: true });
+      }
     };
 
     const handleError = (event) => {
@@ -1264,50 +1337,11 @@ export default function App() {
   const closeVideo = async () => {
     if (viewingVideo && viewStartTime) {
       finishAwayMeasurement();
-
-      const openSec = Math.round((Date.now() - viewStartTime) / 1000);
-      const actualWatchSec = Math.round(ytPlaySecRef.current);
-      const focusSec = Math.round(ytFocusSecRef.current);
-      const awaySec = awaySecRef.current;
-      const awayCount = awayCountRef.current;
-      const longestAway = longestAwayRef.current;
-      const durationSec = clampNum(ytDurationSecRef.current || viewingVideo.durSec || 720, 1, 86400);
-
-      if (actualWatchSec > 0 || awaySec > 0) {
-        const timestamp = new Date().toISOString();
-        const payload = {
-          eventType: "session",
-          sessionId: currentSessionIdRef.current || makeVideoSessionId(studentId, viewingVideo.id),
-          studentId: String(studentId),
-          videoId: String(viewingVideo.id),
-          title: viewingVideo.title || "",
-          subject: viewingVideo.subject || "",
-          url: viewingVideo.url || viewingVideo.playlistUrl || "",
-          videoType: viewingVideo.type || "video",
-          seconds: clampNum(actualWatchSec),
-          activeSec: clampNum(focusSec),
-          awaySec: clampNum(awaySec, 0, 86400),
-          awayCount: clampNum(awayCount, 0, 10000),
-          longestAwaySec: clampNum(longestAway, 0, 86400),
-          durSec: durationSec,
-          date: getTodayStr(),
-          timestamp,
-          source: "student_app_youtube_iframe_api",
-          openSec: clampNum(openSec, 0, 86400),
-        };
-
-        try {
-          await postVideoWatchToWorker(payload);
-          setLastVideoSaveStatus("실제 재생시간 기준으로 영상 기록 저장 완료");
-        } catch (e) {
-          console.error("video-watch Worker 저장 실패, 로컬 대기열에 보관:", e);
-          queuePendingVideoWatch(payload);
-          setPendingVideoCount(getPendingVideoWatch().length);
-          setLastVideoSaveStatus("저장 대기 중");
-        }
-        setVideoWatch(prev => applyVideoWatchLocal(prev || {}, payload));
-      } else {
-        setLastVideoSaveStatus("재생한 시간이 없어 시청 기록을 저장하지 않았습니다");
+      const saved = await saveCurrentVideoProgress({ reason: "close", minDeltaSec: 1, partialSave: false });
+      if (!saved) {
+        const totalPlaySec = Math.round(ytPlaySecRef.current);
+        if (totalPlaySec > 0) setLastVideoSaveStatus("이미 자동 저장된 시청 기록입니다");
+        else setLastVideoSaveStatus("재생한 시간이 없어 시청 기록을 저장하지 않았습니다");
       }
       try { localStorage.removeItem("pending_away"); } catch (e) { /* ignore */ }
     }
@@ -1323,6 +1357,12 @@ export default function App() {
     ytFocusSecRef.current = 0;
     ytDurationSecRef.current = 0;
     ytPlayerStateRef.current = null;
+    lastSavedPlaySecRef.current = 0;
+    lastSavedFocusSecRef.current = 0;
+    lastSavedAwaySecRef.current = 0;
+    lastSavedAwayCountRef.current = 0;
+    videoSaveChunkSeqRef.current = 0;
+    videoSaveInFlightRef.current = false;
     currentSessionIdRef.current = null;
     setViewingVideo(null);
     setViewStartTime(null);
@@ -1335,6 +1375,7 @@ export default function App() {
 
     const handleVisibility = () => {
       if (document.hidden) {
+        saveCurrentVideoProgress({ reason: "hidden", minDeltaSec: VIDEO_PROGRESS_SAVE_MIN_SEC, partialSave: true });
         startAwayMeasurementIfPlaying();
       } else {
         finishAwayMeasurement();
@@ -1362,27 +1403,34 @@ export default function App() {
 
         const actualWatchSec = Math.round(ytPlaySecRef.current);
         const focusSec = Math.round(ytFocusSecRef.current);
-        if (actualWatchSec <= 0 && finalAway <= 0) return;
+        const unsavedWatchSec = Math.max(0, actualWatchSec - lastSavedPlaySecRef.current);
+        const unsavedFocusSec = Math.max(0, focusSec - lastSavedFocusSecRef.current);
+        const unsavedAwaySec = Math.max(0, finalAway - lastSavedAwaySecRef.current);
+        const unsavedAwayCount = Math.max(0, finalAwayCount - lastSavedAwayCountRef.current);
+        if (unsavedWatchSec <= 0 && unsavedAwaySec <= 0) return;
 
+        const rootSessionId = currentSessionIdRef.current || makeVideoSessionId(studentId, viewingVideo.id);
         const payload = {
           eventType: "session",
-          sessionId: currentSessionIdRef.current || makeVideoSessionId(studentId, viewingVideo.id),
+          sessionId: `${rootSessionId}_beforeunload_${videoSaveChunkSeqRef.current + 1}`,
+          rootSessionId,
           studentId: String(studentId),
           videoId: String(viewingVideo.id),
           title: viewingVideo.title || "",
           subject: viewingVideo.subject || "",
           url: viewingVideo.url || viewingVideo.playlistUrl || "",
           videoType: viewingVideo.type || "video",
-          seconds: clampNum(actualWatchSec),
-          activeSec: clampNum(focusSec),
-          awaySec: clampNum(finalAway, 0, 86400),
-          awayCount: clampNum(finalAwayCount, 0, 10000),
+          seconds: clampNum(unsavedWatchSec),
+          activeSec: clampNum(unsavedFocusSec),
+          awaySec: clampNum(unsavedAwaySec, 0, 86400),
+          awayCount: clampNum(unsavedAwayCount, 0, 10000),
           longestAwaySec: clampNum(finalLongestAway, 0, 86400),
           durSec: clampNum(ytDurationSecRef.current || viewingVideo.durSec || 720, 1, 86400),
           date: getTodayStr(),
           timestamp: new Date().toISOString(),
           source: "student_app_youtube_iframe_api_beforeunload",
           openSec: clampNum(Math.round((Date.now() - viewStartTime) / 1000), 0, 86400),
+          partialSave: true,
         };
 
         // beforeunload에서는 async fetch를 기다릴 수 없으므로 로컬 대기열에 저장 후 다음 접속 때 Worker로 전송
@@ -1635,24 +1683,6 @@ export default function App() {
         </div>
 
         <StudentExamDdaySection items={examDdays} />
-        {/* 오늘의 영어 명언 (매일 자정에 자동 변경 — 학생 전원 동일) */}
-        {(() => {
-          const m = pickMotivation();
-          return (
-            <div style={{
-              background: "rgba(255,255,255,0.06)", borderRadius: 12,
-              padding: "12px 14px", marginBottom: pinnedMessages.length > 0 ? 12 : 0,
-              borderLeft: "3px solid rgba(255,255,255,0.35)",
-            }}>
-              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.95)", lineHeight: 1.5, fontStyle: "italic" }}>
-                "{m.quote}"
-              </div>
-              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", marginTop: 4, lineHeight: 1.5 }}>
-                {m.translation} <span style={{ color: "rgba(255,255,255,0.45)" }}>— {m.author}</span>
-              </div>
-            </div>
-          );
-        })()}
 
         {pinnedMessages.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
