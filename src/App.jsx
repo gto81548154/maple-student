@@ -1938,7 +1938,8 @@ function FitText({ text, maxFont = 13, minFont = 9, style = {} }) {
 
 // ─── 영상 매칭 헬퍼 (숙제 텍스트 → 학생의 영상들 매칭) ───
 // 사용처: 숙제 항목 옆에 ▶ 버튼 표시 + 인라인 영상 재생
-const VIDEO_TASK_KEYWORDS = ["수강", "시청", "강의", "영상"];
+// 숙제/과제 탭 관련 강의 버튼은 원장님이 명시적으로 "수강"이라고 적은 항목에만 표시한다.
+const VIDEO_TASK_KEYWORDS = ["수강"];
 
 function hasVideoKeyword(text) {
   if (!text) return false;
@@ -1950,35 +1951,84 @@ function normalizeForMatch(s) {
   return String(s || "").replace(/[-_,]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
+// 키워드 매칭용: 공백/기호 제거 후 비교
+function normalizeKeywordMatchText(s) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[^\w가-힣0-9]/g, "")
+    .trim();
+}
+
+function getVideoMatchKeywords(video = {}) {
+  const raw = Array.isArray(video.matchKeywords) ? video.matchKeywords.join(",") : String(video.matchKeywords || "");
+  return raw.split(/[,，、/\n]+/g).map(x => x.trim()).filter(Boolean);
+}
+
+function countVideoKeywordMatches(taskText, video = {}) {
+  const taskNorm = normalizeKeywordMatchText(taskText);
+  if (!taskNorm) return 0;
+  return getVideoMatchKeywords(video).filter(k => {
+    const kn = normalizeKeywordMatchText(k);
+    return kn && taskNorm.includes(kn);
+  }).length;
+}
+
 // 텍스트에서 숫자 추출 (예: "37 38" → [37, 38], "2,3" → [2, 3])
 function extractTaskNumbers(text) {
   const m = (text || "").match(/\d+/g);
   return m ? m.map(n => parseInt(n, 10)).filter(n => n > 0 && n < 10000) : [];
 }
 
+const uniqVideosById = (videos = []) => {
+  const seen = new Set();
+  return (videos || []).filter(v => {
+    const key = String(v?.id || `${v?.title || ""}_${v?.url || v?.playlistUrl || ""}`);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
 // 매칭 메인 함수
 // 반환: { hasKeyword, matched, bookCandidates }
-//   - hasKeyword: 시청 키워드 포함 여부 (▶ 버튼 표시 트리거)
-//   - matched: 책+숫자 모두 매칭된 영상들
-//   - bookCandidates: 책만 매칭된 영상들 (3단계에서 폴백용)
+//   - matchKeywords가 있으면 숙제 문장에 키워드가 포함되는 영상을 1순위로 매칭
+//   - 기존 책 이름+숫자 매칭은 fallback으로 유지
 function matchVideosForTask(taskText, studentVideos) {
   const hasKw = hasVideoKeyword(taskText);
-  if (!hasKw || !studentVideos || studentVideos.length === 0) {
+  if (!studentVideos || studentVideos.length === 0) {
     return { hasKeyword: hasKw, matched: [], bookCandidates: [] };
   }
+
   const taskNorm = normalizeForMatch(taskText);
   const taskNumbers = extractTaskNumbers(taskText);
 
-  // 1단계: subject(책 이름)가 숙제 텍스트에 포함된 영상만 후보로
+  // 1순위: 원장앱에서 설정한 강의 매칭 키워드
+  const keywordMatched = uniqVideosById(
+    studentVideos
+      .map(v => ({ ...v, _keywordMatchCount: countVideoKeywordMatches(taskText, v) }))
+      .filter(v => v._keywordMatchCount > 0)
+      .sort((a, b) => (b._keywordMatchCount || 0) - (a._keywordMatchCount || 0) || (a.order || 0) - (b.order || 0))
+  );
+  if (keywordMatched.length > 0) {
+    return { hasKeyword: true, matched: keywordMatched.slice(0, 4), bookCandidates: keywordMatched };
+  }
+
+  // 키워드가 없고, 숙제 문장에도 영상 관련 단어가 없으면 버튼을 띄우지 않음
+  if (!hasKw) {
+    return { hasKeyword: false, matched: [], bookCandidates: [] };
+  }
+
+  // 2순위: subject(책 이름)가 숙제 텍스트에 포함된 영상 후보
   const bookCandidates = studentVideos.filter(v => {
-    const subj = normalizeForMatch(v.subject);
-    return subj && taskNorm.includes(subj);
+    const subj = normalizeForMatch(v.subject || v.bookName);
+    return subj && (taskNorm.includes(subj) || subj.includes(taskNorm));
   });
   if (bookCandidates.length === 0) {
     return { hasKeyword: true, matched: [], bookCandidates: [] };
   }
 
-  // 2단계: 후보 영상 중 제목 숫자가 숙제 숫자에 포함된 것만 매칭
+  // 3순위: 후보 영상 중 제목 숫자가 숙제 숫자에 포함된 것만 매칭
   // 단, 숙제에 숫자가 없으면 책의 영상 전체가 매칭 대상 (예: "천일문 고등 그래머 강의 듣기")
   const matched = taskNumbers.length === 0
     ? bookCandidates
@@ -1987,7 +2037,7 @@ function matchVideosForTask(taskText, studentVideos) {
         return titleNums.some(tn => taskNumbers.includes(tn));
       });
 
-  return { hasKeyword: true, matched, bookCandidates };
+  return { hasKeyword: true, matched: uniqVideosById(matched).slice(0, 4), bookCandidates: uniqVideosById(bookCandidates) };
 }
 
 // 영상 제목에서 짧은 라벨 추출 (버튼에 표시할 용도)
@@ -2032,11 +2082,11 @@ function HomeworkItem({ item, isLast, isCheckedFn, isFailedFn, getFailReasonFn, 
   const showVideoButtons = hasMatch && !!toggleVideo;
 
   // 현재 펼쳐진 영상 (matched 또는 폴백 펼침 모두 포함)
-  const openVideo = showFallback ? bookCandidates.find(v => viewingVideo?.id === v.id) : null;
+  const openVideo = matched.find(v => viewingVideo?.id === v.id) || bookCandidates.find(v => viewingVideo?.id === v.id) || null;
   const isAnyOpen = !!openVideo;
 
   // 폴백 라벨용 책 이름 (보통 1개 책만 매칭됨)
-  const bookSubject = bookCandidates[0]?.subject || "";
+  const bookSubject = bookCandidates[0]?.subject || matched[0]?.subject || "";
 
   // 들여쓰기: 체크박스(22) + gap(12) + 좌측 padding(16) = 50px. fail reason과 동일한 정렬.
   const INDENT_LEFT = 50;
