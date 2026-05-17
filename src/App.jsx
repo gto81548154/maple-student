@@ -1939,6 +1939,7 @@ function FitText({ text, maxFont = 13, minFont = 9, style = {} }) {
 // ─── 영상 매칭 헬퍼 (숙제 텍스트 → 학생의 영상들 매칭) ───
 // 사용처: 숙제 항목 옆에 ▶ 버튼 표시 + 인라인 영상 재생
 // 숙제/과제 탭 관련 강의 버튼은 원장님이 명시적으로 "수강"이라고 적은 항목에만 표시한다.
+// 숙제/과제 탭 관련 강의 버튼은 원장님이 명시적으로 "수강"이라고 적은 항목에만 표시한다.
 const VIDEO_TASK_KEYWORDS = ["수강"];
 
 function hasVideoKeyword(text) {
@@ -2000,6 +2001,11 @@ function matchVideosForTask(taskText, studentVideos) {
     return { hasKeyword: hasKw, matched: [], bookCandidates: [] };
   }
 
+  // "수강"이 없는 숙제/과제 항목은 키워드가 일부 겹쳐도 관련 강의 버튼을 띄우지 않는다.
+  if (!hasKw) {
+    return { hasKeyword: false, matched: [], bookCandidates: [] };
+  }
+
   const taskNorm = normalizeForMatch(taskText);
   const taskNumbers = extractTaskNumbers(taskText);
 
@@ -2014,10 +2020,7 @@ function matchVideosForTask(taskText, studentVideos) {
     return { hasKeyword: true, matched: keywordMatched.slice(0, 4), bookCandidates: keywordMatched };
   }
 
-  // 키워드가 없고, 숙제 문장에도 영상 관련 단어가 없으면 버튼을 띄우지 않음
-  if (!hasKw) {
-    return { hasKeyword: false, matched: [], bookCandidates: [] };
-  }
+  // 여기까지 왔으면 숙제 문장에 "수강"이 있는 상태다.
 
   // 2순위: subject(책 이름)가 숙제 텍스트에 포함된 영상 후보
   const bookCandidates = studentVideos.filter(v => {
