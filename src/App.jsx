@@ -1049,6 +1049,33 @@ const buildSteps5FromLegacy = (homework, academy) => {
   return result;
 };
 
+
+// 원장앱 To-Do에서 수동으로 연결한 강의 목록을 학생앱 항목에 붙인다.
+// 저장 구조: todo.videoLinks = { "step3_0": ["학생ID_영상ID", ...] }
+function normalizeManualVideoIds(value) {
+  if (Array.isArray(value)) return value.map(v => String(v || "").trim()).filter(Boolean);
+  if (value && typeof value === "object") {
+    if (Array.isArray(value.videoIds)) return normalizeManualVideoIds(value.videoIds);
+    if (Array.isArray(value.ids)) return normalizeManualVideoIds(value.ids);
+    if (value.id) return normalizeManualVideoIds([value.id]);
+  }
+  return String(value || "")
+    .split(/[,，、\s]+/g)
+    .map(v => v.trim())
+    .filter(Boolean);
+}
+
+function getTodoManualVideoIds(todo = {}, keyCandidates = []) {
+  const linkMap = todo.videoLinks || todo.manualVideoLinks || todo.manualVideos || {};
+  if (!linkMap || typeof linkMap !== "object") return [];
+  for (const key of keyCandidates.filter(Boolean)) {
+    if (!Object.prototype.hasOwnProperty.call(linkMap, key)) continue;
+    const ids = normalizeManualVideoIds(linkMap[key]);
+    if (ids.length > 0) return ids;
+  }
+  return [];
+}
+
 const buildStepGroups = (todo) => {
   if (!todo) return [];
   const steps5 = normalizeSteps5(todo.steps5 || buildSteps5FromLegacy(todo.homework || "", todo.academy || ""));
@@ -1081,10 +1108,14 @@ const buildStepGroups = (todo) => {
         const idx = type === "hw" ? hwIdx++ : acIdx++;
         const stableKey = `${def.key}_${stableIndex}`;
         stableIndex += 1;
+        const itemKey = makeItemKey(type, keyText, seen);
+        const legacyKey = `${type}_${idx}`;
+        const videoIds = getTodoManualVideoIds(todo, [stableKey, itemKey, legacyKey]);
         return {
-          key: makeItemKey(type, keyText, seen),
-          legacyKey: `${type}_${idx}`,
+          key: itemKey,
+          legacyKey,
           stableKey,
+          videoIds,
           text: lesson ? `${stripBox(keyText)} → 수업-${lesson}` : stripBox(keyText),
           type,
           idx,
@@ -2116,6 +2147,34 @@ const uniqVideosById = (videos = []) => {
   });
 };
 
+
+const manualVideoIdMatches = (video = {}, manualId = "") => {
+  const target = String(manualId || "").trim();
+  if (!target) return false;
+  const candidates = [
+    video.id,
+    video.videoId,
+    video.rawVideoId,
+    video.curriculumVideoId,
+    video.sourceVideoId,
+  ].map(v => String(v || "").trim()).filter(Boolean);
+  if (candidates.includes(target)) return true;
+  // 원장앱은 학생별 영상 id를 `${studentId}_${videoId}`로 저장한다.
+  // 혹시 videoId만 저장된 경우도 suffix로 안전하게 매칭한다.
+  return candidates.some(id => id.endsWith(`_${target}`) || target.endsWith(`_${id}`));
+};
+
+const getManualMatchedVideos = (item = {}, studentVideos = []) => {
+  const ids = normalizeManualVideoIds(item.videoIds || item.manualVideoIds || []);
+  if (ids.length === 0) return [];
+  const matched = [];
+  ids.forEach(id => {
+    const found = (studentVideos || []).find(v => manualVideoIdMatches(v, id));
+    if (found) matched.push({ ...found, _manualLinked: true });
+  });
+  return uniqVideosById(matched);
+};
+
 // 매칭 메인 함수
 // 반환: { hasKeyword, matched, bookCandidates }
 //   - matchKeywords가 있으면 숙제 문장에 키워드가 포함되는 영상을 1순위로 매칭
@@ -2214,9 +2273,24 @@ function HomeworkItem({ item, isLast, isCheckedFn, isFailedFn, getFailReasonFn, 
   const done = isCheckedFn(item);
   const fail = isFailedFn ? isFailedFn(item) : false;
   const failReason = fail && getFailReasonFn ? getFailReasonFn(item) : "";
-  const { hasKeyword, matched, bookCandidates } = matchVideosForTask(item.text, studentVideos);
+
+  // 내신 과제는 자동 추측 매칭을 끈다.
+  // 원장앱에서 수동으로 연결한 영상(videoLinks)이 있을 때만 학생앱에 강의 버튼을 보여준다.
+  // 정규 과제는 기존 자동 매칭을 유지한다.
+  const taskArea = inferTaskArea(item.text);
+  const isNaesinTask = taskArea === "naesin";
+  const manualMatched = getManualMatchedVideos(item, studentVideos);
+  const isManualLinked = manualMatched.length > 0;
+  const autoMatch = (!isNaesinTask && !isManualLinked)
+    ? matchVideosForTask(item.text, studentVideos)
+    : { hasKeyword: false, matched: [], bookCandidates: [] };
+
+  const hasKeyword = isManualLinked ? true : autoMatch.hasKeyword;
+  const matched = isManualLinked ? manualMatched : autoMatch.matched;
+  // 수동 연결이 있으면 자동 후보/다른 강의 보기까지 섞지 않고, 수동 연결 영상만 보여준다.
+  const bookCandidates = isManualLinked ? manualMatched : autoMatch.bookCandidates;
   const hasMatch = matched.length > 0;
-  const showFallback = hasKeyword && bookCandidates.length > 0 && !!toggleVideo;
+  const showFallback = !isNaesinTask && hasKeyword && bookCandidates.length > 0 && !!toggleVideo;
   const showVideoButtons = hasMatch && !!toggleVideo;
 
   // 현재 펼쳐진 영상 (matched 또는 폴백 펼침 모두 포함)
@@ -2276,6 +2350,7 @@ function HomeworkItem({ item, isLast, isCheckedFn, isFailedFn, getFailReasonFn, 
                 display: "inline-flex", alignItems: "center", gap: 4, transition: "all 0.15s", whiteSpace: "nowrap",
               }}>
                 <span style={{ fontSize: 10 }}>{isOpen ? "▼" : "▶"}</span> {getVideoShortLabel(v)}
+                {isManualLinked && <span style={{fontSize:9,color:"#f59e0b",fontWeight:900}}>수동</span>}
               </button>
             );
           })}
