@@ -120,6 +120,45 @@ const loadStudentBundle = async (studentId) => {
   return await loadStudentBundleFromWorker(studentId);
 };
 
+const getStudentBundleStorageKey = (studentId) => `maple_student_bundle_${studentId}`;
+
+const restoreStudentBundleFromLocal = (studentId) => {
+  try {
+    const raw = localStorage.getItem(getStudentBundleStorageKey(studentId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.bundle || !parsed.bundle.student) return null;
+    // 오래된 백업을 그대로 보여주면 혼란이 크므로 24시간 이내 자료만 사용한다.
+    if (Date.now() - (parsed.savedAt || 0) > 24 * 60 * 60 * 1000) return null;
+    return { ...parsed.bundle, source: "local-backup" };
+  } catch (e) {
+    return null;
+  }
+};
+
+const saveStudentBundleToLocal = (studentId, bundle = {}) => {
+  try {
+    if (!studentId || !bundle?.student) return;
+    const snapshot = {
+      savedAt: Date.now(),
+      bundle: {
+        student: bundle.student,
+        todos: bundle.todos || {},
+        checklistData: bundle.checklistData || {},
+        records: bundle.records || {},
+        videos: bundle.videos || [],
+        videoWatch: bundle.videoWatch || {},
+        makeups: bundle.makeups || [],
+        customHolidays: bundle.customHolidays || {},
+        exams: Array.isArray(bundle.exams || bundle.exam3) ? (bundle.exams || bundle.exam3) : [],
+      },
+    };
+    localStorage.setItem(getStudentBundleStorageKey(studentId), JSON.stringify(snapshot));
+  } catch (e) {
+    console.warn("localStorage 백업 실패:", e?.message || e);
+  }
+};
+
 // ─── Helpers ───
 const DK = { 0: "일", 1: "월", 2: "화", 3: "수", 4: "목", 5: "금", 6: "토" };
 const fmtDateKR = (ds) => { const d = new Date(ds + "T00:00:00"); return `${d.getMonth() + 1}월 ${d.getDate()}일 ${DK[d.getDay()]}요일`; };
@@ -1019,6 +1058,9 @@ const buildStepGroups = (todo) => {
 
   return STEP_DEFS.map(def => {
     const type = def.key === "step1" ? "hw" : "ac";
+    // 원장앱 체크 저장 키와 맞추기 위해 각 step 안에서 0부터 다시 센다.
+    // 예: step1_0, step3_1
+    let stableIndex = 0;
     const items = String(steps5[def.key] || "")
       .split("\n")
       .map(line => {
@@ -1037,9 +1079,12 @@ const buildStepGroups = (todo) => {
         keyText = cleanTodoText(keyText);
         if (!keyText) return null;
         const idx = type === "hw" ? hwIdx++ : acIdx++;
+        const stableKey = `${def.key}_${stableIndex}`;
+        stableIndex += 1;
         return {
           key: makeItemKey(type, keyText, seen),
           legacyKey: `${type}_${idx}`,
+          stableKey,
           text: lesson ? `${stripBox(keyText)} → 수업-${lesson}` : stripBox(keyText),
           type,
           idx,
@@ -1078,6 +1123,7 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false); // 수동 새로고침 상태
   const [syncSource, setSyncSource] = useState(""); // worker
   const [lastLoadedAt, setLastLoadedAt] = useState(null); // 마지막 동기화 시각
+  const [offlineNotice, setOfflineNotice] = useState(""); // Worker 실패 시 로컬 백업 표시 안내
   const loadInFlightRef = useRef(false); // 30초 polling 중복 호출 방지
 
   // 이탈 추적용 ref (state로 안 쓰는 이유: 매 visibilitychange마다 리렌더 안 시키기 위함)
@@ -1099,17 +1145,29 @@ export default function App() {
   const videoSaveChunkSeqRef = useRef(0);  // 자동 저장 조각 ID 충돌 방지
   const videoSaveInFlightRef = useRef(false); // 자동 저장 중복 호출 방지
 
+  const keepPrevIfUnexpectedEmpty = (prev, next, label) => {
+    const prevCount = Array.isArray(prev) ? prev.length : Object.keys(prev || {}).length;
+    const nextCount = Array.isArray(next) ? next.length : Object.keys(next || {}).length;
+    if (prevCount > 0 && nextCount === 0) {
+      console.warn(`[guard] ${label} 빈 응답 무시 (prev 보존)`);
+      return prev;
+    }
+    return next;
+  };
+
   const applyBundle = (bundle) => {
+    if (!bundle?.student) return;
     setStudent(bundle.student);
-    setTodos(bundle.todos || {});
-    setChecklistData(bundle.checklistData || {});
-    setRecords(bundle.records || {});
-    setVideos(bundle.videos || []);
+    setTodos(prev => keepPrevIfUnexpectedEmpty(prev, bundle.todos || {}, "todos"));
+    setChecklistData(prev => keepPrevIfUnexpectedEmpty(prev, bundle.checklistData || {}, "checklistData"));
+    setRecords(prev => keepPrevIfUnexpectedEmpty(prev, bundle.records || {}, "records"));
+    setVideos(prev => keepPrevIfUnexpectedEmpty(prev, bundle.videos || [], "videos"));
     setVideoWatch(prev => mergeVideoWatchSnapshots(bundle.videoWatch || {}, prev || {}));
     setMakeups(bundle.makeups || []);
     setCustomHolidays(bundle.customHolidays || {});
     setExams(Array.isArray(bundle.exams || bundle.exam3) ? (bundle.exams || bundle.exam3) : []);
     setSyncSource(bundle.source || "");
+    setOfflineNotice(bundle.source === "local-backup" ? "동기화 서버 연결 실패로 최근 백업 데이터를 표시 중입니다." : "");
     setLastLoadedAt(new Date());
   };
 
@@ -1128,10 +1186,17 @@ export default function App() {
         return;
       }
       applyBundle(bundle);
+      saveStudentBundleToLocal(studentId, bundle);
       setError(null);
     } catch (e) {
       console.error("Load error:", e);
-      setError("load_error");
+      const localBundle = restoreStudentBundleFromLocal(studentId);
+      if (localBundle) {
+        applyBundle(localBundle);
+        setError(null);
+      } else {
+        setError("load_error");
+      }
     } finally {
       loadInFlightRef.current = false;
       setLoading(false);
@@ -1598,10 +1663,12 @@ export default function App() {
 
   const chk = checklistData[activeDate]?.[studentId] || checklistData[activeDate]?.[Number(studentId)] || {};
   // 어드민과 동일한 3-상태 모델: undefined/false → none, true/"done" → done, "fail:사유..." → fail
-  // 새 방식(item.key)을 먼저 보고, 없으면 예전 학생앱 방식(hw_0/ac_0)으로 fallback한다.
+  // 원장앱은 stableKey(step1_0, step3_1)를 우선 저장 키로 쓰므로 학생앱도 stableKey부터 조회한다.
+  const TODO_CHECK_CLEAR_VALUE = "__todo_clear__";
   const getCheckValue = (itemOrType, idx) => {
     const candidates = [];
     if (itemOrType && typeof itemOrType === "object") {
+      if (itemOrType.stableKey) candidates.push(itemOrType.stableKey);
       if (itemOrType.key) candidates.push(itemOrType.key);
       if (itemOrType.legacyKey) candidates.push(itemOrType.legacyKey);
       if (itemOrType.type && itemOrType.idx !== undefined) candidates.push(`${itemOrType.type}_${itemOrType.idx}`);
@@ -1609,7 +1676,11 @@ export default function App() {
       candidates.push(`${itemOrType}_${idx}`);
     }
     for (const key of [...new Set(candidates)]) {
-      if (Object.prototype.hasOwnProperty.call(chk, key)) return chk[key];
+      if (!Object.prototype.hasOwnProperty.call(chk, key)) continue;
+      const value = chk[key];
+      // 원장앱에서 명시적 미체크로 저장한 센티널이면 구버전 fallback을 더 보지 않는다.
+      if (value === TODO_CHECK_CLEAR_VALUE) return undefined;
+      if (value !== false && value !== null && value !== undefined && value !== "") return value;
     }
     return undefined;
   };
@@ -1701,6 +1772,12 @@ export default function App() {
         )}
         </div>
       </div>
+
+      {offlineNotice && (
+        <div style={{ padding: "10px 24px", background: "#fff7e6", borderBottom: "1px solid #ffe0a3", color: "#8a5a00", fontSize: 12, fontWeight: 700 }}>
+          <div style={{ maxWidth: MAX_W, margin: "0 auto" }}>⚠️ {offlineNotice}</div>
+        </div>
+      )}
 
       {totalTasks > 0 && (
         <div style={{ padding: "14px 24px", background: "#fff", borderBottom: "1px solid #eee" }}>
@@ -1975,6 +2052,54 @@ function countVideoKeywordMatches(taskText, video = {}) {
   }).length;
 }
 
+// 키워드가 책 이름 안에 포함되고 짧으면 그 책에서는 generic 키워드로 본다.
+// 예: 책 이름 "천일문-기본", 키워드 "천일문"/"기본" → 모든 UNIT 공통이라 변별력 없음.
+const isGenericVideoKeyword = (keyword = "", video = {}) => {
+  const kn = normalizeKeywordMatchText(keyword);
+  if (!kn) return true;
+  const bookNorm = normalizeKeywordMatchText(video.subject || video.bookName || "");
+  return bookNorm.includes(kn) && kn.length <= 5;
+};
+
+const videoMatchesTaskNumber = (video = {}, taskNumbers = []) => {
+  if (!taskNumbers.length) return false;
+  const titleNums = extractTaskNumbers(video.title || "");
+  if (titleNums.some(n => taskNumbers.includes(n))) return true;
+  const keywordNums = getVideoMatchKeywords(video).flatMap(k => extractTaskNumbers(k));
+  return keywordNums.some(n => taskNumbers.includes(n));
+};
+
+const countSpecificVideoKeywordMatches = (taskText, video = {}) => {
+  const taskNorm = normalizeKeywordMatchText(taskText);
+  if (!taskNorm) return 0;
+  return getVideoMatchKeywords(video).filter(k => {
+    if (isGenericVideoKeyword(k, video)) return false;
+    const kn = normalizeKeywordMatchText(k);
+    return kn && taskNorm.includes(kn);
+  }).length;
+};
+
+const NAESIN_VIDEO_HINTS = ["내신", "기말", "중간", "수행평가", "내신콘서트"];
+const REGULAR_VIDEO_HINTS = ["구문", "문법", "독해", "단어", "어휘", "천일문", "그래머", "어법끝", "voca", "VOCA"];
+
+const inferTaskArea = (taskText = "") => {
+  const t = String(taskText || "");
+  const isNaesin = NAESIN_VIDEO_HINTS.some(h => t.includes(h));
+  const isRegular = REGULAR_VIDEO_HINTS.some(h => t.includes(h));
+  if (isNaesin && !isRegular) return "naesin";
+  if (isRegular && !isNaesin) return "regular";
+  return null;
+};
+
+const inferVideoArea = (video = {}) => {
+  const t = `${video.subject || ""} ${video.bookName || ""} ${video.title || ""}`;
+  const isNaesin = NAESIN_VIDEO_HINTS.some(h => t.includes(h));
+  const isRegular = REGULAR_VIDEO_HINTS.some(h => t.includes(h));
+  if (isNaesin && !isRegular) return "naesin";
+  if (isRegular && !isNaesin) return "regular";
+  return null;
+};
+
 // 텍스트에서 숫자 추출 (예: "37 38" → [37, 38], "2,3" → [2, 3])
 function extractTaskNumbers(text) {
   const m = (text || "").match(/\d+/g);
@@ -2006,13 +2131,37 @@ function matchVideosForTask(taskText, studentVideos) {
     return { hasKeyword: false, matched: [], bookCandidates: [] };
   }
 
+  // 영역 힌트가 명확하면 영상 풀을 먼저 좁힌다. 모호하면 전체 풀을 그대로 쓴다.
+  const taskArea = inferTaskArea(taskText);
+  const filteredVideos = taskArea
+    ? studentVideos.filter(v => {
+        const va = inferVideoArea(v);
+        return !va || va === taskArea;
+      })
+    : studentVideos;
+
   const taskNorm = normalizeForMatch(taskText);
   const taskNumbers = extractTaskNumbers(taskText);
 
-  // 1순위: 원장앱에서 설정한 강의 매칭 키워드
+  // 1순위: 책 이름으로 후보를 먼저 좁힌다.
+  // "천일문/기본" 같은 공통 키워드가 UNIT 1부터 잡는 문제를 막기 위한 핵심 변경.
+  const bookCandidates = uniqVideosById(filteredVideos.filter(v => {
+    const subj = normalizeForMatch(v.subject || v.bookName);
+    return subj && (taskNorm.includes(subj) || subj.includes(taskNorm));
+  }));
+
+  // 2순위: 과제에 숫자가 있으면, 책 후보 안에서 제목/키워드 숫자가 맞는 영상만 확정한다.
+  if (taskNumbers.length > 0 && bookCandidates.length > 0) {
+    const numberMatched = uniqVideosById(bookCandidates.filter(v => videoMatchesTaskNumber(v, taskNumbers)));
+    if (numberMatched.length > 0) {
+      return { hasKeyword: true, matched: numberMatched.slice(0, 4), bookCandidates };
+    }
+  }
+
+  // 3순위: generic을 제외한 구체 키워드(수동태, 관계대명사, UNIT 17 등)만 매칭한다.
   const keywordMatched = uniqVideosById(
-    studentVideos
-      .map(v => ({ ...v, _keywordMatchCount: countVideoKeywordMatches(taskText, v) }))
+    filteredVideos
+      .map(v => ({ ...v, _keywordMatchCount: countSpecificVideoKeywordMatches(taskText, v) }))
       .filter(v => v._keywordMatchCount > 0)
       .sort((a, b) => (b._keywordMatchCount || 0) - (a._keywordMatchCount || 0) || (a.order || 0) - (b.order || 0))
   );
@@ -2020,27 +2169,13 @@ function matchVideosForTask(taskText, studentVideos) {
     return { hasKeyword: true, matched: keywordMatched.slice(0, 4), bookCandidates: keywordMatched };
   }
 
-  // 여기까지 왔으면 숙제 문장에 "수강"이 있는 상태다.
-
-  // 2순위: subject(책 이름)가 숙제 텍스트에 포함된 영상 후보
-  const bookCandidates = studentVideos.filter(v => {
-    const subj = normalizeForMatch(v.subject || v.bookName);
-    return subj && (taskNorm.includes(subj) || subj.includes(taskNorm));
-  });
-  if (bookCandidates.length === 0) {
-    return { hasKeyword: true, matched: [], bookCandidates: [] };
+  // 4순위: 숫자 없는 과제는 책 후보 전체를 보여준다. 숫자가 있는데 숫자 매칭이 없으면 빈 결과.
+  if (bookCandidates.length > 0) {
+    const matched = taskNumbers.length === 0 ? bookCandidates : [];
+    return { hasKeyword: true, matched: matched.slice(0, 4), bookCandidates };
   }
 
-  // 3순위: 후보 영상 중 제목 숫자가 숙제 숫자에 포함된 것만 매칭
-  // 단, 숙제에 숫자가 없으면 책의 영상 전체가 매칭 대상 (예: "천일문 고등 그래머 강의 듣기")
-  const matched = taskNumbers.length === 0
-    ? bookCandidates
-    : bookCandidates.filter(v => {
-        const titleNums = extractTaskNumbers(v.title);
-        return titleNums.some(tn => taskNumbers.includes(tn));
-      });
-
-  return { hasKeyword: true, matched: uniqVideosById(matched).slice(0, 4), bookCandidates: uniqVideosById(bookCandidates) };
+  return { hasKeyword: true, matched: [], bookCandidates: [] };
 }
 
 // 영상 제목에서 짧은 라벨 추출 (버튼에 표시할 용도)
