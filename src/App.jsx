@@ -86,6 +86,22 @@ const normalizeVideoWatchForStudent = (source = {}, studentId) => {
   return Object.keys(source).length ? { [sid]: source } : {};
 };
 
+// 오답 단어 TEST: Worker가 이미 학생 1명치 { "YYYY-MM": { words } }를 보내면 그대로 사용한다.
+// 혹시 전체 { studentId: {...} } 형태로 오면 해당 학생만 추출해 타학생 노출을 막는다.
+const normalizeVocabWrongWordsForStudent = (source = {}, studentId) => {
+  const sid = String(studentId);
+  if (!source || typeof source !== "object" || Array.isArray(source)) return {};
+
+  const direct = source[sid] ?? source[Number(studentId)];
+  if (direct && typeof direct === "object" && !Array.isArray(direct)) return direct;
+
+  const keys = Object.keys(source);
+  const looksLikeMonths = keys.length > 0 && keys.every(k => /^\d{4}-\d{2}$/.test(k));
+  if (looksLikeMonths) return source;
+
+  return {};
+};
+
 const loadStudentBundleFromWorker = async (studentId) => {
   const url = resolveStudentSyncUrl(studentId);
   if (!url) throw new Error("STUDENT_SYNC_API_URL 미설정");
@@ -101,6 +117,7 @@ const loadStudentBundleFromWorker = async (studentId) => {
   const recSource = payload.records || payload.rec3 || {};
   const vwSource = payload.videoWatch || payload.video_watch || {};
   const examSource = payload.exams || payload.exam3 || [];
+  const vocabWrongSource = payload.vocabWrongWords || payload.vocab_wrong_words || {};
 
   return {
     source: "worker",
@@ -113,6 +130,7 @@ const loadStudentBundleFromWorker = async (studentId) => {
     makeups: payload.makeups || payload.mkp3 || [],
     customHolidays: payload.customHolidays || payload.holi3 || {},
     exams: Array.isArray(examSource) ? examSource : [],
+    vocabWrongWords: normalizeVocabWrongWordsForStudent(vocabWrongSource, studentId),
   };
 };
 
@@ -151,6 +169,7 @@ const saveStudentBundleToLocal = (studentId, bundle = {}) => {
         makeups: bundle.makeups || [],
         customHolidays: bundle.customHolidays || {},
         exams: Array.isArray(bundle.exams || bundle.exam3) ? (bundle.exams || bundle.exam3) : [],
+        vocabWrongWords: bundle.vocabWrongWords || {},
       },
     };
     localStorage.setItem(getStudentBundleStorageKey(studentId), JSON.stringify(snapshot));
@@ -611,6 +630,77 @@ const VIDEO_WATCH_API_KEY =
   import.meta.env.VITE_VIDEO_WATCH_API_KEY ||
   import.meta.env.VITE_MAPL_SYNC_API_KEY ||
   "";
+
+// ─── 오답 단어 TEST 결과 저장 API ───
+// 학생앱은 AI 채점을 하지 않고, 완료 기록(통과/재시험/정답률)만 Worker로 보낸다.
+const VOCAB_TEST_RESULT_API_URL = (() => {
+  const explicit = import.meta.env.VITE_VOCAB_TEST_RESULT_API_URL || "";
+  if (explicit) return explicit;
+  const base = import.meta.env.VITE_MAPL_SYNC_URL || "";
+  if (!base) return "";
+  return String(base).replace(/\/+$/, "") + "/vocab-test-result";
+})();
+const VOCAB_TEST_PENDING_KEY = "maple_pending_vocab_test_v1";
+const VOCAB_PASS_MAX_WRONG_RATE = 0.10; // 오답률 10% 이하 통과 (= 정답률 90% 이상)
+
+function judgeVocabTest(totalCount, wrongCount) {
+  const total = Number(totalCount) || 0;
+  const wrong = Number(wrongCount) || 0;
+  if (total <= 0) return { accuracy: 100, result: "pass" };
+  const accuracy = Math.round(((total - wrong) / total) * 100);
+  const wrongRate = wrong / total;
+  return { accuracy, result: wrongRate <= VOCAB_PASS_MAX_WRONG_RATE ? "pass" : "retest" };
+}
+
+const getPendingVocabTests = () => {
+  try { return JSON.parse(localStorage.getItem(VOCAB_TEST_PENDING_KEY) || "[]"); }
+  catch (e) { return []; }
+};
+const setPendingVocabTests = (items) => {
+  try { localStorage.setItem(VOCAB_TEST_PENDING_KEY, JSON.stringify(items || [])); }
+  catch (e) { /* ignore */ }
+};
+const makeVocabAttemptId = (studentId, monthKey) =>
+  `${studentId}_${monthKey}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+const queuePendingVocabTest = (payload) => {
+  const pending = getPendingVocabTests();
+  const attemptId = payload?.attemptId || `${payload?.studentId || ""}_${payload?.monthKey || ""}_${payload?.completedAt || Date.now()}`;
+  if (!pending.some(x => (x.attemptId || "") === attemptId)) {
+    pending.push({ ...payload, attemptId });
+    setPendingVocabTests(pending.slice(-100));
+  }
+};
+
+const postVocabTestResult = async (payload, { queueOnFail = true } = {}) => {
+  if (!VOCAB_TEST_RESULT_API_URL) {
+    if (queueOnFail) queuePendingVocabTest(payload);
+    return false;
+  }
+  try {
+    const resp = await fetch(VOCAB_TEST_RESULT_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) throw new Error(`vocab-test-result 저장 실패: ${resp.status}`);
+    return true;
+  } catch (e) {
+    if (queueOnFail) queuePendingVocabTest(payload);
+    return false;
+  }
+};
+
+const flushPendingVocabTests = async () => {
+  const pending = getPendingVocabTests();
+  if (!pending.length || !VOCAB_TEST_RESULT_API_URL) return;
+  const failed = [];
+  for (const item of pending) {
+    const ok = await postVocabTestResult({ ...item, _retry: true }, { queueOnFail: false });
+    if (!ok) failed.push(item);
+  }
+  setPendingVocabTests(failed.slice(-100));
+};
 
 const clampNum = (v, min = 0, max = 21600) => {
   const n = Number(v);
@@ -1115,6 +1205,7 @@ export default function App() {
   const [makeups, setMakeups] = useState([]);
   const [customHolidays, setCustomHolidays] = useState({});
   const [exams, setExams] = useState([]);
+  const [vocabWrongWords, setVocabWrongWords] = useState({});
   const [tab, setTab] = useState("tasks");
   const [selectedDate, setSelectedDate] = useState(null);
   const [viewingVideo, setViewingVideo] = useState(null);
@@ -1169,6 +1260,7 @@ export default function App() {
     setMakeups(bundle.makeups || []);
     setCustomHolidays(bundle.customHolidays || {});
     setExams(Array.isArray(bundle.exams || bundle.exam3) ? (bundle.exams || bundle.exam3) : []);
+    setVocabWrongWords(prev => keepPrevIfUnexpectedEmpty(prev, bundle.vocabWrongWords || {}, "vocabWrongWords"));
     setSyncSource(bundle.source || "");
     setOfflineNotice(bundle.source === "local-backup" ? "동기화 서버 연결 실패로 최근 백업 데이터를 표시 중입니다." : "");
     setLastLoadedAt(new Date());
@@ -1564,7 +1656,10 @@ export default function App() {
           if (legacyPending.length > 0) localStorage.removeItem("pending_vtime");
         } catch (e) { /* ignore */ }
 
-        // 3) 새 대기열을 Worker로 순차 전송. 실패한 항목만 다시 보관.
+        // 3) 오답 단어 TEST 결과 대기열도 함께 재전송
+        await flushPendingVocabTests();
+
+        // 4) 새 영상 대기열을 Worker로 순차 전송. 실패한 항목만 다시 보관.
         const pending = getPendingVideoWatch();
         setPendingVideoCount(pending.length);
         if (pending.length === 0) return;
@@ -1711,6 +1806,9 @@ export default function App() {
   const pct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
 
   const studentVideos = videos.filter(v => !v.studentId || String(v.studentId) === String(studentId));
+  const hasVocabWrong = Object.values(vocabWrongWords || {}).some(m =>
+    Object.values(m?.words || {}).some(w => (w.status || "active") === "active" && Array.isArray(w.correctAnswers) && w.correctAnswers.length > 0)
+  );
 
   // 다가올 등원일 텍스트 (헤더 표시용)
   const upcomingAtt = computeUpcomingAttendance(student, makeups, customHolidays);
@@ -1803,6 +1901,7 @@ export default function App() {
         {[
           { key: "tasks", label: "📋 숙제/과제" },
           ...(studentVideos.length > 0 ? [{ key: "videos", label: "🎬 강의 영상" }] : []),
+          ...(hasVocabWrong ? [{ key: "vocabWrong", label: "📝 오답 단어" }] : []),
         ].map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
             flex: 1, padding: "14px 0", border: "none", cursor: "pointer",
@@ -1966,8 +2065,253 @@ export default function App() {
           </div>
           );
         })()}
+        {tab === "vocabWrong" && (
+          <VocabWrongTab vocabWrongWords={vocabWrongWords} studentId={studentId} />
+        )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── VocabWrongTab: 월별 오답 단어 TEST ───
+// 숙제/과제의 "2. 단어 TEST"와 섞지 않고 상단 별도 탭에서만 보여준다.
+// 2차: 완료 결과를 Worker로 보내고, 통과한 단어는 다음 풀에서 제외되도록 한다.
+function VocabWrongTab({ vocabWrongWords = {}, studentId }) {
+  const [mode, setMode] = useState("list"); // list | test | done
+  const [active, setActive] = useState(null);
+  const [idx, setIdx] = useState(0);
+  const [input, setInput] = useState("");
+  const [revealed, setRevealed] = useState(false);
+  const [judged, setJudged] = useState(null);
+  const [answers, setAnswers] = useState([]);
+  const [startedAt, setStartedAt] = useState(null);
+  const [summary, setSummary] = useState(null);
+  const [sendStatus, setSendStatus] = useState("");
+
+  const monthLabel = (mk) => {
+    const [y, m] = String(mk || "").split("-");
+    return y && m ? `${y}년 ${Number(m)}월` : mk;
+  };
+
+  const fmtWrongDate = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`;
+  };
+
+  // 학생앱은 AI 채점 없음. 정답 배열과 단순 비교만 한다.
+  const norm = (s) => String(s || "").trim().replace(/\s+/g, "");
+
+  const months = Object.keys(vocabWrongWords || {})
+    .map((mk) => {
+      const all = Object.values(vocabWrongWords[mk]?.words || {});
+      const words = all
+        .filter((w) => (w.status || "active") === "active" && Array.isArray(w.correctAnswers) && w.correctAnswers.length > 0)
+        .sort((a, b) => String(a.word || "").localeCompare(String(b.word || "")));
+      const starredCount = all.filter(w => w.starred && (w.status || "active") !== "archived").length;
+      const lastWrongAt = all.map(w => w.lastWrongAt || w.firstWrongAt || "").filter(Boolean).sort().slice(-1)[0] || "";
+      return { monthKey: mk, words, count: words.length, starredCount, lastWrongAt };
+    })
+    .filter((m) => m.count > 0 || m.starredCount > 0)
+    .sort((a, b) => b.monthKey.localeCompare(a.monthKey));
+
+  const resetProgress = () => {
+    setIdx(0);
+    setInput("");
+    setRevealed(false);
+    setJudged(null);
+    setAnswers([]);
+    setSummary(null);
+    setSendStatus("");
+  };
+
+  const startTest = (m) => {
+    if (!m.words.length) return;
+    setActive(m);
+    resetProgress();
+    setStartedAt(new Date().toISOString());
+    setMode("test");
+  };
+
+  const backToList = () => {
+    setMode("list");
+    setActive(null);
+    resetProgress();
+    setStartedAt(null);
+  };
+
+  const buildFinalSummary = (finalAnswers) => {
+    const words = active?.words || [];
+    const wrongItems = words.filter((w, i) => finalAnswers[i] && finalAnswers[i].correct === false);
+    const wrongWordKeys = wrongItems.map(w => w.wordKey || String(w.word || "").trim().toLowerCase()).filter(Boolean);
+    const wrongLabels = wrongItems.map(w => w.word || w.wordKey).filter(Boolean);
+    const total = words.length;
+    const wrong = wrongWordKeys.length;
+    const { accuracy, result } = judgeVocabTest(total, wrong);
+    return { total, correct: Math.max(0, total - wrong), wrong, accuracy, result, wrongWordKeys, wrongLabels };
+  };
+
+  const sendResult = async (finalSummary) => {
+    const completedAt = new Date().toISOString();
+    const payload = {
+      attemptId: makeVocabAttemptId(studentId, active?.monthKey),
+      studentId: String(studentId || ""),
+      monthKey: active?.monthKey || "",
+      testedWordKeys: (active?.words || []).map(w => w.wordKey || String(w.word || "").trim().toLowerCase()).filter(Boolean),
+      wrongWords: finalSummary.wrongWordKeys,
+      wrongWordLabels: finalSummary.wrongLabels,
+      totalCount: finalSummary.total,
+      correctCount: finalSummary.correct,
+      wrongCount: finalSummary.wrong,
+      accuracy: finalSummary.accuracy,
+      result: finalSummary.result,
+      startedAt,
+      completedAt,
+    };
+    const ok = await postVocabTestResult(payload);
+    setSendStatus(ok ? "원장앱에 결과가 저장되었습니다." : "인터넷 연결 후 원장앱으로 자동 전송됩니다.");
+  };
+
+  if (mode === "list") {
+    return (
+      <div>
+        <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 6, color: "#1a1a2e" }}>오답 단어 TEST</div>
+        <div style={{ fontSize: 13, color: "#777", marginBottom: 16 }}>원장앱 채점에서 틀린 단어만 월별로 복습합니다.</div>
+        {months.length === 0 ? (
+          <div style={{ padding: 24, textAlign: "center", color: "#999", fontSize: 14, background: "#fff", borderRadius: 14 }}>
+            아직 오답 단어가 없습니다.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {months.map((m) => (
+              <div key={m.monthKey} style={{ background: "#fff", border: "1px solid #eee", borderRadius: 14, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: "#1a1a2e" }}>{monthLabel(m.monthKey)}</div>
+                    <div style={{ fontSize: 13, color: "#777", marginTop: 4 }}>
+                      테스트할 단어 <b style={{ color: "#7c4dff" }}>{m.count}</b>개
+                      {m.starredCount > 0 && <span style={{ color: "#d4537e", marginLeft: 8 }}>★ 어려운 단어 {m.starredCount}개</span>}
+                    </div>
+                    {m.lastWrongAt && <div style={{ fontSize: 12, color: "#aaa", marginTop: 2 }}>최근 오답: {fmtWrongDate(m.lastWrongAt)}</div>}
+                  </div>
+                  <button onClick={() => startTest(m)} disabled={m.count === 0} style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: m.count === 0 ? "#ccc" : "#7c4dff", color: "#fff", fontWeight: 800, fontSize: 13, cursor: m.count === 0 ? "default" : "pointer", flexShrink: 0 }}>
+                    {m.count === 0 ? "모두 통과" : "TEST 시작"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (mode === "done" && summary) {
+    const pass = summary.result === "pass";
+    return (
+      <div>
+        <button onClick={backToList} style={{ border: "none", background: "transparent", color: "#777", fontSize: 14, cursor: "pointer", marginBottom: 12 }}>← 월별 목록</button>
+        <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 22, textAlign: "center", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+          <div style={{ fontSize: 34, marginBottom: 10 }}>{pass ? "✅" : "⭐"}</div>
+          <div style={{ fontSize: 20, fontWeight: 900, color: pass ? "#047857" : "#c0392b", marginBottom: 6 }}>{pass ? "통과!" : "재시험 필요"}</div>
+          <div style={{ fontSize: 13, color: "#777", marginBottom: 18 }}>{monthLabel(active?.monthKey)} 오답 단어 TEST 결과입니다.</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
+            <div style={{ padding: 12, borderRadius: 12, background: "#f6f7fb" }}><b>{summary.total}</b><br/><span style={{ fontSize: 12, color: "#777" }}>전체</span></div>
+            <div style={{ padding: 12, borderRadius: 12, background: "#e8f8ef", color: "#047857" }}><b>{summary.correct}</b><br/><span style={{ fontSize: 12 }}>정답</span></div>
+            <div style={{ padding: 12, borderRadius: 12, background: "#fde8e8", color: "#c0392b" }}><b>{summary.wrong}</b><br/><span style={{ fontSize: 12 }}>오답</span></div>
+          </div>
+          <div style={{ fontSize: 14, color: pass ? "#047857" : "#c0392b", fontWeight: 800, marginBottom: 10 }}>정답률 {summary.accuracy}% · 기준 90%</div>
+          {!pass && summary.wrongLabels.length > 0 && (
+            <div style={{ marginTop: 12, marginBottom: 16, textAlign: "left" }}>
+              <div style={{ fontSize: 13, color: "#777", marginBottom: 6 }}>★ 별표된 어려운 단어</div>
+              {summary.wrongLabels.map(w => <span key={w} style={{ display: "inline-block", margin: "0 6px 6px 0", padding: "4px 10px", borderRadius: 8, background: "#fbeaf0", color: "#993556", fontSize: 13 }}>{w}</span>)}
+            </div>
+          )}
+          {sendStatus && <div style={{ fontSize: 12, color: "#777", marginBottom: 12 }}>{sendStatus}</div>}
+          <button onClick={() => startTest(active)} style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: "#7c4dff", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", marginBottom: 8 }}>다시 풀기</button>
+          <button onClick={backToList} style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "1px solid #e0e0e0", background: "#fff", color: "#333", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>월별 목록으로</button>
+        </div>
+      </div>
+    );
+  }
+
+  const words = active?.words || [];
+  const current = words[idx];
+  const correctAnswers = current?.correctAnswers || [];
+  const currentAnswer = answers[idx] || {};
+
+  const check = () => {
+    if (!current) return;
+    const ans = norm(input);
+    const ok = correctAnswers.some((c) => norm(c) === ans);
+    setJudged(ok ? "correct" : "wrong");
+    setRevealed(true);
+    setAnswers(prev => {
+      const next = [...prev];
+      next[idx] = { word: current?.word || "", wordKey: current?.wordKey || "", input, correct: ok };
+      return next;
+    });
+  };
+
+  const next = () => {
+    const finalAnswers = [...answers];
+    if (!finalAnswers[idx] && current) {
+      finalAnswers[idx] = { word: current.word || "", wordKey: current.wordKey || "", input, correct: judged === "correct" };
+    }
+    if (idx + 1 >= words.length) {
+      const finalSummary = buildFinalSummary(finalAnswers);
+      setAnswers(finalAnswers);
+      setSummary(finalSummary);
+      setMode("done");
+      sendResult(finalSummary);
+      return;
+    }
+    setAnswers(finalAnswers);
+    setIdx(idx + 1);
+    setInput("");
+    setRevealed(false);
+    setJudged(null);
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
+        <button onClick={backToList} style={{ border: "none", background: "transparent", color: "#777", fontSize: 14, cursor: "pointer" }}>← 목록</button>
+        <div style={{ marginLeft: "auto", fontSize: 13, color: "#777", fontWeight: 700 }}>{idx + 1} / {words.length}</div>
+      </div>
+      {!current ? (
+        <div style={{ padding: 24, textAlign: "center", color: "#999", background: "#fff", borderRadius: 14 }}>단어가 없습니다.</div>
+      ) : (
+        <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+          <div style={{ height: 6, background: "#f0f0f0", borderRadius: 3, overflow: "hidden", marginBottom: 28 }}>
+            <div style={{ height: "100%", width: `${((idx + 1) / Math.max(words.length, 1)) * 100}%`, background: "linear-gradient(90deg, #7c4dff, #4a6cf7)", borderRadius: 3 }} />
+          </div>
+          <div style={{ fontSize: 30, fontWeight: 900, textAlign: "center", color: "#1a1a2e", marginBottom: 22 }}>{current.word}</div>
+          <div style={{ fontSize: 13, color: "#777", marginBottom: 7 }}>이 단어의 뜻을 한국어로 적어주세요.</div>
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !revealed && input.trim()) check(); }}
+            disabled={revealed}
+            placeholder="정답을 입력하세요"
+            style={{ width: "100%", padding: "13px 14px", borderRadius: 10, border: "1px solid #ddd", fontSize: 16, boxSizing: "border-box" }}
+          />
+          {!revealed ? (
+            <button onClick={check} disabled={!input.trim()} style={{ width: "100%", marginTop: 14, padding: "13px 0", borderRadius: 10, border: "none", background: input.trim() ? "#7c4dff" : "#ccc", color: "#fff", fontWeight: 800, fontSize: 15, cursor: input.trim() ? "pointer" : "default" }}>정답 확인</button>
+          ) : (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ padding: 13, borderRadius: 12, background: judged === "correct" ? "#e8f8ef" : "#fde8e8", border: judged === "correct" ? "1px solid #bbf7d0" : "1px solid #fecaca", marginBottom: 12 }}>
+                <div style={{ fontWeight: 900, color: judged === "correct" ? "#047857" : "#c0392b", marginBottom: 7 }}>{judged === "correct" ? "정답입니다!" : "오답이에요!"}</div>
+                <div style={{ fontSize: 14, color: "#333", lineHeight: 1.7 }}>내 답: {currentAnswer.input?.trim() || input.trim() || "(빈칸)"}</div>
+                <div style={{ fontSize: 14, color: "#333", lineHeight: 1.7 }}>정답: <b>{correctAnswers.join(", ")}</b></div>
+              </div>
+              <button onClick={next} style={{ width: "100%", padding: "13px 0", borderRadius: 10, border: "none", background: "#7c4dff", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{idx + 1 >= words.length ? "결과 보기" : "다음 단어"}</button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
