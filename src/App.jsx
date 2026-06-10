@@ -31,6 +31,8 @@ const resolveStudentSyncUrl = (studentId) => {
   const u = new URL(STUDENT_SYNC_API_URL, window.location.origin);
   u.searchParams.set("id", String(studentId));
   u.searchParams.set("studentId", String(studentId));
+  const accessToken = new URLSearchParams(window.location.search).get("t") || "";
+  if (accessToken) u.searchParams.set("t", accessToken);
   u.searchParams.set("ts", String(Date.now()));
   return u.toString();
 };
@@ -680,9 +682,11 @@ const postVocabTestResult = async (payload, { queueOnFail = true } = {}) => {
     return false;
   }
   try {
+    const headers = { "Content-Type": "application/json" };
+    if (VIDEO_WATCH_API_KEY) headers.Authorization = `Bearer ${VIDEO_WATCH_API_KEY}`;
     const resp = await fetch(VOCAB_TEST_RESULT_API_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(payload),
     });
     if (!resp.ok) throw new Error(`vocab-test-result 저장 실패: ${resp.status}`);
@@ -2766,4 +2770,3 @@ function StepSection({ step, displayNum, isChecked, isFailed, getFailReason, stu
     </div>
   );
 }
- 
