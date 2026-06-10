@@ -189,17 +189,19 @@ const getTodayStr = () => { const t = new Date(); return `${t.getFullYear()}-${S
 const DAYS_EN = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 
 // 한국 공휴일 2025-2027 (admin 앱과 동일)
+// ⚠️ 동시 수정 필수: 이 상수는 원장앱.jsx와 학생앱.jsx에 복제되어 있다.
+//    한쪽만 수정하면 등원일 표시가 두 앱에서 달라진다. 반드시 두 파일을 함께 수정할 것.
 const HOLIDAYS = {
   "2025-01-01":"신정","2025-01-28":"설날","2025-01-29":"설날","2025-01-30":"설날",
-  "2025-03-01":"삼일절","2025-05-05":"어린이날","2025-05-06":"대체공휴일","2025-06-06":"현충일",
+  "2025-03-01":"삼일절","2025-05-01":"근로자의 날","2025-05-05":"어린이날","2025-05-06":"대체공휴일","2025-06-06":"현충일",
   "2025-08-15":"광복절","2025-10-03":"개천절","2025-10-05":"추석","2025-10-06":"추석","2025-10-07":"추석","2025-10-08":"대체공휴일",
   "2025-10-09":"한글날","2025-12-25":"크리스마스",
   "2026-01-01":"신정","2026-02-16":"설날","2026-02-17":"설날","2026-02-18":"설날",
-  "2026-03-01":"삼일절","2026-03-02":"대체공휴일","2026-05-05":"어린이날","2026-05-24":"석가탄신일",
+  "2026-03-01":"삼일절","2026-03-02":"대체공휴일","2026-05-01":"근로자의 날","2026-05-05":"어린이날","2026-05-24":"석가탄신일",
   "2026-06-06":"현충일","2026-08-15":"광복절","2026-09-24":"추석","2026-09-25":"추석","2026-09-26":"추석",
   "2026-10-03":"개천절","2026-10-09":"한글날","2026-12-25":"크리스마스",
   "2027-01-01":"신정","2027-02-06":"설날","2027-02-07":"설날","2027-02-08":"설날","2027-02-09":"대체공휴일",
-  "2027-03-01":"삼일절","2027-05-05":"어린이날","2027-05-13":"석가탄신일","2027-06-06":"현충일",
+  "2027-03-01":"삼일절","2027-05-01":"근로자의 날","2027-05-05":"어린이날","2027-05-13":"석가탄신일","2027-06-06":"현충일",
   "2027-08-15":"광복절","2027-08-16":"대체공휴일","2027-10-03":"개천절","2027-10-09":"한글날",
   "2027-10-14":"추석","2027-10-15":"추석","2027-10-16":"추석","2027-12-25":"크리스마스",
 };
@@ -1838,20 +1840,27 @@ export default function App() {
               <FitText text={upcomingAttText || "예정된 등원일이 없어요"} maxFont={13} minFont={9} />
             </div>
           </div>
-          <button
-            onClick={() => loadData({ manual: true })}
-            disabled={refreshing}
-            title={lastLoadedAt ? `마지막 동기화: ${lastLoadedAt.toLocaleTimeString()}${syncSource ? ` · ${syncSource}` : ""}` : "새로고침"}
-            style={{
-              width: 38, height: 38, borderRadius: 12, border: "1px solid rgba(255,255,255,0.16)",
-              background: refreshing ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.12)",
-              color: "#fff", cursor: refreshing ? "default" : "pointer", fontSize: 17, fontWeight: 700,
-              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-              opacity: refreshing ? 0.65 : 1,
-            }}
-          >
-            {refreshing ? "…" : "↻"}
-          </button>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
+            <button
+              onClick={() => loadData({ manual: true })}
+              disabled={refreshing}
+              title={lastLoadedAt ? `마지막 동기화: ${lastLoadedAt.toLocaleTimeString()}${syncSource ? ` · ${syncSource}` : ""}` : "새로고침"}
+              style={{
+                width: 38, height: 38, borderRadius: 12, border: "1px solid rgba(255,255,255,0.16)",
+                background: refreshing ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.12)",
+                color: "#fff", cursor: refreshing ? "default" : "pointer", fontSize: 17, fontWeight: 700,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                opacity: refreshing ? 0.65 : 1,
+              }}
+            >
+              {refreshing ? "…" : "↻"}
+            </button>
+            {lastLoadedAt && (
+              <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", textAlign: "center", marginTop: 3, whiteSpace: "nowrap" }}>
+                {lastLoadedAt.toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})} 동기화
+              </div>
+            )}
+          </div>
         </div>
 
         <StudentExamDdaySection items={examDdays} />
