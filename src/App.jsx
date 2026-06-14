@@ -1925,7 +1925,7 @@ export default function App() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#f6f7fb", fontFamily: F }}>
-      <div style={{ background: BRAND.blue, padding: "20px 24px 24px", color: "#fff" }}>
+      <div style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)", padding: "20px 24px 24px", color: "#fff" }}>
         <div style={{ maxWidth: MAX_W, margin: "0 auto" }}>
         {/* 브랜드 로고 락업 */}
         <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 16 }}>
@@ -2049,22 +2049,6 @@ export default function App() {
                 fontSize: 12, fontWeight: 800,
               }}>복습하기</button>
             )}
-          </div>
-        </div>
-      )}
-
-      {totalTasks > 0 && (
-        <div style={{ padding: "14px 24px", background: "#fff", borderBottom: "1px solid #eee" }}>
-          <div style={{ maxWidth: MAX_W, margin: "0 auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 12 }}>
-              <span style={{ color: "#999" }}>과제 진행률</span>
-              <span style={{ color: pct === 100 ? "#00b894" : "#333", fontWeight: 700 }}>
-                {doneTasks}/{totalTasks} ({pct}%){pct === 100 && " 🎉"}
-              </span>
-            </div>
-            <div style={{ height: 6, background: "#f0f0f0", borderRadius: 3, overflow: "hidden" }}>
-              <div style={{ height: "100%", borderRadius: 3, width: `${pct}%`, background: pct === 100 ? "linear-gradient(90deg, #00b894, #69f0ae)" : "linear-gradient(90deg, #4fc3f7, #1C66A5)", transition: "width 0.5s cubic-bezier(.4,0,.2,1)" }} />
-            </div>
           </div>
         </div>
       )}
