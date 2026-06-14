@@ -602,7 +602,7 @@ const stripBox = (s) => s.replace(/^\s*ㅁ\s*/, '');
 const STEP_DEFS = [
   { key: 'step1', label: '숙제',        color: '#e84393', bg: '#fdf2f8', badges: ['조교', '강사'] },
   { key: 'step2', label: '단어 TEST',   color: '#7c3aed', bg: '#f3e8ff', badges: ['조교'] },
-  { key: 'step3', label: '오늘 수업',   color: '#4a6cf7', bg: '#eef1ff', badges: ['조교', '강사'], notice: '→ 수업 준비되면 조교T 한테 말씀드리기' },
+  { key: 'step3', label: '오늘 수업',   color: '#1C66A5', bg: '#eef1ff', badges: ['조교', '강사'], notice: '→ 수업 준비되면 조교T 한테 말씀드리기' },
   { key: 'step4', label: '마무리 TEST', color: '#00b894', bg: '#e8f8f5', badges: ['조교'] },
   { key: 'step5', label: '받을 자료',   color: '#e67e22', bg: '#fff4e6', badges: ['강사'] },
 ];
@@ -616,6 +616,63 @@ const BADGE_STYLES = {
 
 // ─── 학생 앱 가운데 정렬 폭 (PC 대응) ───
 const MAX_W = 600;
+
+// ─── 마플영어 브랜드 컬러 (로고에서 추출) ───
+const BRAND = {
+  blue: "#1C66A5",      // 메인 브랜드 블루
+  blueDark: "#155284",  // 진한 블루 (눌림/강조)
+  blueTint: "#E7F0F8",  // 옅은 블루 배경 (선택/배지)
+  ink: "#2A2A28",       // 로고 "영어" 차콜 (본문 텍스트)
+};
+
+// ─── 주간 오답 복습 규칙 ───
+// "그 주(월~일)에 틀린 단어는 → 다음 주 일요일까지 끝낸다"
+// 데이터 변경 없이 firstWrongAt + status(active)만으로 계산한다.
+const startOfWeekMon = (d) => {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  const day = x.getDay();                 // 0(일)~6(토)
+  x.setDate(x.getDate() + (day === 0 ? -6 : 1 - day)); // 그 주 월요일로
+  return x;
+};
+
+const computeVocabReviewWarning = (vocabWrongWords = {}) => {
+  const now = new Date();
+  const thisWeekStart = startOfWeekMon(now);
+  const thisWeekEnd = new Date(thisWeekStart);
+  thisWeekEnd.setDate(thisWeekEnd.getDate() + 7); // 이번 주 일요일 자정(=다음 월요일 00:00, 미포함)
+
+  let overdue = 0;       // 기한 지남
+  let dueThisWeek = 0;   // 이번 주 안에 끝내야 함
+
+  Object.values(vocabWrongWords || {}).forEach((month) => {
+    Object.values(month?.words || {}).forEach((w) => {
+      if ((w.status || "active") !== "active") return;
+      if (!Array.isArray(w.correctAnswers) || w.correctAnswers.length === 0) return;
+      const wrongAt = w.firstWrongAt || w.lastWrongAt;
+      if (!wrongAt) return;
+      const d = new Date(wrongAt);
+      if (Number.isNaN(d.getTime())) return;
+      // 마감(미포함) = 틀린 주의 월요일 + 14일 = 다음 주 일요일 끝
+      const deadline = startOfWeekMon(d);
+      deadline.setDate(deadline.getDate() + 14);
+      if (deadline <= now) overdue += 1;
+      else if (deadline <= thisWeekEnd) dueThisWeek += 1;
+    });
+  });
+
+  const sunday = new Date(thisWeekEnd);
+  sunday.setDate(sunday.getDate() - 1); // 이번 주 일요일
+  const dday = Math.max(0, Math.ceil((thisWeekEnd - now) / 86400000));
+
+  return {
+    overdue,
+    dueThisWeek,
+    hasWarning: overdue > 0 || dueThisWeek > 0,
+    sundayLabel: `${sunday.getMonth() + 1}/${sunday.getDate()}(일)`,
+    dday,
+  };
+};
 
 // ─── 이탈 추적 임계값 (이 시간보다 짧은 이탈은 무시 — 카톡 알림 슬쩍 보고 돌아오는 경우) ───
 const MIN_AWAY_SEC = 5;
@@ -770,6 +827,43 @@ const dispatchVideoPlayerEvent = (name, detail) => {
     window.dispatchEvent(new CustomEvent(name, { detail }));
   } catch (e) { /* ignore */ }
 };
+
+// ─── 출석 QR 모달: 데스크에서 스캔할 개인 QR(maple-att:{id}:{token}) ───
+function AttQrModal({ value, studentName, onClose }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    let cancelled = false;
+    const render = async () => {
+      if (!window.QRCode) {
+        await new Promise((res, rej) => {
+          const s = document.createElement("script");
+          s.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";
+          s.onload = res; s.onerror = () => rej(new Error("qr load fail"));
+          document.head.appendChild(s);
+        });
+      }
+      if (cancelled || !ref.current || !window.QRCode) return;
+      ref.current.innerHTML = "";
+      new window.QRCode(ref.current, { text: value, width: 240, height: 240, correctLevel: window.QRCode.CorrectLevel.M });
+    };
+    render().catch(() => {});
+    return () => { cancelled = true; };
+  }, [value]);
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,20,30,0.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 24 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 20, padding: "26px 26px 22px", width: "100%", maxWidth: 320, textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "#1C66A5", marginBottom: 2 }}>출석 QR</div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: "#2A2A28", marginBottom: 16 }}>{studentName}</div>
+        <div style={{ display: "flex", justifyContent: "center", padding: 10, background: "#fff", borderRadius: 14, border: "1px solid #eef0f3" }}>
+          <div ref={ref} />
+        </div>
+        <div style={{ fontSize: 12, color: "#8b909a", marginTop: 14, lineHeight: 1.5 }}>데스크 선생님께 이 화면을 보여주세요</div>
+        <button onClick={onClose} style={{ marginTop: 16, width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: "#1C66A5", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>닫기</button>
+      </div>
+    </div>
+  );
+}
 
 function TrackedYoutubePlayer({ video }) {
   const mountRef = useRef(null);
@@ -1213,6 +1307,7 @@ export default function App() {
   const [exams, setExams] = useState([]);
   const [vocabWrongWords, setVocabWrongWords] = useState({});
   const [tab, setTab] = useState("tasks");
+  const [showAttQr, setShowAttQr] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
   const [viewingVideo, setViewingVideo] = useState(null);
   const [viewStartTime, setViewStartTime] = useState(null);
@@ -1692,7 +1787,7 @@ export default function App() {
     return (
       <div style={{ minHeight: "100vh", background: "#f6f7fb", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font)" }}>
         <div style={{ textAlign: "center" }}>
-          <div style={{ width: 40, height: 40, border: "3px solid #e0e0e0", borderTopColor: "#4a6cf7", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 16px" }} />
+          <div style={{ width: 40, height: 40, border: "3px solid #e0e0e0", borderTopColor: "#1C66A5", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 16px" }} />
           <div style={{ fontSize: 14, color: "#999" }}>불러오는 중...</div>
           <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
         </div>
@@ -1732,7 +1827,7 @@ export default function App() {
           <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
           <div style={{ fontSize: 18, fontWeight: 700, color: "#333", marginBottom: 8 }}>연결 오류</div>
           <div style={{ fontSize: 14, color: "#999", marginBottom: 20 }}>잠시 후 다시 시도해주세요</div>
-          <button onClick={() => window.location.reload()} style={{ padding: "10px 24px", borderRadius: 10, border: "none", background: "#4a6cf7", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>다시 시도</button>
+          <button onClick={() => window.location.reload()} style={{ padding: "10px 24px", borderRadius: 10, border: "none", background: "#1C66A5", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>다시 시도</button>
         </div>
       </div>
     );
@@ -1816,6 +1911,9 @@ export default function App() {
     Object.values(m?.words || {}).some(w => (w.status || "active") === "active" && Array.isArray(w.correctAnswers) && w.correctAnswers.length > 0)
   );
 
+  // 주간 오답 복습 경고 (지난주 틀린 단어 이번 주 마감 / 기한 초과)
+  const vocabWarn = computeVocabReviewWarning(vocabWrongWords);
+
   // 다가올 등원일 텍스트 (헤더 표시용)
   const upcomingAtt = computeUpcomingAttendance(student, makeups, customHolidays);
   const upcomingAttText = upcomingAtt
@@ -1827,11 +1925,24 @@ export default function App() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#f6f7fb", fontFamily: F }}>
-      <div style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)", padding: "28px 24px 24px", color: "#fff" }}>
+      <div style={{ background: BRAND.blue, padding: "20px 24px 24px", color: "#fff" }}>
         <div style={{ maxWidth: MAX_W, margin: "0 auto" }}>
+        {/* 브랜드 로고 락업 */}
+        <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 16 }}>
+          <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 19, border: "2px solid rgba(255,255,255,0.6)", borderRadius: 4, fontSize: 11, fontWeight: 700, letterSpacing: -0.5 }}>MP</span>
+          <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: -0.3 }}>마플영어</span>
+          <button onClick={() => setShowAttQr(true)} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 9, border: "1px solid rgba(255,255,255,0.25)", background: "rgba(255,255,255,0.12)", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+            <span style={{ fontSize: 13 }}>▦</span> 출석 QR
+          </button>
+        </div>
         <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
-          <div style={{ width: 48, height: 48, borderRadius: 14, background: "rgba(255,255,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 700, border: "1px solid rgba(255,255,255,0.1)", flexShrink: 0 }}>
-            {student.name?.[0] || "?"}
+          {/* 아바타 + 코너 브래킷 (로고 시그니처) */}
+          <div style={{ position: "relative", width: 48, height: 48, flexShrink: 0 }}>
+            <div style={{ width: 48, height: 48, borderRadius: 14, background: "rgba(255,255,255,0.14)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 700, border: "1px solid rgba(255,255,255,0.12)" }}>
+              {student.name?.[0] || "?"}
+            </div>
+            <span style={{ position: "absolute", top: -3, left: -3, width: 10, height: 10, borderTop: "2px solid #fff", borderLeft: "2px solid #fff", borderTopLeftRadius: 3 }} />
+            <span style={{ position: "absolute", bottom: -3, right: -3, width: 10, height: 10, borderBottom: "2px solid #fff", borderRight: "2px solid #fff", borderBottomRightRadius: 3 }} />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: -0.5 }}>
@@ -1887,9 +1998,58 @@ export default function App() {
         </div>
       </div>
 
+      {showAttQr && student && (
+        <AttQrModal
+          value={`maple-att:${student.id}:${params.get("t") || ""}`}
+          studentName={student.name}
+          onClose={() => setShowAttQr(false)}
+        />
+      )}
+
       {offlineNotice && (
         <div style={{ padding: "10px 24px", background: "#fff7e6", borderBottom: "1px solid #ffe0a3", color: "#8a5a00", fontSize: 12, fontWeight: 700 }}>
           <div style={{ maxWidth: MAX_W, margin: "0 auto" }}>⚠️ {offlineNotice}</div>
+        </div>
+      )}
+
+      {/* 주간 오답 복습 경고: 기한 초과(빨강) 우선, 없으면 이번 주 마감(노랑) */}
+      {vocabWarn.hasWarning && (
+        <div style={{
+          padding: "12px 24px",
+          background: vocabWarn.overdue > 0 ? "#fdecea" : "#fff8e1",
+          borderBottom: `1px solid ${vocabWarn.overdue > 0 ? "#f5c2bd" : "#ffe49c"}`,
+        }}>
+          <div style={{ maxWidth: MAX_W, margin: "0 auto", display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 18, flexShrink: 0 }}>{vocabWarn.overdue > 0 ? "🚨" : "📌"}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {vocabWarn.overdue > 0 ? (
+                <>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#c0392b" }}>
+                    기한이 지난 복습 단어 {vocabWarn.overdue}개가 있어요
+                  </div>
+                  <div style={{ fontSize: 12, color: "#a14a40", marginTop: 2 }}>
+                    지금 바로 끝내자! {vocabWarn.dueThisWeek > 0 && `· 이번 주 마감 ${vocabWarn.dueThisWeek}개`}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#9a6b00" }}>
+                    이번 주 복습 단어 {vocabWarn.dueThisWeek}개 — {vocabWarn.sundayLabel}까지!
+                  </div>
+                  <div style={{ fontSize: 12, color: "#a3791a", marginTop: 2 }}>
+                    지난주에 틀린 단어예요. 일요일 전에 통과하면 끝 (D-{vocabWarn.dday})
+                  </div>
+                </>
+              )}
+            </div>
+            {hasVocabWrong && (
+              <button onClick={() => setTab("vocabWrong")} style={{
+                flexShrink: 0, padding: "7px 13px", borderRadius: 9, border: "none", cursor: "pointer",
+                background: vocabWarn.overdue > 0 ? "#c0392b" : "#9a6b00", color: "#fff",
+                fontSize: 12, fontWeight: 800,
+              }}>복습하기</button>
+            )}
+          </div>
         </div>
       )}
 
@@ -1903,7 +2063,7 @@ export default function App() {
               </span>
             </div>
             <div style={{ height: 6, background: "#f0f0f0", borderRadius: 3, overflow: "hidden" }}>
-              <div style={{ height: "100%", borderRadius: 3, width: `${pct}%`, background: pct === 100 ? "linear-gradient(90deg, #00b894, #69f0ae)" : "linear-gradient(90deg, #4fc3f7, #7c4dff)", transition: "width 0.5s cubic-bezier(.4,0,.2,1)" }} />
+              <div style={{ height: "100%", borderRadius: 3, width: `${pct}%`, background: pct === 100 ? "linear-gradient(90deg, #00b894, #69f0ae)" : "linear-gradient(90deg, #4fc3f7, #1C66A5)", transition: "width 0.5s cubic-bezier(.4,0,.2,1)" }} />
             </div>
           </div>
         </div>
@@ -1919,8 +2079,8 @@ export default function App() {
           <button key={t.key} onClick={() => setTab(t.key)} style={{
             flex: 1, padding: "14px 0", border: "none", cursor: "pointer",
             background: "transparent", fontSize: 14, fontWeight: tab === t.key ? 700 : 500,
-            color: tab === t.key ? "#1a1a2e" : "#999",
-            borderBottom: tab === t.key ? "2.5px solid #1a1a2e" : "2.5px solid transparent",
+            color: tab === t.key ? "#2A2A28" : "#999",
+            borderBottom: tab === t.key ? "2.5px solid #2A2A28" : "2.5px solid transparent",
           }}>{t.label}</button>
         ))}
         </div>
@@ -1936,7 +2096,7 @@ export default function App() {
                   <button key={d} onClick={() => setSelectedDate(d)} style={{
                     flexShrink: 0, padding: "8px 16px", borderRadius: 20, border: "none",
                     cursor: "pointer", fontSize: 13, fontWeight: 600,
-                    background: d === activeDate ? "#1a1a2e" : "#fff",
+                    background: d === activeDate ? "#2A2A28" : "#fff",
                     color: d === activeDate ? "#fff" : "#666",
                     boxShadow: d === activeDate ? "0 2px 8px rgba(26,26,46,0.25)" : "0 1px 3px rgba(0,0,0,0.06)",
                     whiteSpace: "nowrap",
@@ -1945,9 +2105,9 @@ export default function App() {
               </div>
             )}
             {allDates.length > 0 && (
-              <div style={{ fontSize: 16, fontWeight: 700, color: "#1a1a2e", margin: "12px 0 16px" }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#2A2A28", margin: "12px 0 16px" }}>
                 {fmtDateKR(activeDate)}
-                {isToday(activeDate) && <span style={{ fontSize: 12, color: "#7c4dff", marginLeft: 8, fontWeight: 600 }}>TODAY</span>}
+                {isToday(activeDate) && <span style={{ fontSize: 12, color: "#1C66A5", marginLeft: 8, fontWeight: 600 }}>TODAY</span>}
               </div>
             )}
 
@@ -2012,8 +2172,8 @@ export default function App() {
                   return (
                     <button key={bn} onClick={() => setSelectedVideoBook(bn)} style={{
                       flexShrink: 0, padding: "8px 14px", borderRadius: 20,
-                      border: isActive ? "1.5px solid #4a6cf7" : "1px solid #e0e0e0",
-                      background: isActive ? "#4a6cf7" : "#fff",
+                      border: isActive ? "1.5px solid #1C66A5" : "1px solid #e0e0e0",
+                      background: isActive ? "#1C66A5" : "#fff",
                       color: isActive ? "#fff" : "#555",
                       fontSize: 13, fontWeight: 700, cursor: "pointer",
                       whiteSpace: "nowrap", transition: "all 0.15s",
@@ -2038,7 +2198,7 @@ export default function App() {
                 <div key={v.id} style={{
                   background: "#fff", borderRadius: 14, marginBottom: 12,
                   boxShadow: isOpen ? "0 4px 16px rgba(74,108,247,0.15)" : "0 1px 4px rgba(0,0,0,0.04)",
-                  border: isOpen ? "2px solid #4a6cf7" : "2px solid transparent",
+                  border: isOpen ? "2px solid #1C66A5" : "2px solid transparent",
                   overflow: "hidden", transition: "box-shadow 0.2s, border-color 0.2s",
                 }}>
                   {/* 카드 헤더 (클릭으로 토글) */}
@@ -2048,10 +2208,10 @@ export default function App() {
                   }}>
                     <div style={{ width: 48, height: 48, borderRadius: 12, flexShrink: 0, background: v.type === "playlist" ? "linear-gradient(135deg, #e74c3c, #e67e22)" : "linear-gradient(135deg, #667eea, #764ba2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{v.type === "playlist" ? "📋" : "▶️"}</div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: "#1a1a2e" }}>{v.title}</div>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: "#2A2A28" }}>{v.title}</div>
                       <div style={{ fontSize: 12, color: "#bbb", marginTop: 3 }}>{v.type === "playlist" ? "재생목록 전체 보기" : (v.subject || "")}</div>
                     </div>
-                    <div style={{ color: isOpen ? "#4a6cf7" : "#ccc", fontSize: 18, transform: isOpen ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>›</div>
+                    <div style={{ color: isOpen ? "#1C66A5" : "#ccc", fontSize: 18, transform: isOpen ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>›</div>
                   </div>
 
                   {/* 펼쳐진 영상 (인라인) */}
@@ -2190,7 +2350,7 @@ function VocabWrongTab({ vocabWrongWords = {}, studentId }) {
   if (mode === "list") {
     return (
       <div>
-        <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 6, color: "#1a1a2e" }}>오답 단어 TEST</div>
+        <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 6, color: "#2A2A28" }}>오답 단어 TEST</div>
         <div style={{ fontSize: 13, color: "#777", marginBottom: 16 }}>원장앱 채점에서 틀린 단어만 월별로 복습합니다.</div>
         {months.length === 0 ? (
           <div style={{ padding: 24, textAlign: "center", color: "#999", fontSize: 14, background: "#fff", borderRadius: 14 }}>
@@ -2202,14 +2362,14 @@ function VocabWrongTab({ vocabWrongWords = {}, studentId }) {
               <div key={m.monthKey} style={{ background: "#fff", border: "1px solid #eee", borderRadius: 14, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 16, fontWeight: 800, color: "#1a1a2e" }}>{monthLabel(m.monthKey)}</div>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: "#2A2A28" }}>{monthLabel(m.monthKey)}</div>
                     <div style={{ fontSize: 13, color: "#777", marginTop: 4 }}>
-                      테스트할 단어 <b style={{ color: "#7c4dff" }}>{m.count}</b>개
+                      테스트할 단어 <b style={{ color: "#1C66A5" }}>{m.count}</b>개
                       {m.starredCount > 0 && <span style={{ color: "#d4537e", marginLeft: 8 }}>★ 어려운 단어 {m.starredCount}개</span>}
                     </div>
                     {m.lastWrongAt && <div style={{ fontSize: 12, color: "#aaa", marginTop: 2 }}>최근 오답: {fmtWrongDate(m.lastWrongAt)}</div>}
                   </div>
-                  <button onClick={() => startTest(m)} disabled={m.count === 0} style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: m.count === 0 ? "#ccc" : "#7c4dff", color: "#fff", fontWeight: 800, fontSize: 13, cursor: m.count === 0 ? "default" : "pointer", flexShrink: 0 }}>
+                  <button onClick={() => startTest(m)} disabled={m.count === 0} style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: m.count === 0 ? "#ccc" : "#1C66A5", color: "#fff", fontWeight: 800, fontSize: 13, cursor: m.count === 0 ? "default" : "pointer", flexShrink: 0 }}>
                     {m.count === 0 ? "모두 통과" : "TEST 시작"}
                   </button>
                 </div>
@@ -2243,7 +2403,7 @@ function VocabWrongTab({ vocabWrongWords = {}, studentId }) {
             </div>
           )}
           {sendStatus && <div style={{ fontSize: 12, color: "#777", marginBottom: 12 }}>{sendStatus}</div>}
-          <button onClick={() => startTest(active)} style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: "#7c4dff", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", marginBottom: 8 }}>다시 풀기</button>
+          <button onClick={() => startTest(active)} style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: "#1C66A5", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", marginBottom: 8 }}>다시 풀기</button>
           <button onClick={backToList} style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "1px solid #e0e0e0", background: "#fff", color: "#333", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>월별 목록으로</button>
         </div>
       </div>
@@ -2299,9 +2459,9 @@ function VocabWrongTab({ vocabWrongWords = {}, studentId }) {
       ) : (
         <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
           <div style={{ height: 6, background: "#f0f0f0", borderRadius: 3, overflow: "hidden", marginBottom: 28 }}>
-            <div style={{ height: "100%", width: `${((idx + 1) / Math.max(words.length, 1)) * 100}%`, background: "linear-gradient(90deg, #7c4dff, #4a6cf7)", borderRadius: 3 }} />
+            <div style={{ height: "100%", width: `${((idx + 1) / Math.max(words.length, 1)) * 100}%`, background: "linear-gradient(90deg, #1C66A5, #1C66A5)", borderRadius: 3 }} />
           </div>
-          <div style={{ fontSize: 30, fontWeight: 900, textAlign: "center", color: "#1a1a2e", marginBottom: 22 }}>{current.word}</div>
+          <div style={{ fontSize: 30, fontWeight: 900, textAlign: "center", color: "#2A2A28", marginBottom: 22 }}>{current.word}</div>
           <div style={{ fontSize: 13, color: "#777", marginBottom: 7 }}>이 단어의 뜻을 한국어로 적어주세요.</div>
           <input
             value={input}
@@ -2312,7 +2472,7 @@ function VocabWrongTab({ vocabWrongWords = {}, studentId }) {
             style={{ width: "100%", padding: "13px 14px", borderRadius: 10, border: "1px solid #ddd", fontSize: 16, boxSizing: "border-box" }}
           />
           {!revealed ? (
-            <button onClick={check} disabled={!input.trim()} style={{ width: "100%", marginTop: 14, padding: "13px 0", borderRadius: 10, border: "none", background: input.trim() ? "#7c4dff" : "#ccc", color: "#fff", fontWeight: 800, fontSize: 15, cursor: input.trim() ? "pointer" : "default" }}>정답 확인</button>
+            <button onClick={check} disabled={!input.trim()} style={{ width: "100%", marginTop: 14, padding: "13px 0", borderRadius: 10, border: "none", background: input.trim() ? "#1C66A5" : "#ccc", color: "#fff", fontWeight: 800, fontSize: 15, cursor: input.trim() ? "pointer" : "default" }}>정답 확인</button>
           ) : (
             <div style={{ marginTop: 14 }}>
               <div style={{ padding: 13, borderRadius: 12, background: judged === "correct" ? "#e8f8ef" : "#fde8e8", border: judged === "correct" ? "1px solid #bbf7d0" : "1px solid #fecaca", marginBottom: 12 }}>
@@ -2320,7 +2480,7 @@ function VocabWrongTab({ vocabWrongWords = {}, studentId }) {
                 <div style={{ fontSize: 14, color: "#333", lineHeight: 1.7 }}>내 답: {currentAnswer.input?.trim() || input.trim() || "(빈칸)"}</div>
                 <div style={{ fontSize: 14, color: "#333", lineHeight: 1.7 }}>정답: <b>{correctAnswers.join(", ")}</b></div>
               </div>
-              <button onClick={next} style={{ width: "100%", padding: "13px 0", borderRadius: 10, border: "none", background: "#7c4dff", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{idx + 1 >= words.length ? "결과 보기" : "다음 단어"}</button>
+              <button onClick={next} style={{ width: "100%", padding: "13px 0", borderRadius: 10, border: "none", background: "#1C66A5", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{idx + 1 >= words.length ? "결과 보기" : "다음 단어"}</button>
             </div>
           )}
         </div>
@@ -2631,9 +2791,9 @@ function HomeworkItem({ item, isLast, isCheckedFn, isFailedFn, getFailReasonFn, 
             return (
               <button key={v.id} onClick={(e) => { e.stopPropagation(); toggleVideo(v); }} style={{
                 padding: "5px 11px", borderRadius: 7,
-                border: isOpen ? "1.5px solid #4a6cf7" : "1px solid #d0d4e0",
+                border: isOpen ? "1.5px solid #1C66A5" : "1px solid #d0d4e0",
                 background: isOpen ? "#eef1ff" : "#fff",
-                color: isOpen ? "#4a6cf7" : "#555",
+                color: isOpen ? "#1C66A5" : "#555",
                 fontSize: 12, fontWeight: 700, cursor: "pointer",
                 display: "inline-flex", alignItems: "center", gap: 4, transition: "all 0.15s", whiteSpace: "nowrap",
               }}>
@@ -2684,9 +2844,9 @@ function HomeworkItem({ item, isLast, isCheckedFn, isFailedFn, getFailReasonFn, 
             return (
               <button key={v.id} onClick={(e) => { e.stopPropagation(); toggleVideo(v); }} style={{
                 padding: "4px 9px", borderRadius: 6,
-                border: isOpen ? "1.5px solid #4a6cf7" : (isMatched ? "1px solid #fde047" : "1px solid #e0e0e0"),
+                border: isOpen ? "1.5px solid #1C66A5" : (isMatched ? "1px solid #fde047" : "1px solid #e0e0e0"),
                 background: isOpen ? "#eef1ff" : (isMatched ? "#fef9c3" : "#fff"),
-                color: isOpen ? "#4a6cf7" : (isMatched ? "#854d0e" : "#666"),
+                color: isOpen ? "#1C66A5" : (isMatched ? "#854d0e" : "#666"),
                 fontSize: 11, fontWeight: 600, cursor: "pointer",
                 display: "inline-flex", alignItems: "center", gap: 3, transition: "all 0.15s", whiteSpace: "nowrap",
               }}>
