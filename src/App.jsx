@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -133,6 +133,7 @@ const loadStudentBundleFromWorker = async (studentId) => {
     customHolidays: payload.customHolidays || payload.holi3 || {},
     exams: Array.isArray(examSource) ? examSource : [],
     vocabWrongWords: normalizeVocabWrongWordsForStudent(vocabWrongSource, studentId),
+    progressTree: payload.progressTree || payload.ptree3 || null,
   };
 };
 
@@ -172,6 +173,7 @@ const saveStudentBundleToLocal = (studentId, bundle = {}) => {
         customHolidays: bundle.customHolidays || {},
         exams: Array.isArray(bundle.exams || bundle.exam3) ? (bundle.exams || bundle.exam3) : [],
         vocabWrongWords: bundle.vocabWrongWords || {},
+        progressTree: bundle.progressTree || null,
       },
     };
     localStorage.setItem(getStudentBundleStorageKey(studentId), JSON.stringify(snapshot));
@@ -1306,6 +1308,7 @@ export default function App() {
   const [customHolidays, setCustomHolidays] = useState({});
   const [exams, setExams] = useState([]);
   const [vocabWrongWords, setVocabWrongWords] = useState({});
+  const [progressTree, setProgressTree] = useState(null); // 원장앱 진도 트리(ptree3) — 읽기 전용
   const [tab, setTab] = useState("tasks");
   const [showAttQr, setShowAttQr] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
@@ -1353,6 +1356,7 @@ export default function App() {
   const applyBundle = (bundle) => {
     if (!bundle?.student) return;
     setStudent(bundle.student);
+    setProgressTree(bundle.progressTree || null);
     setTodos(prev => keepPrevIfUnexpectedEmpty(prev, bundle.todos || {}, "todos"));
     setChecklistData(prev => keepPrevIfUnexpectedEmpty(prev, bundle.checklistData || {}, "checklistData"));
     setRecords(prev => keepPrevIfUnexpectedEmpty(prev, bundle.records || {}, "records"));
@@ -2059,6 +2063,7 @@ export default function App() {
           { key: "tasks", label: "📋 숙제/과제" },
           ...(studentVideos.length > 0 ? [{ key: "videos", label: "🎬 강의 영상" }] : []),
           ...(hasVocabWrong ? [{ key: "vocabWrong", label: "📝 오답 단어" }] : []),
+          ...((progressTree?.lanes || []).length ? [{ key: "progress", label: "🌳 진도" }] : []),
         ].map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
             flex: 1, padding: "14px 0", border: "none", cursor: "pointer",
@@ -2225,8 +2230,135 @@ export default function App() {
         {tab === "vocabWrong" && (
           <VocabWrongTab vocabWrongWords={vocabWrongWords} studentId={studentId} />
         )}
+        {tab === "progress" && (
+          <StudentProgressTree student={student} todos={todos} progressTree={progressTree} />
+        )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── StudentProgressTree: 진도 스킬트리 (원장앱 진도 맵과 동일 산출 규칙, 읽기 전용) ───
+// 트리 정의/보정은 원장앱 ptree3에서 그대로 내려오고, 진도는 이 학생의 투두 기록에서 계산한다.
+const extractTodoLinesForProgress = (row) => {
+  const out = [];
+  const push = (v) => String(v || "").split(/\r?\n/).forEach(l => { const t = l.trim(); if (t) out.push(t); });
+  if (row && row.steps5) ["step1","step2","step3","step4","step5"].forEach(k => push(row.steps5[k]));
+  else if (row) { push(row.homework); push(row.academy); }
+  return out;
+};
+const computeTreeProgressForStudent = (sid, todos, tree) => {
+  const result = { units: {}, recent: {} };
+  if (!sid || !tree) return result;
+  const prepared = (tree.lanes || []).flatMap(l => l.nodes || [])
+    .map(n => ({ n, keys: String(n.alias || n.name || "").split(",").map(v => v.trim()).filter(Boolean) }));
+  Object.keys(todos || {}).sort().forEach(dk => {
+    const day = todos[dk] || {};
+    const row = day[String(sid)] !== undefined ? day[String(sid)] : day[sid];
+    if (!row) return;
+    extractTodoLinesForProgress(row).forEach(line => {
+      prepared.forEach(({ n, keys }) => {
+        if (!keys.length || !keys.some(k => k && line.includes(k))) return;
+        const set = result.units[n.id] || (result.units[n.id] = new Set());
+        // 별칭 자체의 숫자(예: "그래머2")가 과번호로 집계되지 않게 별칭을 지운 뒤 숫자 추출
+        let scan = line;
+        keys.forEach(k => { if (k) scan = scan.split(k).join(" "); });
+        (scan.match(/\d{1,3}/g) || []).forEach(v => { const num = +v; if (num >= 1 && num <= (n.total || 0)) set.add(num); });
+        result.recent[n.id] = `${dk.slice(5).replace("-", "/")} · ${line.slice(0, 40)}`;
+      });
+    });
+  });
+  return result;
+};
+const effectiveTreeDone = (node, matched, ovr) => {
+  if (ovr && ovr.forceDone) return node.total || 0;
+  return Math.min(node.total || 0, (matched || 0) + (Number(ovr && ovr.baseDone) || 0));
+};
+
+function StudentProgressTree({ student, todos, progressTree }) {
+  const G = { bg: "linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%)", tile: "#1d2b4e", tileDim: "#172441", glow: "#4aa3e8", gold: "#ffd166", text: "#e9edff", dim: "#8fa3c8" };
+  const sid = student?.id;
+  const prog = useMemo(() => computeTreeProgressForStudent(sid, todos, progressTree), [sid, todos, progressTree]);
+  const ovrMap = (progressTree?.ovr || {})[String(sid)] || (progressTree?.ovr || {})[sid] || {};
+  const getOvr = (nid) => ovrMap[nid] || null;
+
+  const nodeInfo = (node, idx, nodes) => {
+    const matched = prog.units[node.id] ? prog.units[node.id].size : 0;
+    const done = effectiveTreeDone(node, matched, getOvr(node.id));
+    const total = node.total || 0;
+    let st;
+    if (total > 0 && done >= total) st = "done";
+    else if (done > 0) st = "current";
+    else {
+      const prev = nodes[idx - 1];
+      if (!prev) st = "next";
+      else {
+        const pm = prog.units[prev.id] ? prog.units[prev.id].size : 0;
+        st = effectiveTreeDone(prev, pm, getOvr(prev.id)) >= (prev.total || 0) ? "next" : "locked";
+      }
+    }
+    return { done, total, st, pct: total ? Math.round((done / total) * 100) : 0 };
+  };
+
+  let sumDone = 0, sumTotal = 0, doneBooks = 0;
+  (progressTree?.lanes || []).forEach(l => (l.nodes || []).forEach((n, i, arr) => {
+    const info = nodeInfo(n, i, arr);
+    sumDone += Math.min(info.done, info.total); sumTotal += info.total;
+    if (info.st === "done") doneBooks += 1;
+  }));
+  const overall = sumTotal ? Math.round((sumDone / sumTotal) * 100) : 0;
+
+  return (
+    <div style={{ background: G.bg, borderRadius: 16, padding: "20px 16px", color: G.text, border: "1px solid #2a3a66" }}>
+      <style>{`@keyframes mplTreePulse{0%{box-shadow:0 0 0 0 rgba(74,163,232,.5)}70%{box-shadow:0 0 0 12px rgba(74,163,232,0)}100%{box-shadow:0 0 0 0 rgba(0,0,0,0)}}`}</style>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+        <span style={{ fontWeight: 900, fontSize: 16 }}>{String(student?.name || "").split("-")[0]}의 스킬트리</span>
+        <span style={{ fontSize: 11, fontWeight: 900, color: G.gold, border: `1px solid ${G.gold}66`, borderRadius: 8, padding: "2px 9px" }}>LV.{doneBooks} · 정복 {doneBooks}권</span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+        <div style={{ flex: 1, height: 9, borderRadius: 6, background: "#0a0f28", overflow: "hidden" }}>
+          <div style={{ width: `${overall}%`, height: "100%", background: `linear-gradient(90deg,#1C66A5,#4aa3e8,${G.gold})`, transition: "width .4s" }} />
+        </div>
+        <span style={{ fontSize: 12, fontWeight: 900, color: G.glow }}>{overall}%</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        {(progressTree?.lanes || []).map(lane => (
+          <div key={lane.id}>
+            <div style={{ fontWeight: 900, fontSize: 12, color: G.dim, letterSpacing: 2, marginBottom: 9 }}>{lane.name}</div>
+            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", rowGap: 12 }}>
+              {(lane.nodes || []).map((n, i) => {
+                const info = nodeInfo(n, i, lane.nodes);
+                return (
+                  <div key={n.id} style={{ display: "flex", alignItems: "center" }}>
+                    {i > 0 && <div style={{ width: 24, borderTop: `2px ${info.st === "locked" ? "dashed" : "solid"} ${info.st === "locked" ? "#26355f" : lane.color || G.glow}` }} />}
+                    <div style={{
+                      width: 104, padding: "11px 8px", borderRadius: 13, textAlign: "center",
+                      background: info.st === "locked" ? G.tileDim : G.tile,
+                      border: `1.5px solid ${info.st === "done" ? G.gold : info.st === "current" ? (lane.color || G.glow) : info.st === "next" ? "#33477e" : "#22335f"}`,
+                      boxShadow: info.st === "done" ? `0 0 14px ${G.gold}55` : info.st === "current" ? `0 0 16px ${(lane.color || G.glow)}66` : "none",
+                      animation: info.st === "current" ? "mplTreePulse 2.2s infinite" : "none",
+                      opacity: info.st === "locked" ? 0.5 : 1,
+                    }}>
+                      <div style={{ fontWeight: 900, fontSize: 11.5, color: info.st === "done" ? G.gold : G.text, lineHeight: 1.3, minHeight: 30, display: "flex", alignItems: "center", justifyContent: "center" }}>{n.name}</div>
+                      {info.st === "done" && <div style={{ fontSize: 10, fontWeight: 900, color: G.gold, marginTop: 4 }}>정복 완료</div>}
+                      {info.st === "current" && (<>
+                        <div style={{ height: 6, borderRadius: 4, background: "#0a0f28", marginTop: 6, overflow: "hidden" }}>
+                          <div style={{ width: `${info.pct}%`, height: "100%", background: `linear-gradient(90deg, ${lane.color || "#1C66A5"}, #4aa3e8)`, transition: "width .4s" }} />
+                        </div>
+                        <div style={{ fontSize: 10, fontWeight: 900, color: G.glow, marginTop: 4 }}>{info.done}/{info.total} · {info.pct}%</div>
+                      </>)}
+                      {info.st === "next" && <div style={{ fontSize: 9.5, fontWeight: 900, color: "#7f97c6", marginTop: 4, letterSpacing: 1 }}>NEXT</div>}
+                      {info.st === "locked" && <div style={{ fontSize: 9.5, fontWeight: 900, color: "#4e618f", marginTop: 4, letterSpacing: 1 }}>LOCKED</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: 16, fontSize: 11, color: G.dim, fontWeight: 600 }}>진도는 학원 수업 기록으로 자동 계산돼요. 궁금한 건 선생님께!</div>
     </div>
   );
 }
