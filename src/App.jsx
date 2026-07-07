@@ -11,6 +11,115 @@ if (!STUDENT_SYNC_API_URL) {
   console.error("[CONFIG ERROR] VITE_STUDENT_SYNC_API_URL이 설정되지 않았습니다. 학생앱은 maple-sync /student-bundle Worker URL이 필요합니다.");
 }
 
+// ─── [PWA] 홈 화면 설치 지원 ─────────────────────────
+// 아이콘은 maple-sync 워커가 내장 서빙(/pwa/*.png, 무인증). 동기화 URL에서 origin을 재사용한다.
+const PWA_ICON_BASE = (() => {
+  try { return new URL(STUDENT_SYNC_API_URL).origin + "/pwa"; } catch (e) { return ""; }
+})();
+
+// 지금 화면이 홈 화면 설치본(standalone)으로 열렸는지
+const isPwaStandalone = () => {
+  try { return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true; } catch (e) { return false; }
+};
+
+// manifest(학생별 start_url 포함)와 아이콘 메타를 런타임 주입한다.
+// index.html을 안 건드리기 위한 방식 — 설치된 아이콘을 누르면 "그 학생 링크"로 열린다.
+const setupStudentPwa = () => {
+  try {
+    if (!PWA_ICON_BASE) return;
+    const head = document.head;
+    const ensure = (sel, make) => { if (!head.querySelector(sel)) head.appendChild(make()); };
+    const u = new URL(window.location.href);
+    u.searchParams.delete("ts"); // 일회성 파라미터 제거 (id, t는 유지)
+    const startUrl = u.pathname + u.search;
+    const manifest = {
+      name: "마플영어",
+      short_name: "마플영어",
+      start_url: startUrl,
+      scope: u.pathname,
+      display: "standalone",
+      background_color: "#16213e",
+      theme_color: "#16213e",
+      icons: [
+        { src: `${PWA_ICON_BASE}/icon-192.png`, sizes: "192x192", type: "image/png", purpose: "any" },
+        { src: `${PWA_ICON_BASE}/icon-512.png`, sizes: "512x512", type: "image/png", purpose: "any maskable" },
+      ],
+    };
+    ensure('link[rel="manifest"]', () => {
+      const l = document.createElement("link");
+      l.rel = "manifest";
+      l.href = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: "application/manifest+json" }));
+      return l;
+    });
+    ensure('link[rel="apple-touch-icon"]', () => { const l = document.createElement("link"); l.rel = "apple-touch-icon"; l.sizes = "180x180"; l.href = `${PWA_ICON_BASE}/apple-touch-icon-180.png`; return l; });
+    ensure('meta[name="theme-color"]', () => { const m = document.createElement("meta"); m.name = "theme-color"; m.content = "#16213e"; return m; });
+    ensure('meta[name="apple-mobile-web-app-capable"]', () => { const m = document.createElement("meta"); m.name = "apple-mobile-web-app-capable"; m.content = "yes"; return m; });
+    ensure('meta[name="apple-mobile-web-app-title"]', () => { const m = document.createElement("meta"); m.name = "apple-mobile-web-app-title"; m.content = "마플영어"; return m; });
+  } catch (e) { console.warn("PWA 셋업 실패:", e?.message || e); }
+};
+
+// 설치 안내 배너: 폰에서만, 설치본이 아니고, 닫은 적 없을 때만 표시
+const PWA_BANNER_DISMISS_KEY = "mapl_pwa_banner_dismissed_v1";
+function PwaInstallBanner() {
+  const [dismissed, setDismissed] = useState(() => { try { return localStorage.getItem(PWA_BANNER_DISMISS_KEY) === "1"; } catch (e) { return false; } });
+  const [installEvt, setInstallEvt] = useState(null); // 안드로이드 beforeinstallprompt
+  const [installed, setInstalled] = useState(false);
+  const ua = navigator.userAgent || "";
+  const isIos = /iPhone|iPad|iPod/i.test(ua);
+  const isMobileUa = isIos || /Android/i.test(ua);
+  useEffect(() => {
+    const onPrompt = (e) => { e.preventDefault(); setInstallEvt(e); };
+    const onInstalled = () => setInstalled(true);
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => { window.removeEventListener("beforeinstallprompt", onPrompt); window.removeEventListener("appinstalled", onInstalled); };
+  }, []);
+  if (dismissed || installed || isPwaStandalone()) return null;
+  const dismiss = () => { setDismissed(true); try { localStorage.setItem(PWA_BANNER_DISMISS_KEY, "1"); } catch (e) {} };
+  // 카카오톡 인앱 브라우저: 설치 자체가 불가 → 외부 브라우저(크롬/사파리)로 원탭 탈출 버튼 제공
+  const isKakao = /KAKAOTALK/i.test(ua);
+  if (isKakao) {
+    const openExternal = () => {
+      try { window.location.href = "kakaotalk://web/openExternal?url=" + encodeURIComponent(window.location.href); } catch (e) {}
+    };
+    return (
+      <div style={{ background: "#0f3460", color: "#fff", padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: 20, flexShrink: 0 }}>📲</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800 }}>카카오톡 안에서는 홈 화면 추가가 안 돼요</div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.75)", marginTop: 2, lineHeight: 1.5 }}>
+            오른쪽 버튼으로 {isIos ? "Safari" : "브라우저"}에서 열면 바로 추가할 수 있어요
+          </div>
+        </div>
+        <button onClick={openExternal}
+          style={{ border: "none", borderRadius: 8, background: "#ffd166", color: "#1a1a2e", fontWeight: 900, fontSize: 12, padding: "8px 12px", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{isIos ? "Safari로 열기" : "브라우저로 열기"}</button>
+        <button onClick={dismiss} aria-label="배너 닫기" style={{ border: "none", background: "transparent", color: "rgba(255,255,255,0.6)", fontSize: 15, fontWeight: 900, cursor: "pointer", flexShrink: 0, padding: 4 }}>✕</button>
+      </div>
+    );
+  }
+  if (!isMobileUa) return null;
+  return (
+    <div style={{ background: "#0f3460", color: "#fff", padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+      <span style={{ fontSize: 20, flexShrink: 0 }}>📲</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800 }}>홈 화면에 추가하면 앱처럼 한 번에 열려요</div>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.75)", marginTop: 2, lineHeight: 1.5 }}>
+          {isIos
+            ? <>Safari 하단 <b>공유 버튼(네모+화살표)</b> → <b>홈 화면에 추가</b></>
+            : installEvt
+              ? <>오른쪽 <b>설치</b> 버튼 한 번이면 끝!</>
+              : <>브라우저 메뉴(⋮) → <b>홈 화면에 추가</b></>}
+        </div>
+      </div>
+      {!isIos && installEvt && (
+        <button onClick={async () => { try { installEvt.prompt(); const r = await installEvt.userChoice; if (r && r.outcome === "accepted") setInstalled(true); } catch (e) {} }}
+          style={{ border: "none", borderRadius: 8, background: "#ffd166", color: "#1a1a2e", fontWeight: 900, fontSize: 12, padding: "8px 14px", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>설치</button>
+      )}
+      <button onClick={dismiss} aria-label="배너 닫기" style={{ border: "none", background: "transparent", color: "rgba(255,255,255,0.6)", fontSize: 15, fontWeight: 900, cursor: "pointer", flexShrink: 0, padding: 4 }}>✕</button>
+    </div>
+  );
+}
+
 const fetchWithTimeout = async (url, options = {}, timeoutMs = 10000) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -378,16 +487,20 @@ const getExamStartEndForDday = (exam = {}) => {
   return { start, end: end || start };
 };
 
-const getExamTargetDateForDday = (exam = {}, student = {}) => {
+// 학년별 영어시험일(engDates[학년]) — 원장앱 D-day 칩과 동일하게 "영어학원이니까 영어일 우선" 규칙의 근거값.
+const getEngExamDateForDday = (exam = {}, student = {}) => {
   const grade = getStudentGradeForDday(student);
-  const gradeDate = grade && (
+  return (grade && (
     exam.engDates?.[grade] ||
     exam.englishDates?.[grade] ||
     exam.gradeDates?.[grade] ||
     exam.byGrade?.[grade]
-  );
+  )) || "";
+};
+
+const getExamTargetDateForDday = (exam = {}, student = {}) => {
   const { start } = getExamStartEndForDday(exam);
-  return gradeDate || start;
+  return getEngExamDateForDday(exam, student) || start;
 };
 
 const dateDiffDaysForDday = (targetDate) => {
@@ -500,6 +613,7 @@ const buildStudentExamDdays = (student, exams = [], limit = 2) => {
     .filter(exam => exam && !exam.deletedAt && isExamVisibleForStudentDday(exam, student))
     .map(exam => {
       const { start, end } = getExamStartEndForDday(exam);
+      const engDate = getEngExamDateForDday(exam, student);
       const targetDate = getExamTargetDateForDday(exam, student);
       const diff = dateDiffDaysForDday(targetDate);
       if (diff === null) return null;
@@ -507,6 +621,8 @@ const buildStudentExamDdays = (student, exams = [], limit = 2) => {
       if (ended) return null;
       const ongoing = start && end && String(start).slice(0, 10) <= today && today <= String(end).slice(0, 10);
       const type = String(exam.type || "");
+      // 영어일이 있으면 D-day는 영어일 기준(diff가 이미 영어일 기준). 영어일이 지났는데 시험기간이 남았으면 "영어 끝".
+      const engDone = !!engDate && String(engDate).slice(0, 10) < today;
       const dateLabel = start && end && start !== end ? `${fmtDateShort(start)} ~ ${fmtDateShort(end)}` : fmtDateShort(targetDate);
       return {
         id: exam.id || `${exam.name || type}_${targetDate}`,
@@ -517,7 +633,11 @@ const buildStudentExamDdays = (student, exams = [], limit = 2) => {
         end,
         diff,
         ongoing,
-        ddayLabel: ongoing && diff < 0 ? "진행 중" : formatDdayLabel(diff),
+        school: String(exam.school || ""),
+        kind: String(exam.kind || ""),
+        semester: (Number(exam.semester) === 1 || Number(exam.semester) === 2) ? Number(exam.semester) : null,
+        isEngTarget: !!engDate,
+        ddayLabel: engDone ? "영어 끝" : (ongoing && diff < 0 ? "진행 중" : formatDdayLabel(diff)),
         dateLabel,
       };
     })
@@ -529,6 +649,89 @@ const buildStudentExamDdays = (student, exams = [], limit = 2) => {
   // 학생 화면은 복잡하지 않게 내신 1개 + 모의고사 1개만 보여준다.
   return [nextSchoolExam, nextMockExam].filter(Boolean).slice(0, limit);
 };
+
+// ─── 이번 내신 시험범위 카드 (examr3 학생 노출 — 워커가 본인 학교 항목만 내려줌) ───
+// 슬롯 v2 호환: 구형 문자열 / 신형 {rows:[{bookLabel,bookKey,range,memo}],legacyText} 모두 텍스트로 변환해 표시.
+const normalizeExamRangeSlot = (v) => {
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    const rows = (Array.isArray(v.rows) ? v.rows : []).filter(r => r && typeof r === "object");
+    return { rows, legacyText: String(v.legacyText || "") };
+  }
+  return { rows: [], legacyText: v == null ? "" : String(v) };
+};
+const examRangeSlotToText = (v) => {
+  const { rows, legacyText } = normalizeExamRangeSlot(v);
+  const lines = rows.map(r => {
+    const head = [String(r.bookLabel || r.bookKey || "").trim(), String(r.range || "").trim()].filter(Boolean).join(" ");
+    const memo = String(r.memo || "").trim();
+    return memo ? (head ? `${head} — ${memo}` : memo) : head;
+  }).filter(Boolean);
+  const legacy = legacyText.trim();
+  return [...lines, ...(legacy ? [legacy] : [])].join("\n");
+};
+const getStudentSchoolCodeForRange = (student = {}) => {
+  const school = getStudentSchoolForDday(student);
+  const grade = getStudentGradeForDday(student);
+  return school && grade ? `${school}${grade}` : "";
+};
+// 시험(exam3 항목) → 시험범위 슬롯 라벨. 종류는 시험명(중간/기말), 학기는 시험 시작월(8월~=2학기)로 판정.
+const getExamRangeSlotForExam = (exam = {}) => {
+  // 구조화 필드(개편 2단계) 우선 — 시험 등록 시 선택한 값이라 추론이 필요 없다.
+  const kindS = String(exam.kind || "");
+  const semS = Number(exam.semester);
+  if (/^(중간|기말)$/.test(kindS) && (semS === 1 || semS === 2)) return `${semS}학기 ${kindS}`;
+  const name = String(exam.name || "");
+  const kind = /^(중간|기말)$/.test(kindS) ? kindS : (/중간/.test(name) ? "중간" : /기말/.test(name) ? "기말" : null);
+  const ds = String(exam.date || exam.start || "");
+  const mm = Number(ds.slice(5, 7));
+  if (!kind || !(mm >= 1 && mm <= 12)) return null;
+  return `${mm >= 8 ? 2 : 1}학기 ${kind}`;
+};
+const getExamRangeTextForStudent = (examRanges, schoolCode, exam = {}) => {
+  const slot = getExamRangeSlotForExam(exam);
+  if (!slot || !schoolCode) return null;
+  const ds = String(exam.date || exam.start || "");
+  const year = Number(ds.slice(0, 4));
+  if (!year) return null;
+  const byYear = examRanges?.data?.[schoolCode];
+  const entry = byYear ? (byYear[year] || byYear[String(year)]) : null;
+  const text = entry ? examRangeSlotToText(entry[slot]).trim() : "";
+  return text ? { slot, year, text, value: entry[slot] } : null;
+};
+function StudentExamRangeCard({ student, items, examRanges }) {
+  const [open, setOpen] = useState(false);
+  const naesin = (items || []).find(x => x && x.type === "내신") || null;
+  const code = getStudentSchoolCodeForRange(student || {});
+  const info = naesin ? getExamRangeTextForStudent(examRanges, code, { name: naesin.name, date: naesin.start, kind: naesin.kind, semester: naesin.semester }) : null;
+  if (!info) return null;
+  return (
+    <div style={{ background: "rgba(255,255,255,0.035)", borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
+      <button onClick={() => setOpen(o => !o)} style={{ width: "100%", border: "none", background: "transparent", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, textAlign: "left" }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.85)", letterSpacing: -0.2 }}>📋 이번 시험 범위</span>
+        <span style={{ fontSize: 10.5, fontWeight: 600, color: "rgba(255,255,255,0.45)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{code} · {info.slot}</span>
+        <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: "#34d399", flexShrink: 0 }}>{open ? "접기 ▲" : "펼치기 ▼"}</span>
+      </button>
+      {open && (() => {
+        const nv = normalizeExamRangeSlot(info.value);
+        const rows = nv.rows.filter(r => String(r.bookLabel || r.bookKey || "").trim() || String(r.range || "").trim() || String(r.memo || "").trim());
+        if (rows.length === 0 && !nv.legacyText.trim()) {
+          // 방어: value가 비정상이어도 텍스트 fallback으로 항상 내용은 보인다
+          return <div style={{ marginTop: 10, background: "rgba(255,255,255,0.05)", borderRadius: 10, padding: "10px 12px", fontSize: 12.5, lineHeight: 1.75, color: "rgba(255,255,255,0.92)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{info.text}</div>;
+        }
+        return <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+          {rows.map((r, i) => (
+            <div key={r.id || i} style={{ background: "rgba(255,255,255,0.05)", borderRadius: 10, padding: "9px 12px", display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: 6 }}>
+              <span style={{ fontSize: 12.5, fontWeight: 800, color: "#6ee7b7" }}>{String(r.bookLabel || r.bookKey || "교재")}</span>
+              {String(r.range || "").trim() && <span style={{ fontSize: 12.5, fontWeight: 600, color: "rgba(255,255,255,0.92)" }}>{r.range}</span>}
+              {String(r.memo || "").trim() && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.55)" }}>— {r.memo}</span>}
+            </div>
+          ))}
+          {nv.legacyText.trim() && <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: 10, padding: "9px 12px", fontSize: 12, lineHeight: 1.7, color: "rgba(255,255,255,0.8)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{nv.legacyText}</div>}
+        </div>;
+      })()}
+    </div>
+  );
+}
 
 function StudentExamDdaySection({ items }) {
   if (!items || items.length === 0) return null;
@@ -551,7 +754,8 @@ function StudentExamDdaySection({ items }) {
         {items.map(item => {
           const isMock = item.type === "모의고사";
           const accent = isMock ? "#a78bfa" : "#34d399";
-          const ddayColor = item.ongoing ? "#fde68a" : accent;
+          const ddayColor = item.ddayLabel === "영어 끝" ? "rgba(255,255,255,0.45)" : item.ongoing ? "#fde68a" : accent;
+          const showEngBadge = item.isEngTarget && item.ddayLabel !== "영어 끝";
           return (
             <div key={item.id} style={{
               display: "flex", alignItems: "center", gap: 10,
@@ -573,6 +777,13 @@ function StudentExamDdaySection({ items }) {
               }}>
                 {item.name}
               </span>
+              {showEngBadge && (
+                <span style={{
+                  fontSize: 9, fontWeight: 800, color: accent,
+                  border: `1px solid ${accent}55`, borderRadius: 6,
+                  padding: "1px 5px", flexShrink: 0, letterSpacing: 0.3,
+                }} title="영어시험일 기준 D-day">영어</span>
+              )}
               <span style={{
                 fontSize: 11, color: "rgba(255,255,255,0.5)",
                 flexShrink: 0,
@@ -1297,6 +1508,9 @@ export default function App() {
   const params = new URLSearchParams(window.location.search);
   const studentId = params.get("id");
 
+  // [PWA] manifest·아이콘 메타 주입 (학생별 start_url 포함) — 1회
+  useEffect(() => { setupStudentPwa(); }, []);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [student, setStudent] = useState(null);
@@ -1307,6 +1521,7 @@ export default function App() {
   const [makeups, setMakeups] = useState([]);
   const [customHolidays, setCustomHolidays] = useState({});
   const [exams, setExams] = useState([]);
+  const [examRanges, setExamRanges] = useState(null); // 시험범위(examr3) — 워커가 본인 학교 항목만 전달, 읽기 전용
   const [vocabWrongWords, setVocabWrongWords] = useState({});
   const [progressTree, setProgressTree] = useState(null); // 원장앱 진도 트리(ptree3) — 읽기 전용
   const [tab, setTab] = useState("tasks");
@@ -1365,6 +1580,7 @@ export default function App() {
     setMakeups(bundle.makeups || []);
     setCustomHolidays(bundle.customHolidays || {});
     setExams(Array.isArray(bundle.exams || bundle.exam3) ? (bundle.exams || bundle.exam3) : []);
+    setExamRanges(bundle.examRanges || bundle.examr3 || null);
     setVocabWrongWords(prev => keepPrevIfUnexpectedEmpty(prev, bundle.vocabWrongWords || {}, "vocabWrongWords"));
     setSyncSource(bundle.source || "");
     setOfflineNotice(bundle.source === "local-backup" ? "동기화 서버 연결 실패로 최근 백업 데이터를 표시 중입니다." : "");
@@ -1929,6 +2145,8 @@ export default function App() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#f6f7fb", fontFamily: F }}>
+      {/* [PWA] 홈 화면 설치 안내 배너 — 설치본/닫음/PC에선 자동 숨김 */}
+      <PwaInstallBanner />
       <div style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)", padding: "20px 24px 24px", color: "#fff" }}>
         <div style={{ maxWidth: MAX_W, margin: "0 auto" }}>
         {/* 브랜드 로고 락업 */}
@@ -1983,6 +2201,7 @@ export default function App() {
         </div>
 
         <StudentExamDdaySection items={examDdays} />
+        <StudentExamRangeCard student={student} items={examDdays} examRanges={examRanges} />
 
         {pinnedMessages.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
