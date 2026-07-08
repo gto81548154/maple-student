@@ -31,12 +31,12 @@ const setupStudentPwa = () => {
     const ensure = (sel, make) => { if (!head.querySelector(sel)) head.appendChild(make()); };
     const u = new URL(window.location.href);
     u.searchParams.delete("ts"); // 일회성 파라미터 제거 (id, t는 유지)
-    const startUrl = u.pathname + u.search;
+    const startUrl = u.origin + u.pathname + u.search;
     const manifest = {
       name: "마플영어",
       short_name: "마플영어",
       start_url: startUrl,
-      scope: u.pathname,
+      scope: u.origin + u.pathname,
       display: "standalone",
       background_color: "#16213e",
       theme_color: "#16213e",
@@ -48,7 +48,7 @@ const setupStudentPwa = () => {
     ensure('link[rel="manifest"]', () => {
       const l = document.createElement("link");
       l.rel = "manifest";
-      l.href = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: "application/manifest+json" }));
+      l.href = "data:application/manifest+json;charset=utf-8," + encodeURIComponent(JSON.stringify(manifest));
       return l;
     });
     ensure('link[rel="apple-touch-icon"]', () => { const l = document.createElement("link"); l.rel = "apple-touch-icon"; l.sizes = "180x180"; l.href = `${PWA_ICON_BASE}/apple-touch-icon-180.png`; return l; });
@@ -3265,4 +3265,3 @@ function StepSection({ step, displayNum, isChecked, isFailed, getFailReason, stu
     </div>
   );
 }
- 
