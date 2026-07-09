@@ -1527,7 +1527,7 @@ function StudentLinkRecover({ apiBase }) {
     if (!nm || tl.length !== 4) { setMsg("이름과 전화 뒷 4자리를 정확히 입력해주세요."); return; }
     setBusy(true); setMsg(""); setConflict(false);
     try {
-      const r = await fetch(apiBase.replace(/\/$/, "") + "/student/lookup", {
+      const r = await fetch(new URL(apiBase).origin + "/student/lookup", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: nm, tail: tl }),
       });
