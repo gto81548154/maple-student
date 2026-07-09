@@ -52,23 +52,12 @@ const setupStudentPwa = () => {
     const u = new URL(window.location.href);
     u.searchParams.delete("ts"); // 일회성 파라미터 제거 (id, t는 유지)
     const startUrl = u.origin + u.pathname + u.search;
-    const manifest = {
-      name: "마플영어",
-      short_name: "마플영어",
-      start_url: startUrl,
-      scope: u.origin + u.pathname,
-      display: "standalone",
-      background_color: "#16213e",
-      theme_color: "#16213e",
-      icons: [
-        { src: `${PWA_ICON_BASE}/icon-192.png`, sizes: "192x192", type: "image/png", purpose: "any" },
-        { src: `${PWA_ICON_BASE}/icon-512.png`, sizes: "512x512", type: "image/png", purpose: "any maskable" },
-      ],
-    };
     ensure('link[rel="manifest"]', () => {
       const l = document.createElement("link");
       l.rel = "manifest";
-      l.href = "data:application/manifest+json;charset=utf-8," + encodeURIComponent(JSON.stringify(manifest));
+      l.crossOrigin = "anonymous";
+      // 워커가 실제 URL로 manifest를 서빙 — data/blob 방식의 브라우저 호환 문제(아이콘·start_url 유실) 해소
+      l.href = `${PWA_ICON_BASE}/student-manifest.json?u=${encodeURIComponent(startUrl)}&scope=${encodeURIComponent(u.origin + u.pathname)}`;
       return l;
     });
     ensure('link[rel="apple-touch-icon"]', () => { const l = document.createElement("link"); l.rel = "apple-touch-icon"; l.sizes = "180x180"; l.href = `${PWA_ICON_BASE}/apple-touch-icon-180.png`; return l; });
@@ -3285,4 +3274,3 @@ function StepSection({ step, displayNum, isChecked, isFailed, getFailReason, stu
     </div>
   );
 }
- 
