@@ -22,6 +22,26 @@ const isPwaStandalone = () => {
   try { return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true; } catch (e) { return false; }
 };
 
+// 설치형 PWA가 쿼리 없이 실행될 때를 대비해 마지막 학생 링크(id/t)를 저장·복원한다.
+// (일부 브라우저가 manifest start_url의 쿼리를 버리는 문제 대응 — URL을 복원하면 이후 파싱 로직이 전부 그대로 동작)
+const LINK_STORE_KEY = "mapl_student_link_v1";
+const restoreStudentLink = () => {
+  try {
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.get("id")) {
+      localStorage.setItem(LINK_STORE_KEY, JSON.stringify({ id: sp.get("id"), t: sp.get("t") || "" }));
+      return;
+    }
+    const saved = JSON.parse(localStorage.getItem(LINK_STORE_KEY) || "null");
+    if (saved && saved.id) {
+      sp.set("id", String(saved.id));
+      if (saved.t) sp.set("t", String(saved.t));
+      window.history.replaceState(null, "", window.location.pathname + "?" + sp.toString());
+    }
+  } catch (e) {}
+};
+restoreStudentLink();
+
 // manifest(학생별 start_url 포함)와 아이콘 메타를 런타임 주입한다.
 // index.html을 안 건드리기 위한 방식 — 설치된 아이콘을 누르면 "그 학생 링크"로 열린다.
 const setupStudentPwa = () => {
