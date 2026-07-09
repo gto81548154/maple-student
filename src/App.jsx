@@ -1513,6 +1513,63 @@ const buildStepGroups = (todo) => {
 };
 
 // ─── Main App ───
+// id 없이 (설치 앱이 쿼리를 잃은 채) 열렸을 때: 이름+전화 뒷4자리로 본인 확인
+function StudentLinkRecover({ apiBase }) {
+  const [name, setName] = useState("");
+  const [tail, setTail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [conflict, setConflict] = useState(false);
+  const OWNER_TEL = "010-4005-8154";
+  const submit = async () => {
+    const nm = name.trim();
+    const tl = tail.replace(/[^0-9]/g, "").slice(-4);
+    if (!nm || tl.length !== 4) { setMsg("이름과 전화 뒷 4자리를 정확히 입력해주세요."); return; }
+    setBusy(true); setMsg(""); setConflict(false);
+    try {
+      const r = await fetch(apiBase.replace(/\/$/, "") + "/student/lookup", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: nm, tail: tl }),
+      });
+      const d = await r.json();
+      if (d && d.success && d.id) {
+        try { localStorage.setItem(LINK_STORE_KEY, JSON.stringify({ id: d.id, t: d.t || "" })); } catch (e) {}
+        const sp = new URLSearchParams();
+        sp.set("id", d.id); if (d.t) sp.set("t", d.t);
+        window.location.href = window.location.pathname + "?" + sp.toString();
+        return;
+      }
+      if (d && d.code === "conflict") setConflict(true);
+      setMsg(d?.error || "확인에 실패했습니다.");
+    } catch (e) {
+      setMsg("네트워크 오류입니다. 잠시 후 다시 시도해주세요.");
+    } finally { setBusy(false); }
+  };
+  const inp = { width: "100%", padding: "13px 14px", fontSize: 16, border: "1px solid #dfe3ef", borderRadius: 10, boxSizing: "border-box", background: "#fff", outline: "none" };
+  return (
+    <div style={{ minHeight: "100vh", background: "#f6f7fb", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font)", padding: 20 }}>
+      <div style={{ width: "100%", maxWidth: 340, textAlign: "center" }}>
+        <div style={{ fontSize: 40, marginBottom: 10 }}>👋</div>
+        <div style={{ fontSize: 19, fontWeight: 800, color: "#222", marginBottom: 6 }}>처음 한 번만 확인할게요</div>
+        <div style={{ fontSize: 13.5, color: "#888", lineHeight: 1.6, marginBottom: 22 }}>이름과 전화번호 뒷 4자리를 입력하면<br />다음부터 바로 열려요</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, textAlign: "left" }}>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 700, color: "#666", display: "block", marginBottom: 5 }}>이름</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="본인 이름" style={inp} />
+          </div>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 700, color: "#666", display: "block", marginBottom: 5 }}>전화번호 뒷 4자리</label>
+            <input value={tail} onChange={(e) => setTail(e.target.value.replace(/[^0-9]/g, "").slice(0, 4))} inputMode="numeric" placeholder="예: 5089" style={{ ...inp, letterSpacing: 4, fontWeight: 700 }} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} />
+          </div>
+        </div>
+        {msg && <div style={{ fontSize: 12.5, color: conflict ? "#b45309" : "#dc2626", marginTop: 12, lineHeight: 1.5 }}>{msg}</div>}
+        <button onClick={submit} disabled={busy} style={{ width: "100%", marginTop: 18, padding: "14px 0", fontSize: 15.5, fontWeight: 800, color: "#fff", background: busy ? "#9bb4cc" : "#1C66A5", border: "none", borderRadius: 10, cursor: busy ? "default" : "pointer" }}>{busy ? "확인 중..." : "확인"}</button>
+        {conflict && <a href={"tel:" + OWNER_TEL} style={{ display: "block", marginTop: 10, padding: "13px 0", fontSize: 14.5, fontWeight: 700, color: "#1C66A5", background: "#eaf2fb", borderRadius: 10, textDecoration: "none" }}>📞 원장님께 전화하기</a>}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const params = new URLSearchParams(window.location.search);
   const studentId = params.get("id");
@@ -2025,15 +2082,7 @@ export default function App() {
   }
 
   if (!studentId) {
-    return (
-      <div style={{ minHeight: "100vh", background: "#f6f7fb", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font)" }}>
-        <div style={{ textAlign: "center", padding: 40 }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>🔗</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: "#333", marginBottom: 8 }}>링크를 확인해주세요</div>
-          <div style={{ fontSize: 14, color: "#999", lineHeight: 1.6 }}>선생님이 보내주신 링크로<br />접속해주세요</div>
-        </div>
-      </div>
-    );
+    return <StudentLinkRecover apiBase={STUDENT_SYNC_API_URL} />;
   }
 
   if (error === "not_found") {
