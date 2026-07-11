@@ -1581,40 +1581,67 @@ function StudentLinkRecover({ apiBase }) {
 }
 
 // ─── 설문 응답 카드 ───
-// 선택지를 누르면 바로 워커에 제출한다. 마감 전까지 다시 눌러 변경 가능.
+// 단일 선택: 선택지를 누르면 바로 제출. 복수 선택(maxChoices>1): 눌러서 고른 뒤 [제출하기]로 저장.
 function StudentSurveyCard({ survey, myResponse, student, onSubmitted }) {
+  const maxChoices = Math.max(1, Number(survey?.maxChoices) || 1);
+  const savedChoices = Array.isArray(myResponse?.choices)
+    ? myResponse.choices.map(Number)
+    : (myResponse?.choice != null ? [Number(myResponse.choice)] : []);
+  const savedKey = savedChoices.join(",");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
-  const myChoice = myResponse != null && myResponse.choice != null ? Number(myResponse.choice) : null;
-  const submit = async (idx) => {
-    if (busy || idx === myChoice) return;
+  const [picked, setPicked] = useState(savedChoices);
+  useEffect(() => { setPicked(savedKey ? savedKey.split(",").map(Number) : []); setMsg(""); }, [survey.id, savedKey]);
+
+  const post = async (choicesArr) => {
     setBusy(true); setMsg("");
     try {
       const t = new URLSearchParams(window.location.search).get("t") || "";
+      const bodyObj = { surveyId: survey.id, studentId: String(student?.id || ""), t };
+      if (maxChoices > 1) bodyObj.choices = choicesArr; else bodyObj.choice = choicesArr[0];
       const r = await fetch(new URL(STUDENT_SYNC_API_URL).origin + "/survey/submit", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ surveyId: survey.id, studentId: String(student?.id || ""), t, choice: idx }),
+        body: JSON.stringify(bodyObj),
       });
       const d = await r.json().catch(() => null);
       if (r.ok && d?.success) {
-        onSubmitted(survey.id, { choice: idx, at: d.at || new Date().toISOString() });
+        const rec = { at: d.at || new Date().toISOString() };
+        if (maxChoices > 1) rec.choices = choicesArr; else rec.choice = choicesArr[0];
+        onSubmitted(survey.id, rec);
         setMsg("제출되었습니다. 마감 전까지 변경할 수 있어요.");
       } else setMsg(d?.error || "제출에 실패했습니다. 잠시 후 다시 시도해주세요.");
     } catch (e) { setMsg("네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요."); }
     setBusy(false);
   };
+
+  const tap = (idx) => {
+    if (busy) return;
+    if (maxChoices <= 1) { if (idx !== savedChoices[0]) post([idx]); return; }
+    setPicked((prev) => {
+      if (prev.includes(idx)) return prev.filter((x) => x !== idx);
+      if (prev.length >= maxChoices) { setMsg(`최대 ${maxChoices}개까지 선택할 수 있어요.`); return prev; }
+      setMsg("");
+      return [...prev, idx].sort((a, b) => a - b);
+    });
+  };
+  const dirty = maxChoices > 1 && picked.join(",") !== savedKey;
+  const submitted = savedChoices.length > 0;
+  const activeSet = maxChoices > 1 ? picked : savedChoices;
+  const submitDisabled = busy || picked.length === 0 || !dirty;
+
   return (
     <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #E4E0D8", padding: "14px 16px", marginBottom: 10, boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5, flexWrap: "wrap" }}>
         <span style={{ fontSize: 11, fontWeight: 800, color: "#fff", background: "#2A6FDB", padding: "2px 9px", borderRadius: 999 }}>설문</span>
-        {myChoice != null && <span style={{ fontSize: 11.5, fontWeight: 800, color: "#1B8A5A" }}>제출 완료</span>}
+        {maxChoices > 1 && <span style={{ fontSize: 11, fontWeight: 800, color: "#8E44AD", background: "#F5EEF8", padding: "2px 9px", borderRadius: 999 }}>최대 {maxChoices}개 선택</span>}
+        {submitted && <span style={{ fontSize: 11.5, fontWeight: 800, color: "#1B8A5A" }}>제출 완료</span>}
       </div>
       <div style={{ fontSize: 15, fontWeight: 800, color: "#2A2A28", marginBottom: 10, lineHeight: 1.45 }}>{survey.title}</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         {(survey.options || []).map((op, idx) => {
-          const on = idx === myChoice;
+          const on = activeSet.includes(idx);
           return (
-            <button key={idx} disabled={busy} onClick={() => submit(idx)} style={{
+            <button key={idx} disabled={busy} onClick={() => tap(idx)} style={{
               padding: "9px 14px", borderRadius: 10, cursor: busy ? "wait" : "pointer", fontSize: 13.5, fontWeight: 700,
               border: on ? "1.5px solid #2A6FDB" : "1.5px solid #E0DCD4",
               background: on ? "#EBF2FE" : "#fff", color: on ? "#2A6FDB" : "#555",
@@ -1622,8 +1649,15 @@ function StudentSurveyCard({ survey, myResponse, student, onSubmitted }) {
           );
         })}
       </div>
-      {msg && <div style={{ marginTop: 8, fontSize: 12, color: msg.includes("실패") || msg.includes("오류") || msg.includes("유효") ? "#D2402E" : "#1B8A5A", fontWeight: 700 }}>{msg}</div>}
-      {myChoice == null && !msg && <div style={{ marginTop: 8, fontSize: 12, color: "#999" }}>선택지를 누르면 바로 제출됩니다.</div>}
+      {maxChoices > 1 && (
+        <button disabled={submitDisabled} onClick={() => post(picked)} style={{
+          marginTop: 10, width: "100%", padding: "11px 0", borderRadius: 10, border: "none",
+          background: submitDisabled ? "#c9d6ea" : "#2A6FDB", color: "#fff",
+          fontSize: 14, fontWeight: 800, cursor: submitDisabled ? "default" : "pointer",
+        }}>{busy ? "제출 중..." : submitted ? (dirty ? "변경 저장" : "제출됨") : "제출하기"}</button>
+      )}
+      {msg && <div style={{ marginTop: 8, fontSize: 12, color: msg.includes("실패") || msg.includes("오류") || msg.includes("유효") ? "#D2402E" : msg.includes("최대") ? "#B45309" : "#1B8A5A", fontWeight: 700 }}>{msg}</div>}
+      {!submitted && !msg && <div style={{ marginTop: 8, fontSize: 12, color: "#999" }}>{maxChoices > 1 ? `원하는 항목을 ${maxChoices}개까지 고르고 [제출하기]를 눌러주세요.` : "선택지를 누르면 바로 제출됩니다."}</div>}
     </div>
   );
 }
