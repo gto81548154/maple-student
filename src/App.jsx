@@ -61,6 +61,10 @@ const setupStudentPwa = () => {
       return l;
     });
     ensure('link[rel="apple-touch-icon"]', () => { const l = document.createElement("link"); l.rel = "apple-touch-icon"; l.sizes = "180x180"; l.href = `${PWA_ICON_BASE}/apple-touch-icon-180.png`; return l; });
+    // [패치] PC 브라우저 탭 파비콘 = 앱 아이콘 (워커가 서빙하는 icon-192 재사용, 기존 태그 있으면 교체)
+    const fav = head.querySelector('link[rel="icon"], link[rel="shortcut icon"]') || (() => { const l = document.createElement("link"); l.rel = "icon"; head.appendChild(l); return l; })();
+    fav.type = "image/png";
+    fav.href = `${PWA_ICON_BASE}/icon-192.png`;
     ensure('meta[name="theme-color"]', () => { const m = document.createElement("meta"); m.name = "theme-color"; m.content = "#16213e"; return m; });
     ensure('meta[name="apple-mobile-web-app-capable"]', () => { const m = document.createElement("meta"); m.name = "apple-mobile-web-app-capable"; m.content = "yes"; return m; });
     ensure('meta[name="apple-mobile-web-app-title"]', () => { const m = document.createElement("meta"); m.name = "apple-mobile-web-app-title"; m.content = "마플영어"; return m; });
@@ -252,6 +256,9 @@ const loadStudentBundleFromWorker = async (studentId) => {
     exams: Array.isArray(examSource) ? examSource : [],
     vocabWrongWords: normalizeVocabWrongWordsForStudent(vocabWrongSource, studentId),
     progressTree: payload.progressTree || payload.ptree3 || null,
+    attLog: normalizeByDateForStudent(payload.attLog || payload.att_log3 || {}, studentId), // [일정] 등하원 기록
+    surveys: Array.isArray(payload.surveys || payload.svy3) ? (payload.surveys || payload.svy3) : [], // [설문] 진행 중 + 본인 대상
+    surveyResponses: payload.surveyResponses || payload.svyr3 || {}, // [설문] 본인 응답
   };
 };
 
@@ -292,6 +299,9 @@ const saveStudentBundleToLocal = (studentId, bundle = {}) => {
         exams: Array.isArray(bundle.exams || bundle.exam3) ? (bundle.exams || bundle.exam3) : [],
         vocabWrongWords: bundle.vocabWrongWords || {},
         progressTree: bundle.progressTree || null,
+        attLog: bundle.attLog || {},
+        surveys: bundle.surveys || [],
+        surveyResponses: bundle.surveyResponses || {},
       },
     };
     localStorage.setItem(getStudentBundleStorageKey(studentId), JSON.stringify(snapshot));
@@ -1570,6 +1580,180 @@ function StudentLinkRecover({ apiBase }) {
   );
 }
 
+// ─── 설문 응답 카드 ───
+// 선택지를 누르면 바로 워커에 제출한다. 마감 전까지 다시 눌러 변경 가능.
+function StudentSurveyCard({ survey, myResponse, student, onSubmitted }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const myChoice = myResponse != null && myResponse.choice != null ? Number(myResponse.choice) : null;
+  const submit = async (idx) => {
+    if (busy || idx === myChoice) return;
+    setBusy(true); setMsg("");
+    try {
+      const t = new URLSearchParams(window.location.search).get("t") || "";
+      const r = await fetch(new URL(STUDENT_SYNC_API_URL).origin + "/survey/submit", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ surveyId: survey.id, studentId: String(student?.id || ""), t, choice: idx }),
+      });
+      const d = await r.json().catch(() => null);
+      if (r.ok && d?.success) {
+        onSubmitted(survey.id, { choice: idx, at: d.at || new Date().toISOString() });
+        setMsg("제출되었습니다. 마감 전까지 변경할 수 있어요.");
+      } else setMsg(d?.error || "제출에 실패했습니다. 잠시 후 다시 시도해주세요.");
+    } catch (e) { setMsg("네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요."); }
+    setBusy(false);
+  };
+  return (
+    <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #E4E0D8", padding: "14px 16px", marginBottom: 10, boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+        <span style={{ fontSize: 11, fontWeight: 800, color: "#fff", background: "#2A6FDB", padding: "2px 9px", borderRadius: 999 }}>설문</span>
+        {myChoice != null && <span style={{ fontSize: 11.5, fontWeight: 800, color: "#1B8A5A" }}>제출 완료</span>}
+      </div>
+      <div style={{ fontSize: 15, fontWeight: 800, color: "#2A2A28", marginBottom: 10, lineHeight: 1.45 }}>{survey.title}</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {(survey.options || []).map((op, idx) => {
+          const on = idx === myChoice;
+          return (
+            <button key={idx} disabled={busy} onClick={() => submit(idx)} style={{
+              padding: "9px 14px", borderRadius: 10, cursor: busy ? "wait" : "pointer", fontSize: 13.5, fontWeight: 700,
+              border: on ? "1.5px solid #2A6FDB" : "1.5px solid #E0DCD4",
+              background: on ? "#EBF2FE" : "#fff", color: on ? "#2A6FDB" : "#555",
+            }}>{op}</button>
+          );
+        })}
+      </div>
+      {msg && <div style={{ marginTop: 8, fontSize: 12, color: msg.includes("실패") || msg.includes("오류") || msg.includes("유효") ? "#D2402E" : "#1B8A5A", fontWeight: 700 }}>{msg}</div>}
+      {myChoice == null && !msg && <div style={{ marginTop: 8, fontSize: 12, color: "#999" }}>선택지를 누르면 바로 제출됩니다.</div>}
+    </div>
+  );
+}
+
+// ─── 일정 달력 탭 ───
+// 등원 요일(시간표) · 학원 휴원일 · 내 학교 시험 · 지난 출석 · 보강을 월 달력 한 장에서 확인한다.
+function StudentCalendarTab({ student, makeups, customHolidays, exams, attLog }) {
+  const todayObj = new Date(); todayObj.setHours(0, 0, 0, 0);
+  const todayStr = fmtYMD(todayObj);
+  const [ym, setYm] = useState({ y: todayObj.getFullYear(), m: todayObj.getMonth() });
+  const [selDate, setSelDate] = useState(todayStr);
+
+  const sid = String(student?.id || "");
+  const allHol = { ...HOLIDAYS, ...(customHolidays || {}) };
+  const holName = (v) => (typeof v === "string" ? v : (v && v.name) || "휴원");
+  const mks = (makeups || []).filter((m) => m && String(m.studentId) === sid);
+  const myExams = (exams || []).filter((ex) => ex && !ex.deletedAt && isExamVisibleForStudentDday(ex, student));
+
+  const attOf = (ds) => { const day = attLog && attLog[ds]; if (!day || typeof day !== "object") return null; return day[sid] ?? Object.values(day)[0] ?? null; };
+  const examsOf = (ds) => myExams.filter((ex) => {
+    const { start, end } = getExamStartEndForDday(ex);
+    const s = String(start || "").slice(0, 10);
+    const e = String(end || start || "").slice(0, 10) || s;
+    return s && s <= ds && ds <= e;
+  });
+  const dayInfo = (ds, dObj) => {
+    const hol = allHol[ds];
+    const hiddenMk = mks.some((m) => m.date === ds && m.isHidden);
+    const visMk = mks.find((m) => m.date === ds && !m.isHidden);
+    let attendTime = null;
+    if (!hol && !hiddenMk) {
+      if (visMk) attendTime = visMk.time || "";
+      else {
+        const dayKey = DAYS_EN[dObj.getDay() === 0 ? 6 : dObj.getDay() - 1];
+        const eff = getEffectiveSchedule(student, ds);
+        attendTime = (eff && eff.schedule && eff.schedule[dayKey]) || null;
+      }
+    }
+    return { hol, hiddenMk, visMk, attendTime, att: attOf(ds), dayExams: examsOf(ds) };
+  };
+
+  const first = new Date(ym.y, ym.m, 1);
+  const firstDow = first.getDay(); // 0=일요일 시작
+  const daysInMonth = new Date(ym.y, ym.m + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < firstDow; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(ym.y, ym.m, d));
+  const move = (diff) => setYm((p) => { const d = new Date(p.y, p.m + diff, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
+  const sel = selDate ? dayInfo(selDate, new Date(selDate + "T00:00:00")) : null;
+  const WEEK_KO = ["일", "월", "화", "수", "목", "금", "토"];
+  const navBtn = { width: 34, height: 34, borderRadius: 9, border: "1px solid #e5e0d8", background: "#faf9f7", cursor: "pointer", fontSize: 13, fontWeight: 800, color: "#555" };
+
+  return (
+    <div>
+      <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #eee", padding: "14px 12px", boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, padding: "0 4px" }}>
+          <button onClick={() => move(-1)} style={navBtn}>◀</button>
+          <div style={{ fontSize: 16, fontWeight: 800, color: "#2A2A28" }}>{ym.y}년 {ym.m + 1}월</div>
+          <button onClick={() => move(1)} style={navBtn}>▶</button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", marginBottom: 4 }}>
+          {WEEK_KO.map((w, i) => (
+            <div key={w} style={{ textAlign: "center", fontSize: 11.5, fontWeight: 700, color: i === 0 ? "#D2402E" : i === 6 ? "#2A6FDB" : "#999", padding: "4px 0" }}>{w}</div>
+          ))}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3 }}>
+          {cells.map((dObj, idx) => {
+            if (!dObj) return <div key={"e" + idx} />;
+            const ds = fmtYMD(dObj);
+            const info = dayInfo(ds, dObj);
+            const isSel = ds === selDate;
+            const isToday = ds === todayStr;
+            const attended = !!(info.att && (info.att.inAt || info.att.inTime));
+            return (
+              <button key={ds} onClick={() => setSelDate(ds)} style={{
+                minHeight: 52, padding: "5px 2px 4px", borderRadius: 9, cursor: "pointer",
+                border: isSel ? "1.8px solid #2A6FDB" : isToday ? "1.5px solid #b9cff2" : "1px solid transparent",
+                background: info.hol ? "#FDF0EE" : info.attendTime != null ? "#F0F6FF" : "#fff",
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+              }}>
+                <span style={{ fontSize: 12.5, fontWeight: isToday ? 800 : 600, color: info.hol ? "#D2402E" : dObj.getDay() === 0 ? "#D2402E" : dObj.getDay() === 6 ? "#2A6FDB" : "#333" }}>{dObj.getDate()}</span>
+                <span style={{ display: "flex", gap: 2, alignItems: "center", minHeight: 9 }}>
+                  {info.dayExams.length > 0 && <span style={{ width: 6, height: 6, borderRadius: 3, background: "#E67E22" }} />}
+                  {info.visMk && <span style={{ width: 6, height: 6, borderRadius: 3, background: "#8E44AD" }} />}
+                  {attended && <span style={{ fontSize: 8.5, fontWeight: 800, color: "#1B8A5A", lineHeight: 1 }}>✓</span>}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 10, padding: "8px 4px 0", borderTop: "1px solid #f2efe9" }}>
+          {[["#F0F6FF", "등원일", 1], ["#FDF0EE", "휴원", 1], ["#E67E22", "시험", 0], ["#8E44AD", "보강·시간변경", 0], ["#1B8A5A", "출석 ✓", 0]].map(([c, label, isBg]) => (
+            <span key={label} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "#777", fontWeight: 600 }}>
+              <span style={{ width: 10, height: 10, borderRadius: isBg ? 3 : 5, background: c, border: isBg ? "1px solid #e0dcd4" : "none", display: "inline-block" }} />{label}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {sel && (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #eee", padding: "14px 16px", marginTop: 12, boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
+          <div style={{ fontSize: 14.5, fontWeight: 800, color: "#2A2A28", marginBottom: 8 }}>
+            {Number(selDate.slice(5, 7))}월 {Number(selDate.slice(8, 10))}일 ({WEEK_KO[new Date(selDate + "T00:00:00").getDay()]})
+          </div>
+          {(() => {
+            const rows = [];
+            if (sel.hol) rows.push(["휴원", holName(sel.hol), "#D2402E"]);
+            sel.dayExams.forEach((ex) => {
+              const { start, end } = getExamStartEndForDday(ex);
+              const period = start && end && start !== end ? `${String(start).slice(5, 10)} ~ ${String(end).slice(5, 10)}` : "";
+              rows.push(["시험", `${ex.name || ex.type || "시험"}${period ? ` (${period})` : ""}`, "#E67E22"]);
+            });
+            if (sel.visMk) rows.push([sel.visMk.isOverride ? "시간변경" : "보강", sel.visMk.time ? `${sel.visMk.time} 등원` : "시간 미정", "#8E44AD"]);
+            else if (sel.attendTime && !sel.hol) rows.push(["등원", `${sel.attendTime} 등원 예정`, "#2A6FDB"]);
+            if (sel.hiddenMk) rows.push(["등원 취소", "이 날은 등원이 취소되었어요", "#999999"]);
+            if (sel.att && (sel.att.inTime || sel.att.inAt)) rows.push(["출석", `등원 ${sel.att.inTime || ""}${sel.att.outTime ? ` · 하원 ${sel.att.outTime}` : ""}`.trim(), "#1B8A5A"]);
+            if (!rows.length) return <div style={{ fontSize: 13, color: "#999" }}>이 날은 표시할 일정이 없어요.</div>;
+            return rows.map(([tag, text, color], i) => (
+              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "6px 0", borderTop: i ? "1px solid #f6f4ef" : "none" }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: "#fff", background: color, padding: "2px 8px", borderRadius: 999, flexShrink: 0 }}>{tag}</span>
+                <span style={{ fontSize: 13.5, color: "#444", fontWeight: 600, lineHeight: 1.45 }}>{text}</span>
+              </div>
+            ));
+          })()}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const params = new URLSearchParams(window.location.search);
   const studentId = params.get("id");
@@ -1590,6 +1774,9 @@ export default function App() {
   const [examRanges, setExamRanges] = useState(null); // 시험범위(examr3) — 워커가 본인 학교 항목만 전달, 읽기 전용
   const [vocabWrongWords, setVocabWrongWords] = useState({});
   const [progressTree, setProgressTree] = useState(null); // 원장앱 진도 트리(ptree3) — 읽기 전용
+  const [attLog, setAttLog] = useState({}); // [일정] 등하원 기록(att_log3) — 읽기 전용
+  const [surveys, setSurveys] = useState([]); // [설문] 진행 중 설문(svy3) — 본인 대상만
+  const [surveyResponses, setSurveyResponses] = useState({}); // [설문] 본인 응답(svyr3)
   const [tab, setTab] = useState("tasks");
   const [showAttQr, setShowAttQr] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
@@ -1646,6 +1833,9 @@ export default function App() {
     setMakeups(bundle.makeups || []);
     setCustomHolidays(bundle.customHolidays || {});
     setExams(Array.isArray(bundle.exams || bundle.exam3) ? (bundle.exams || bundle.exam3) : []);
+    setAttLog(bundle.attLog || {});
+    setSurveys(Array.isArray(bundle.surveys) ? bundle.surveys : []);
+    setSurveyResponses(bundle.surveyResponses || {});
     setExamRanges(bundle.examRanges || bundle.examr3 || null);
     setVocabWrongWords(prev => keepPrevIfUnexpectedEmpty(prev, bundle.vocabWrongWords || {}, "vocabWrongWords"));
     setSyncSource(bundle.source || "");
@@ -2334,10 +2524,21 @@ export default function App() {
         </div>
       )}
 
+      {/* [설문] 진행 중 설문 — 선택지를 누르면 제출, 마감 전까지 변경 가능 */}
+      {surveys.length > 0 && (
+        <div style={{ maxWidth: MAX_W, margin: "12px auto 0", padding: "0 16px", boxSizing: "border-box" }}>
+          {surveys.map((sv) => (
+            <StudentSurveyCard key={sv.id} survey={sv} myResponse={surveyResponses[sv.id]} student={student}
+              onSubmitted={(svId, resp) => setSurveyResponses((prev) => ({ ...prev, [svId]: resp }))} />
+          ))}
+        </div>
+      )}
+
       <div style={{ background: "#fff", borderBottom: "1px solid #eee", position: "sticky", top: 0, zIndex: 10 }}>
         <div style={{ maxWidth: MAX_W, margin: "0 auto", display: "flex" }}>
         {[
           { key: "tasks", label: "📋 숙제/과제" },
+          { key: "cal", label: "일정" },
           ...(studentVideos.length > 0 ? [{ key: "videos", label: "🎬 강의 영상" }] : []),
           ...(hasVocabWrong ? [{ key: "vocabWrong", label: "📝 오답 단어" }] : []),
           ...((progressTree?.lanes || []).length ? [{ key: "progress", label: "🌳 진도" }] : []),
@@ -2402,6 +2603,10 @@ export default function App() {
             )}
           </>
         )}
+        {tab === "cal" && (
+          <StudentCalendarTab student={student} makeups={makeups} customHolidays={customHolidays} exams={exams} attLog={attLog} />
+        )}
+
         {tab === "videos" && (() => {
           // ─── 영상 탭 책별 자동 분류 ───
           // 책(subject)별로 그룹핑. 책이 1개면 평면 리스트 (sub-tab 없음). 2개 이상이면 sub-tab으로 분류.
