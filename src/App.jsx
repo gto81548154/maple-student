@@ -11,6 +11,32 @@ if (!STUDENT_SYNC_API_URL) {
   console.error("[CONFIG ERROR] VITE_STUDENT_SYNC_API_URL이 설정되지 않았습니다. 학생앱은 maple-sync /student-bundle Worker URL이 필요합니다.");
 }
 
+// ─── [단어 TEST] 마플보카 연동 ───────────────────────
+// 마플보카 HTML 파일을 학생앱 public/voca.html 로 넣으면 별도 설정 없이 열립니다.
+// 다른 곳(R2 등)에 올렸다면 .env 로 주소를 지정하세요.
+// .env 예시: VITE_VOCA_APP_URL=https://example.com/voca.html
+const VOCA_APP_URL = import.meta.env.VITE_VOCA_APP_URL || "/voca.html";
+const WORKER_ORIGIN = (() => { try { return new URL(STUDENT_SYNC_API_URL).origin; } catch (e) { return ""; } })();
+// 진도 맵·강의 영상의 교재명에서 이 학생이 배우는 단어장을 추정한다. (정규 커리큘럼 연동)
+// 매칭되는 책이 하나도 없으면 전체(원장 전용 제외)를 보여준다 — 새 학생도 막히지 않게.
+const VOCA_BOOK_MATCHERS = [
+  { id: "wm_sn",    re: /워(드)?\s*마(스터)?[^\n]*수능/ },
+  { id: "wm_basic", re: /워(드)?\s*마(스터)?[^\n]*(basic|베이직)/i },
+  { id: "wm_hi",    re: /하이스트/ },
+  { id: "ve_ess",   re: /어휘끝[^\n]*필수/ },
+  { id: "ve_adv",   re: /어휘끝[^\n]*고난도/ },
+];
+const guessVocaBooks = (progressTree, videos) => {
+  const texts = [];
+  (progressTree?.lanes || []).forEach((l) => {
+    texts.push(String(l.name || l.label || l.book || ""));
+    (l.nodes || []).forEach((n) => texts.push(String(n.label || n.title || n.name || "")));
+  });
+  (videos || []).forEach((v) => texts.push(String(v.subject || "")));
+  const blob = texts.join("\n");
+  return VOCA_BOOK_MATCHERS.filter((m) => m.re.test(blob)).map((m) => m.id);
+};
+
 // ─── [PWA] 홈 화면 설치 지원 ─────────────────────────
 // 아이콘은 maple-sync 워커가 내장 서빙(/pwa/*.png, 무인증). 동기화 URL에서 origin을 재사용한다.
 const PWA_ICON_BASE = (() => {
@@ -324,18 +350,20 @@ const DAYS_EN = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 // ⚠️ 동시 수정 필수: 이 상수는 원장앱.jsx와 학생앱.jsx에 복제되어 있다.
 //    한쪽만 수정하면 등원일 표시가 두 앱에서 달라진다. 반드시 두 파일을 함께 수정할 것.
 const HOLIDAYS = {
-  "2025-01-01":"신정","2025-01-28":"설날","2025-01-29":"설날","2025-01-30":"설날",
-  "2025-03-01":"삼일절","2025-05-01":"근로자의 날","2025-05-05":"어린이날","2025-05-06":"대체공휴일","2025-06-06":"현충일",
+  "2025-01-01":"신정","2025-01-27":"임시공휴일","2025-01-28":"설날","2025-01-29":"설날","2025-01-30":"설날",
+  "2025-03-01":"삼일절","2025-03-03":"대체공휴일","2025-05-01":"근로자의 날","2025-05-05":"어린이날","2025-05-06":"대체공휴일","2025-06-03":"대통령선거일","2025-06-06":"현충일",
   "2025-08-15":"광복절","2025-10-03":"개천절","2025-10-05":"추석","2025-10-06":"추석","2025-10-07":"추석","2025-10-08":"대체공휴일",
   "2025-10-09":"한글날","2025-12-25":"크리스마스",
   "2026-01-01":"신정","2026-02-16":"설날","2026-02-17":"설날","2026-02-18":"설날",
-  "2026-03-01":"삼일절","2026-03-02":"대체공휴일","2026-05-01":"근로자의 날","2026-05-05":"어린이날","2026-05-24":"석가탄신일",
-  "2026-06-06":"현충일","2026-08-15":"광복절","2026-09-24":"추석","2026-09-25":"추석","2026-09-26":"추석",
-  "2026-10-03":"개천절","2026-10-09":"한글날","2026-12-25":"크리스마스",
+  "2026-03-01":"삼일절","2026-03-02":"대체공휴일","2026-05-01":"근로자의 날","2026-05-05":"어린이날","2026-05-24":"석가탄신일","2026-05-25":"대체공휴일",
+  "2026-06-03":"지방선거일","2026-06-06":"현충일","2026-07-17":"제헌절","2026-08-15":"광복절","2026-08-17":"대체공휴일",
+  "2026-09-24":"추석","2026-09-25":"추석","2026-09-26":"추석",
+  "2026-10-03":"개천절","2026-10-05":"대체공휴일","2026-10-09":"한글날","2026-12-25":"크리스마스",
   "2027-01-01":"신정","2027-02-06":"설날","2027-02-07":"설날","2027-02-08":"설날","2027-02-09":"대체공휴일",
-  "2027-03-01":"삼일절","2027-05-01":"근로자의 날","2027-05-05":"어린이날","2027-05-13":"석가탄신일","2027-06-06":"현충일",
-  "2027-08-15":"광복절","2027-08-16":"대체공휴일","2027-10-03":"개천절","2027-10-09":"한글날",
-  "2027-10-14":"추석","2027-10-15":"추석","2027-10-16":"추석","2027-12-25":"크리스마스",
+  "2027-03-01":"삼일절","2027-05-01":"근로자의 날","2027-05-03":"대체공휴일","2027-05-05":"어린이날","2027-05-13":"석가탄신일","2027-06-06":"현충일",
+  "2027-07-17":"제헌절","2027-07-19":"대체공휴일","2027-08-15":"광복절","2027-08-16":"대체공휴일",
+  "2027-09-14":"추석","2027-09-15":"추석","2027-09-16":"추석",
+  "2027-10-03":"개천절","2027-10-04":"대체공휴일","2027-10-09":"한글날","2027-10-11":"대체공휴일","2027-12-25":"크리스마스","2027-12-27":"대체공휴일",
 };
 
 // 학생의 임시 시간표(tempSchedules) 처리 - admin과 동일
@@ -2573,6 +2601,7 @@ export default function App() {
         {[
           { key: "tasks", label: "📋 숙제/과제" },
           { key: "cal", label: "일정" },
+          { key: "voca", label: "📚 단어 TEST" },
           ...(studentVideos.length > 0 ? [{ key: "videos", label: "🎬 강의 영상" }] : []),
           ...(hasVocabWrong ? [{ key: "vocabWrong", label: "📝 오답 단어" }] : []),
           ...((progressTree?.lanes || []).length ? [{ key: "progress", label: "🌳 진도" }] : []),
@@ -2640,6 +2669,30 @@ export default function App() {
         {tab === "cal" && (
           <StudentCalendarTab student={student} makeups={makeups} customHolidays={customHolidays} exams={exams} attLog={attLog} />
         )}
+
+        {tab === "voca" && (() => {
+          // ─── [단어 TEST] 마플보카 임베드 ───
+          // 학생 링크의 id/t 를 그대로 넘겨 이름표(학생 식별)와 학원 서버 저장을 자동 연결한다.
+          // books= 는 진도/영상 교재명에서 추정한 이 학생의 단어장 목록 (없으면 전체 표시).
+          const sp = new URLSearchParams(window.location.search);
+          const books = guessVocaBooks(progressTree, studentVideos);
+          const q = new URLSearchParams();
+          q.set("id", String(studentId || sp.get("id") || ""));
+          if (sp.get("t")) q.set("t", sp.get("t"));
+          if (student?.name) q.set("n", student.name);
+          if (WORKER_ORIGIN) q.set("api", WORKER_ORIGIN);
+          if (books.length) q.set("books", books.join(","));
+          const src = `${VOCA_APP_URL}?${q.toString()}`;
+          return (
+            <div style={{ background: "#fff", borderRadius: 14, overflow: "hidden", border: "1px solid #eee" }}>
+              <iframe
+                title="단어 TEST"
+                src={src}
+                style={{ width: "100%", height: "calc(100vh - 190px)", minHeight: 520, border: "none", display: "block", background: "#FBF7EF" }}
+              />
+            </div>
+          );
+        })()}
 
         {tab === "videos" && (() => {
           // ─── 영상 탭 책별 자동 분류 ───
