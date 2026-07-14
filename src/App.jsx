@@ -1609,7 +1609,7 @@ function StudentLinkRecover({ apiBase }) {
 }
 
 // ─── 설문 응답 카드 ───
-// 단일 선택: 선택지를 누르면 바로 제출. 복수 선택(maxChoices>1): 눌러서 고른 뒤 [제출하기]로 저장.
+// 단일 선택: 선택지를 누르면 바로 제출. 복수 선택(maxChoices>1): 정확히 maxChoices개를 골라야 [제출하기]가 활성화된다.
 function StudentSurveyCard({ survey, myResponse, student, onSubmitted }) {
   const maxChoices = Math.max(1, Number(survey?.maxChoices) || 1);
   const savedChoices = Array.isArray(myResponse?.choices)
@@ -1647,7 +1647,7 @@ function StudentSurveyCard({ survey, myResponse, student, onSubmitted }) {
     if (maxChoices <= 1) { if (idx !== savedChoices[0]) post([idx]); return; }
     setPicked((prev) => {
       if (prev.includes(idx)) return prev.filter((x) => x !== idx);
-      if (prev.length >= maxChoices) { setMsg(`최대 ${maxChoices}개까지 선택할 수 있어요.`); return prev; }
+      if (prev.length >= maxChoices) { setMsg(`${maxChoices}개만 선택할 수 있어요. 바꾸려면 먼저 하나를 눌러 해제하세요.`); return prev; }
       setMsg("");
       return [...prev, idx].sort((a, b) => a - b);
     });
@@ -1655,13 +1655,14 @@ function StudentSurveyCard({ survey, myResponse, student, onSubmitted }) {
   const dirty = maxChoices > 1 && picked.join(",") !== savedKey;
   const submitted = savedChoices.length > 0;
   const activeSet = maxChoices > 1 ? picked : savedChoices;
-  const submitDisabled = busy || picked.length === 0 || !dirty;
+  const needMore = maxChoices > 1 && picked.length < maxChoices; // 정확히 N개 골라야 제출 가능
+  const submitDisabled = busy || needMore || !dirty;
 
   return (
     <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #E4E0D8", padding: "14px 16px", marginBottom: 10, boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5, flexWrap: "wrap" }}>
         <span style={{ fontSize: 11, fontWeight: 800, color: "#fff", background: "#2A6FDB", padding: "2px 9px", borderRadius: 999 }}>설문</span>
-        {maxChoices > 1 && <span style={{ fontSize: 11, fontWeight: 800, color: "#8E44AD", background: "#F5EEF8", padding: "2px 9px", borderRadius: 999 }}>최대 {maxChoices}개 선택</span>}
+        {maxChoices > 1 && <span style={{ fontSize: 11, fontWeight: 800, color: "#8E44AD", background: "#F5EEF8", padding: "2px 9px", borderRadius: 999 }}>{maxChoices}개 선택</span>}
         {submitted && <span style={{ fontSize: 11.5, fontWeight: 800, color: "#1B8A5A" }}>제출 완료</span>}
       </div>
       <div style={{ fontSize: 15, fontWeight: 800, color: "#2A2A28", marginBottom: 10, lineHeight: 1.45 }}>{survey.title}</div>
@@ -1682,10 +1683,10 @@ function StudentSurveyCard({ survey, myResponse, student, onSubmitted }) {
           marginTop: 10, width: "100%", padding: "11px 0", borderRadius: 10, border: "none",
           background: submitDisabled ? "#c9d6ea" : "#2A6FDB", color: "#fff",
           fontSize: 14, fontWeight: 800, cursor: submitDisabled ? "default" : "pointer",
-        }}>{busy ? "제출 중..." : submitted ? (dirty ? "변경 저장" : "제출됨") : "제출하기"}</button>
+        }}>{busy ? "제출 중..." : needMore ? `${maxChoices}개를 선택해주세요 (${picked.length}/${maxChoices})` : submitted ? (dirty ? "변경 저장" : "제출됨") : "제출하기"}</button>
       )}
       {msg && <div style={{ marginTop: 8, fontSize: 12, color: msg.includes("실패") || msg.includes("오류") || msg.includes("유효") ? "#D2402E" : msg.includes("최대") ? "#B45309" : "#1B8A5A", fontWeight: 700 }}>{msg}</div>}
-      {!submitted && !msg && <div style={{ marginTop: 8, fontSize: 12, color: "#999" }}>{maxChoices > 1 ? `원하는 항목을 ${maxChoices}개까지 고르고 [제출하기]를 눌러주세요.` : "선택지를 누르면 바로 제출됩니다."}</div>}
+      {!submitted && !msg && <div style={{ marginTop: 8, fontSize: 12, color: "#999" }}>{maxChoices > 1 ? `원하는 항목을 꼭 ${maxChoices}개 고르고 [제출하기]를 눌러주세요.` : "선택지를 누르면 바로 제출됩니다."}</div>}
     </div>
   );
 }
