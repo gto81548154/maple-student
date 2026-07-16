@@ -16,6 +16,8 @@ if (!STUDENT_SYNC_API_URL) {
 // 다른 곳(R2 등)에 올렸다면 .env 로 주소를 지정하세요.
 // .env 예시: VITE_VOCA_APP_URL=https://example.com/voca.html
 const VOCA_APP_URL = import.meta.env.VITE_VOCA_APP_URL || "/voca.html";
+// [단어 TEST] 탭 스위치 — 마플보카 3단계 배포(워커 /voca/* + public/voca.html + R2 단어 데이터) 완료 후 true로 변경
+const VOCA_TAB_ENABLED = false;
 const WORKER_ORIGIN = (() => { try { return new URL(STUDENT_SYNC_API_URL).origin; } catch (e) { return ""; } })();
 // 진도 맵·강의 영상의 교재명에서 이 학생이 배우는 단어장을 추정한다. (정규 커리큘럼 연동)
 // 매칭되는 책이 하나도 없으면 전체(원장 전용 제외)를 보여준다 — 새 학생도 막히지 않게.
@@ -283,6 +285,7 @@ const loadStudentBundleFromWorker = async (studentId) => {
     vocabWrongWords: normalizeVocabWrongWordsForStudent(vocabWrongSource, studentId),
     progressTree: payload.progressTree || payload.ptree3 || null,
     attLog: normalizeByDateForStudent(payload.attLog || payload.att_log3 || {}, studentId), // [일정] 등하원 기록
+    att: normalizeByDateForStudent(payload.att || payload.att3 || {}, studentId), // [출결] 결석/지각 표시 (워커가 att3를 보내면 자동 표시)
     surveys: Array.isArray(payload.surveys || payload.svy3) ? (payload.surveys || payload.svy3) : [], // [설문] 진행 중 + 본인 대상
     surveyResponses: payload.surveyResponses || payload.svyr3 || {}, // [설문] 본인 응답
   };
@@ -326,6 +329,7 @@ const saveStudentBundleToLocal = (studentId, bundle = {}) => {
         vocabWrongWords: bundle.vocabWrongWords || {},
         progressTree: bundle.progressTree || null,
         attLog: bundle.attLog || {},
+        att: bundle.att || {},
         surveys: bundle.surveys || [],
         surveyResponses: bundle.surveyResponses || {},
       },
@@ -1693,7 +1697,7 @@ function StudentSurveyCard({ survey, myResponse, student, onSubmitted }) {
 
 // ─── 일정 달력 탭 ───
 // 등원 요일(시간표) · 학원 휴원일 · 내 학교 시험 · 지난 출석 · 보강을 월 달력 한 장에서 확인한다.
-function StudentCalendarTab({ student, makeups, customHolidays, exams, attLog }) {
+function StudentCalendarTab({ student, makeups, customHolidays, exams, attLog, attStatus }) {
   const todayObj = new Date(); todayObj.setHours(0, 0, 0, 0);
   const todayStr = fmtYMD(todayObj);
   const [ym, setYm] = useState({ y: todayObj.getFullYear(), m: todayObj.getMonth() });
@@ -1706,6 +1710,8 @@ function StudentCalendarTab({ student, makeups, customHolidays, exams, attLog })
   const myExams = (exams || []).filter((ex) => ex && !ex.deletedAt && isExamVisibleForStudentDday(ex, student));
 
   const attOf = (ds) => { const day = attLog && attLog[ds]; if (!day || typeof day !== "object") return null; return day[sid] ?? Object.values(day)[0] ?? null; };
+  // [출결] 결석/지각 (att3): 원장앱에서 기록한 출결 상태 — 본인 것만 번들로 수신
+  const attStatusOf = (ds) => { const day = attStatus && attStatus[ds]; if (!day || typeof day !== "object") return null; return day[sid] ?? null; };
   const examsOf = (ds) => myExams.filter((ex) => {
     const { start, end } = getExamStartEndForDday(ex);
     const s = String(start || "").slice(0, 10);
@@ -1725,7 +1731,7 @@ function StudentCalendarTab({ student, makeups, customHolidays, exams, attLog })
         attendTime = (eff && eff.schedule && eff.schedule[dayKey]) || null;
       }
     }
-    return { hol, hiddenMk, visMk, attendTime, att: attOf(ds), dayExams: examsOf(ds) };
+    return { hol, hiddenMk, visMk, attendTime, att: attOf(ds), attMark: attStatusOf(ds), dayExams: examsOf(ds) };
   };
 
   const first = new Date(ym.y, ym.m, 1);
@@ -1772,6 +1778,8 @@ function StudentCalendarTab({ student, makeups, customHolidays, exams, attLog })
                   {info.dayExams.length > 0 && <span style={{ width: 6, height: 6, borderRadius: 3, background: "#E67E22" }} />}
                   {info.visMk && <span style={{ width: 6, height: 6, borderRadius: 3, background: "#8E44AD" }} />}
                   {attended && <span style={{ fontSize: 8.5, fontWeight: 800, color: "#1B8A5A", lineHeight: 1 }}>✓</span>}
+                  {info.attMark?.type === "late" && <span style={{ fontSize: 8.5, fontWeight: 900, color: "#E8890C", lineHeight: 1 }}>△</span>}
+                  {info.attMark?.type === "absent" && <span style={{ fontSize: 8.5, fontWeight: 900, color: "#D2402E", lineHeight: 1 }}>✕</span>}
                 </span>
               </button>
             );
@@ -1783,6 +1791,12 @@ function StudentCalendarTab({ student, makeups, customHolidays, exams, attLog })
               <span style={{ width: 10, height: 10, borderRadius: isBg ? 3 : 5, background: c, border: isBg ? "1px solid #e0dcd4" : "none", display: "inline-block" }} />{label}
             </span>
           ))}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "#777", fontWeight: 600 }}>
+            <span style={{ fontSize: 11, fontWeight: 900, color: "#E8890C", lineHeight: 1 }}>△</span>지각
+          </span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "#777", fontWeight: 600 }}>
+            <span style={{ fontSize: 11, fontWeight: 900, color: "#D2402E", lineHeight: 1 }}>✕</span>결석
+          </span>
         </div>
       </div>
 
@@ -1802,6 +1816,8 @@ function StudentCalendarTab({ student, makeups, customHolidays, exams, attLog })
             if (sel.visMk) rows.push([sel.visMk.isOverride ? "시간변경" : "보강", sel.visMk.time ? `${sel.visMk.time} 등원` : "시간 미정", "#8E44AD"]);
             else if (sel.attendTime && !sel.hol) rows.push(["등원", `${sel.attendTime} 등원 예정`, "#2A6FDB"]);
             if (sel.hiddenMk) rows.push(["등원 취소", "이 날은 등원이 취소되었어요", "#999999"]);
+            if (sel.attMark?.type === "late") rows.push(["지각", Number(sel.attMark.time) > 0 ? `${sel.attMark.time}분 지각` : "지각 처리됨", "#E8890C"]);
+            if (sel.attMark?.type === "absent") rows.push(["결석", sel.attMark.reason ? `사유: ${sel.attMark.reason}` : "결석 처리됨", "#D2402E"]);
             if (sel.att && (sel.att.inTime || sel.att.inAt)) rows.push(["출석", `등원 ${sel.att.inTime || ""}${sel.att.outTime ? ` · 하원 ${sel.att.outTime}` : ""}`.trim(), "#1B8A5A"]);
             if (!rows.length) return <div style={{ fontSize: 13, color: "#999" }}>이 날은 표시할 일정이 없어요.</div>;
             return rows.map(([tag, text, color], i) => (
@@ -1838,6 +1854,7 @@ export default function App() {
   const [vocabWrongWords, setVocabWrongWords] = useState({});
   const [progressTree, setProgressTree] = useState(null); // 원장앱 진도 트리(ptree3) — 읽기 전용
   const [attLog, setAttLog] = useState({}); // [일정] 등하원 기록(att_log3) — 읽기 전용
+  const [attStatus, setAttStatus] = useState({}); // [출결] 결석/지각(att3) — 읽기 전용
   const [surveys, setSurveys] = useState([]); // [설문] 진행 중 설문(svy3) — 본인 대상만
   const [surveyResponses, setSurveyResponses] = useState({}); // [설문] 본인 응답(svyr3)
   const [tab, setTab] = useState("tasks");
@@ -1897,6 +1914,7 @@ export default function App() {
     setCustomHolidays(bundle.customHolidays || {});
     setExams(Array.isArray(bundle.exams || bundle.exam3) ? (bundle.exams || bundle.exam3) : []);
     setAttLog(bundle.attLog || {});
+    setAttStatus(bundle.att || {});
     setSurveys(Array.isArray(bundle.surveys) ? bundle.surveys : []);
     setSurveyResponses(bundle.surveyResponses || {});
     setExamRanges(bundle.examRanges || bundle.examr3 || null);
@@ -2602,7 +2620,7 @@ export default function App() {
         {[
           { key: "tasks", label: "📋 숙제/과제" },
           { key: "cal", label: "일정" },
-          { key: "voca", label: "📚 단어 TEST" },
+          ...(VOCA_TAB_ENABLED ? [{ key: "voca", label: "📚 단어 TEST" }] : []),
           ...(studentVideos.length > 0 ? [{ key: "videos", label: "🎬 강의 영상" }] : []),
           ...(hasVocabWrong ? [{ key: "vocabWrong", label: "📝 오답 단어" }] : []),
           ...((progressTree?.lanes || []).length ? [{ key: "progress", label: "🌳 진도" }] : []),
@@ -2668,10 +2686,10 @@ export default function App() {
           </>
         )}
         {tab === "cal" && (
-          <StudentCalendarTab student={student} makeups={makeups} customHolidays={customHolidays} exams={exams} attLog={attLog} />
+          <StudentCalendarTab student={student} makeups={makeups} customHolidays={customHolidays} exams={exams} attLog={attLog} attStatus={attStatus} />
         )}
 
-        {tab === "voca" && (() => {
+        {VOCA_TAB_ENABLED && tab === "voca" && (() => {
           // ─── [단어 TEST] 마플보카 임베드 ───
           // 학생 링크의 id/t 를 그대로 넘겨 이름표(학생 식별)와 학원 서버 저장을 자동 연결한다.
           // books= 는 진도/영상 교재명에서 추정한 이 학생의 단어장 목록 (없으면 전체 표시).
