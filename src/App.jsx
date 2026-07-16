@@ -17,7 +17,7 @@ if (!STUDENT_SYNC_API_URL) {
 // .env 예시: VITE_VOCA_APP_URL=https://example.com/voca.html
 const VOCA_APP_URL = import.meta.env.VITE_VOCA_APP_URL || "/voca.html";
 // [단어 TEST] 탭 스위치 — 마플보카 3단계 배포(워커 /voca/* + public/voca.html + R2 단어 데이터) 완료 후 true로 변경
-const VOCA_TAB_ENABLED = false;
+const VOCA_TAB_ENABLED = true;
 const WORKER_ORIGIN = (() => { try { return new URL(STUDENT_SYNC_API_URL).origin; } catch (e) { return ""; } })();
 // 진도 맵·강의 영상의 교재명에서 이 학생이 배우는 단어장을 추정한다. (정규 커리큘럼 연동)
 // 매칭되는 책이 하나도 없으면 전체(원장 전용 제외)를 보여준다 — 새 학생도 막히지 않게.
