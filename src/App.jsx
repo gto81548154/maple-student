@@ -370,8 +370,18 @@ const HOLIDAYS = {
   "2027-10-03":"개천절","2027-10-04":"대체공휴일","2027-10-09":"한글날","2027-10-11":"대체공휴일","2027-12-25":"크리스마스","2027-12-27":"대체공휴일",
 };
 
-// 학생의 임시 시간표(tempSchedules) 처리 - admin과 동일
+// 학생의 임시 시간표(tempSchedules)·방학 시간표(vacationSchedule) 처리 - admin과 동일
+// ⚠️ 원장앱 getEffectiveSchedule과 동시 수정 규칙: 방학 분기는 두 파일에 동일하게 유지할 것
+const getStudentVacation = (student, dateStr) => {
+  const vs = student && student.vacationSchedule;
+  if (vs && vs.startDate && vs.endDate && dateStr >= vs.startDate && dateStr <= vs.endDate
+      && vs.schedule && Object.keys(vs.schedule).length > 0) return vs;
+  return null;
+};
 const getEffectiveSchedule = (student, dateStr) => {
+  // [방학] 방학 스케줄은 정규를 '통째로 교체'한다(요일이 바뀌는 학생 때문에 merge 금지). 우선순위: 방학 > 특별기간 > 정규
+  const vac = getStudentVacation(student, dateStr);
+  if (vac) return { schedule: { ...(vac.schedule || {}) }, isVacation: true };
   const ts = (student.tempSchedules || []).find(t => t.startDate && t.endDate && dateStr >= t.startDate && dateStr <= t.endDate);
   if (ts) return { schedule: { ...(student.schedule || {}), ...(ts.schedule || {}) } };
   return { schedule: student.schedule || {} };
@@ -433,7 +443,7 @@ const computeUpcomingAttendance = (student, makeups, customHolidays) => {
       } else if (!hidden) {
         const eff = getEffectiveSchedule(student, ds);
         const t = eff.schedule[dayKey];
-        if (t) out.push({ date: ds, dateObj: new Date(d), time: t, isMakeup: false });
+        if (t) out.push({ date: ds, dateObj: new Date(d), time: t, isMakeup: false, isVacation: !!eff.isVacation });
       }
     }
     return out;
@@ -1731,7 +1741,7 @@ function StudentCalendarTab({ student, makeups, customHolidays, exams, attLog, a
         attendTime = (eff && eff.schedule && eff.schedule[dayKey]) || null;
       }
     }
-    return { hol, hiddenMk, visMk, attendTime, att: attOf(ds), attMark: attStatusOf(ds), dayExams: examsOf(ds) };
+    return { hol, hiddenMk, visMk, attendTime, isVac: !!getStudentVacation(student, ds), att: attOf(ds), attMark: attStatusOf(ds), dayExams: examsOf(ds) };
   };
 
   const first = new Date(ym.y, ym.m, 1);
@@ -1753,6 +1763,13 @@ function StudentCalendarTab({ student, makeups, customHolidays, exams, attLog, a
           <div style={{ fontSize: 16, fontWeight: 800, color: "#2A2A28" }}>{ym.y}년 {ym.m + 1}월</div>
           <button onClick={() => move(1)} style={navBtn}>▶</button>
         </div>
+        {student?.vacationSchedule?.startDate && student?.vacationSchedule?.endDate && (
+          <div style={{ textAlign: "center", marginBottom: 8 }}>
+            <span style={{ display: "inline-block", fontSize: 11.5, fontWeight: 800, color: "#B45309", background: "#FFF6E0", border: "1px solid #F2C14E", borderRadius: 999, padding: "3px 12px" }}>
+              🏖 {student.vacationSchedule.name || "방학"} 시간표 · {String(student.vacationSchedule.startDate).slice(5).replace("-", "/")} ~ {String(student.vacationSchedule.endDate).slice(5).replace("-", "/")}
+            </span>
+          </div>
+        )}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", marginBottom: 4 }}>
           {WEEK_KO.map((w, i) => (
             <div key={w} style={{ textAlign: "center", fontSize: 11.5, fontWeight: 700, color: i === 0 ? "#D2402E" : i === 6 ? "#2A6FDB" : "#999", padding: "4px 0" }}>{w}</div>
@@ -1769,8 +1786,8 @@ function StudentCalendarTab({ student, makeups, customHolidays, exams, attLog, a
             return (
               <button key={ds} onClick={() => setSelDate(ds)} style={{
                 minHeight: 52, padding: "5px 2px 4px", borderRadius: 9, cursor: "pointer",
-                border: isSel ? "1.8px solid #2A6FDB" : isToday ? "1.5px solid #b9cff2" : "1px solid transparent",
-                background: info.hol ? "#FDF0EE" : info.attendTime != null ? "#F0F6FF" : "#fff",
+                border: isSel ? "1.8px solid #2A6FDB" : isToday ? "1.5px solid #b9cff2" : (info.attendTime != null && info.isVac) ? "1.5px solid #F2C14E" : "1px solid transparent",
+                background: info.hol ? "#FDF0EE" : info.attendTime != null ? "#F0F6FF" : info.isVac ? "#FFF6E0" : "#fff",
                 display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
               }}>
                 <span style={{ fontSize: 12.5, fontWeight: isToday ? 800 : 600, color: info.hol ? "#D2402E" : dObj.getDay() === 0 ? "#D2402E" : dObj.getDay() === 6 ? "#2A6FDB" : "#333" }}>{dObj.getDate()}</span>
@@ -1786,7 +1803,7 @@ function StudentCalendarTab({ student, makeups, customHolidays, exams, attLog, a
           })}
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 10, padding: "8px 4px 0", borderTop: "1px solid #f2efe9" }}>
-          {[["#F0F6FF", "등원일", 1], ["#FDF0EE", "휴원", 1], ["#E67E22", "시험", 0], ["#8E44AD", "보강·시간변경", 0], ["#1B8A5A", "출석 ✓", 0]].map(([c, label, isBg]) => (
+          {[["#F0F6FF", "등원일", 1], ["#FFF6E0", "방학기간", 1], ["#FDF0EE", "휴원", 1], ["#E67E22", "시험", 0], ["#8E44AD", "보강·시간변경", 0], ["#1B8A5A", "출석 ✓", 0]].map(([c, label, isBg]) => (
             <span key={label} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "#777", fontWeight: 600 }}>
               <span style={{ width: 10, height: 10, borderRadius: isBg ? 3 : 5, background: c, border: isBg ? "1px solid #e0dcd4" : "none", display: "inline-block" }} />{label}
             </span>
@@ -1814,7 +1831,7 @@ function StudentCalendarTab({ student, makeups, customHolidays, exams, attLog, a
               rows.push(["시험", `${ex.name || ex.type || "시험"}${period ? ` (${period})` : ""}`, "#E67E22"]);
             });
             if (sel.visMk) rows.push([sel.visMk.isOverride ? "시간변경" : "보강", sel.visMk.time ? `${sel.visMk.time} 등원` : "시간 미정", "#8E44AD"]);
-            else if (sel.attendTime && !sel.hol) rows.push(["등원", `${sel.attendTime} 등원 예정`, "#2A6FDB"]);
+            else if (sel.attendTime && !sel.hol) rows.push([sel.isVac ? "방학 시간표" : "등원", `${sel.attendTime} 등원 예정`, sel.isVac ? "#B45309" : "#2A6FDB"]);
             if (sel.hiddenMk) rows.push(["등원 취소", "이 날은 등원이 취소되었어요", "#999999"]);
             if (sel.attMark?.type === "late") rows.push(["지각", Number(sel.attMark.time) > 0 ? `${sel.attMark.time}분 지각` : "지각 처리됨", "#E8890C"]);
             if (sel.attMark?.type === "absent") rows.push(["결석", sel.attMark.reason ? `사유: ${sel.attMark.reason}` : "결석 처리됨", "#D2402E"]);
@@ -2466,7 +2483,7 @@ export default function App() {
   // 다가올 등원일 텍스트 (헤더 표시용)
   const upcomingAtt = computeUpcomingAttendance(student, makeups, customHolidays);
   const upcomingAttText = upcomingAtt
-    .map(a => `${fmtAttDay(a.dateObj)} ${fmtTime(a.time)}${a.isMakeup ? " (보충)" : ""}`)
+    .map(a => `${fmtAttDay(a.dateObj)} ${fmtTime(a.time)}${a.isMakeup ? " (보충)" : a.isVacation ? " (방학)" : ""}`)
     .join(", ");
   const examDdays = buildStudentExamDdays(student, exams, 2);
 
