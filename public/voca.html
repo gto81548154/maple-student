@@ -131,11 +131,11 @@ header{position:sticky; top:0; z-index:10; background:var(--paper);
 .morph .plus{background:none; border:none; color:var(--ink-soft); padding:3px 1px}
 .deriv{font-size:13.5px; color:var(--ink-soft); text-align:center; margin-top:9px; line-height:1.6}
 
-.ansrow{display:flex; gap:8px; margin-top:20px}
-.ansrow input{flex:1; border:1.5px solid var(--line); border-radius:11px;
+.ansrow{display:flex; flex-direction:column; align-items:flex-end; gap:10px; margin-top:20px}
+.ansrow input{width:100%; border:1.5px solid var(--line); border-radius:11px;
   padding:12px 14px; font-size:16px; background:#fff}
 .ansrow input:focus{border-color:var(--ink); outline:none}
-.ansrow .go{background:var(--ink); color:#fff; border-radius:11px; padding:0 20px; font-weight:700}
+.ansrow .go{background:var(--ink); color:#fff; border-radius:11px; padding:11px 26px; font-size:16px; font-weight:700}
 .passbtn{display:block; margin:10px auto 0; font-size:13px; color:var(--ink-soft); text-decoration:underline}
 
 /* 피드백 */
