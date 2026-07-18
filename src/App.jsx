@@ -50,14 +50,33 @@ const isPwaStandalone = () => {
   try { return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true; } catch (e) { return false; }
 };
 
+// ─── [마스터] 원장 전용 앱 ───────────────────────────────
+// 판별값(이름·뒷4자리)과 마스터 열쇠는 워커에만 있다 — 이 파일은 번들로 공개되므로 절대 넣지 않는다.
+// 앱은 본인 확인을 통과했을 때 워커가 내려준 열쇠를 폰에 보관만 하고, 주소창에는 ?master=1 만 남긴다.
+// (주소창·스크린샷·브라우저 방문기록·링크 복사로 열쇠가 새는 구멍을 막기 위함)
+const MASTER_MK_KEY = "mapl_master_mk";
+const MASTER_ID = "__master__";   // 원장 전용 가상 학생 id — 마플보카 진도가 이 이름으로 따로 저장된다
+const getMasterMk = () => { try { return localStorage.getItem(MASTER_MK_KEY) || ""; } catch (e) { return ""; } };
+const clearMasterMk = () => { try { localStorage.removeItem(MASTER_MK_KEY); } catch (e) {} };
+
 // 설치형 PWA가 쿼리 없이 실행될 때를 대비해 마지막 학생 링크(id/t)를 저장·복원한다.
 // (일부 브라우저가 manifest start_url의 쿼리를 버리는 문제 대응 — URL을 복원하면 이후 파싱 로직이 전부 그대로 동작)
 const LINK_STORE_KEY = "mapl_student_link_v1";
 const restoreStudentLink = () => {
   try {
     const sp = new URLSearchParams(window.location.search);
+    // [마스터] 마스터 모드에서는 학생 링크를 저장하지 않는다.
+    // 저장하면 다음 실행 때 아래 복원 로직이 그 학생 화면을 띄워 마스터 진입로가 막힌다.
+    if (sp.has("master")) return;
     if (sp.get("id")) {
       localStorage.setItem(LINK_STORE_KEY, JSON.stringify({ id: sp.get("id"), t: sp.get("t") || "" }));
+      return;
+    }
+    // [마스터] 파라미터 없이 열렸고 폰에 마스터 열쇠가 있으면 마스터 홈으로 복원한다(이름+뒷4자리 재입력 없음).
+    // 학생 링크 복원보다 우선 — 원장 폰에 학생 링크가 남아 있어도 마스터가 열린다.
+    if (getMasterMk()) {
+      sp.set("master", "1");
+      window.history.replaceState(null, "", window.location.pathname + "?" + sp.toString());
       return;
     }
     const saved = JSON.parse(localStorage.getItem(LINK_STORE_KEY) || "null");
@@ -70,11 +89,23 @@ const restoreStudentLink = () => {
 };
 restoreStudentLink();
 
+// [마스터] 지금 화면이 마스터 모드인지 — restoreStudentLink()가 주소를 고친 뒤에 계산해야 한다.
+// 주소에 master가 있어도 폰에 열쇠가 없으면 마스터가 아니다(주소만 흉내낸 접근 차단).
+const MASTER_MK = (() => {
+  try {
+    if (!new URLSearchParams(window.location.search).has("master")) return "";
+    return getMasterMk();
+  } catch (e) { return ""; }
+})();
+const IS_MASTER_MODE = !!MASTER_MK;
+
 // manifest(학생별 start_url 포함)와 아이콘 메타를 런타임 주입한다.
 // index.html을 안 건드리기 위한 방식 — 설치된 아이콘을 누르면 "그 학생 링크"로 열린다.
 const setupStudentPwa = () => {
   try {
     if (!PWA_ICON_BASE) return;
+    // [마스터] 마스터 모드 주소(?master=1, 학생 id 포함 가능)를 설치 아이콘의 시작 주소로 심으면 안 된다.
+    if (IS_MASTER_MODE) return;
     const head = document.head;
     const ensure = (sel, make) => { if (!head.querySelector(sel)) head.appendChild(make()); };
     const u = new URL(window.location.href);
@@ -183,6 +214,8 @@ const resolveStudentSyncUrl = (studentId) => {
   u.searchParams.set("studentId", String(studentId));
   const accessToken = new URLSearchParams(window.location.search).get("t") || "";
   if (accessToken) u.searchParams.set("t", accessToken);
+  // [마스터] 워커가 "앱 접속" 배지를 갱신하지 않게 한다(학생 토큰 검사는 그대로 통과).
+  if (IS_MASTER_MODE) u.searchParams.set("mk", MASTER_MK);
   u.searchParams.set("ts", String(Date.now()));
   return u.toString();
 };
@@ -1102,6 +1135,30 @@ const dispatchVideoPlayerEvent = (name, detail) => {
   } catch (e) { /* ignore */ }
 };
 
+// ─── QR 그리기: 주소 하나를 QR 이미지로 (카톡 문의 QR 등) ───
+function QrBox({ value, size = 168 }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    let cancelled = false;
+    const render = async () => {
+      if (!window.QRCode) {
+        await new Promise((res, rej) => {
+          const s = document.createElement("script");
+          s.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";
+          s.onload = res; s.onerror = () => rej(new Error("qr load fail"));
+          document.head.appendChild(s);
+        });
+      }
+      if (cancelled || !ref.current || !window.QRCode) return;
+      ref.current.innerHTML = "";
+      new window.QRCode(ref.current, { text: value, width: size, height: size, correctLevel: window.QRCode.CorrectLevel.M });
+    };
+    render().catch(() => {});
+    return () => { cancelled = true; };
+  }, [value, size]);
+  return <div style={{ display: "inline-flex", padding: 8, background: "#fff", borderRadius: 10 }}><div ref={ref} /></div>;
+}
+
 // ─── 출석 QR 모달: 데스크에서 스캔할 개인 QR(maple-att:{id}:{token}) ───
 function AttQrModal({ value, studentName, onClose }) {
   const ref = useRef(null);
@@ -1303,6 +1360,8 @@ const setPendingVideoWatch = (items) => {
 };
 
 const queuePendingVideoWatch = (payload) => {
+  // [마스터] 대기열에 넣으면 나중에 원장 폰에서 재전송돼 결국 그 학생 기록으로 들어간다. 넣지 않는다.
+  if (IS_MASTER_MODE) return;
   const pending = getPendingVideoWatch();
   const sid = payload?.sessionId || `${payload?.studentId || ""}_${payload?.videoId || ""}_${payload?.timestamp || Date.now()}`;
   if (!pending.some(x => (x.sessionId || "") === sid)) {
@@ -1312,6 +1371,9 @@ const queuePendingVideoWatch = (payload) => {
 };
 
 const postVideoWatchToWorker = async (payload) => {
+  // [마스터] 원장 검수 기록이 학생 시청 통계에 섞이면 안 되므로 전송하지 않는다.
+  // 호출부가 실패로 보고 대기열에 넣지 않도록 성공 형태로 반환한다.
+  if (IS_MASTER_MODE) return { success: true, master: true, skipped: true };
   if (!VIDEO_WATCH_API_URL) throw new Error("VITE_VIDEO_WATCH_API_URL이 설정되지 않았습니다");
   const headers = { "Content-Type": "application/json" };
   if (VIDEO_WATCH_API_KEY) headers.Authorization = `Bearer ${VIDEO_WATCH_API_KEY}`;
@@ -1572,7 +1634,9 @@ function StudentLinkRecover({ apiBase }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [conflict, setConflict] = useState(false);
-  const OWNER_TEL = "010-4005-8154";
+  // 마플영어 카톡 친구추가 QR. 원장 개인 연락처는 번들(공개 파일)에 넣지 않는다.
+  // 이 주소는 스캔 전용이라 탭해도 카톡이 열리지 않으므로 링크가 아니라 QR로만 띄운다.
+  const OWNER_KAKAO_QR = "http://qr.kakao.com/talk/2cbX2.v5KiS_mtOAbkXav4jlZC0-";
   const submit = async () => {
     const nm = name.trim();
     const tl = tail.replace(/[^0-9]/g, "").slice(-4);
@@ -1584,6 +1648,13 @@ function StudentLinkRecover({ apiBase }) {
         body: JSON.stringify({ name: nm, tail: tl }),
       });
       const d = await r.json();
+      // [마스터] 원장 진입 — 워커만이 판별값을 알고, 통과하면 열쇠(mk)를 내려준다.
+      // 열쇠는 폰에만 보관하고 주소창에는 ?master=1 만 남긴다.
+      if (d && d.success && d.master && d.mk) {
+        try { localStorage.setItem(MASTER_MK_KEY, d.mk); } catch (e) {}
+        window.location.href = window.location.pathname + "?master=1";
+        return;
+      }
       if (d && d.success && d.id) {
         try { localStorage.setItem(LINK_STORE_KEY, JSON.stringify({ id: d.id, t: d.t || "" })); } catch (e) {}
         const sp = new URLSearchParams();
@@ -1616,7 +1687,13 @@ function StudentLinkRecover({ apiBase }) {
         </div>
         {msg && <div style={{ fontSize: 12.5, color: conflict ? "#b45309" : "#dc2626", marginTop: 12, lineHeight: 1.5 }}>{msg}</div>}
         <button onClick={submit} disabled={busy} style={{ width: "100%", marginTop: 18, padding: "14px 0", fontSize: 15.5, fontWeight: 800, color: "#fff", background: busy ? "#9bb4cc" : "#1C66A5", border: "none", borderRadius: 10, cursor: busy ? "default" : "pointer" }}>{busy ? "확인 중..." : "확인"}</button>
-        {conflict && <a href={"tel:" + OWNER_TEL} style={{ display: "block", marginTop: 10, padding: "13px 0", fontSize: 14.5, fontWeight: 700, color: "#1C66A5", background: "#eaf2fb", borderRadius: 10, textDecoration: "none" }}>📞 원장님께 전화하기</a>}
+        {conflict && (
+          <div style={{ marginTop: 12, padding: "16px 14px", background: "#FEF7E0", border: "1px solid #F3D97B", borderRadius: 12 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: "#7A5A00", marginBottom: 10 }}>💬 마플영어 카톡으로 문의해주세요</div>
+            <QrBox value={OWNER_KAKAO_QR} size={168} />
+            <div style={{ fontSize: 11.5, color: "#8B7540", marginTop: 8, lineHeight: 1.5 }}>친구추가 QR입니다. 다른 폰의 카메라나 카톡 QR로 찍어주세요.</div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1636,6 +1713,8 @@ function StudentSurveyCard({ survey, myResponse, student, onSubmitted }) {
   useEffect(() => { setPicked(savedKey ? savedKey.split(",").map(Number) : []); setMsg(""); }, [survey.id, savedKey]);
 
   const post = async (choicesArr) => {
+    // [마스터] 원장이 학생 화면에서 눌러도 그 학생 응답으로 제출되면 안 된다.
+    if (IS_MASTER_MODE) { setMsg("마스터 모드에서는 설문이 제출되지 않습니다."); return; }
     setBusy(true); setMsg("");
     try {
       const t = new URLSearchParams(window.location.search).get("t") || "";
@@ -1846,6 +1925,197 @@ function StudentCalendarTab({ student, makeups, customHolidays, exams, attLog, a
           })()}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── [마스터] 원장 전용 홈 ─────────────────────────────────────────
+// 탭 3개 = 단어 TEST(원장 진도) · 강의 영상(커리큘럼 전체) · 학생(목록 → 그 학생 앱)
+// 열쇠(mk)는 폰 저장소에서만 읽는다 — 주소창에는 ?master=1 만 있다.
+function MasterHome({ mk }) {
+  const [tab, setTab] = useState("voca");
+  const [students, setStudents] = useState([]);
+  const [areas, setAreas] = useState([]);   // [{ areaId, areaLabel, books:[{bookId, name, videos:[...]}] }]
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+  const [q, setQ] = useState("");
+  const [openBook, setOpenBook] = useState(null);
+  const [playing, setPlaying] = useState(null);
+
+  useEffect(() => {
+    let dead = false;
+    (async () => {
+      try {
+        const [rl, rb] = await Promise.all([
+          fetch(`${WORKER_ORIGIN}/student/master-list?mk=${encodeURIComponent(mk)}`, { cache: "no-store" }),
+          fetch(`${WORKER_ORIGIN}/student/master-bundle?mk=${encodeURIComponent(mk)}`, { cache: "no-store" }),
+        ]);
+        // 열쇠가 안 맞으면(워커에서 값을 교체한 경우 등) 폰의 열쇠를 지우고 본인 확인 화면으로 돌려보낸다.
+        if (rl.status === 403 || rb.status === 403) {
+          clearMasterMk();
+          window.location.href = window.location.pathname;
+          return;
+        }
+        const dl = await rl.json().catch(() => null);
+        const db = await rb.json().catch(() => null);
+        if (dead) return;
+        setStudents(Array.isArray(dl?.students) ? dl.students : []);
+        setAreas(Array.isArray(db?.areas) ? db.areas : []);
+        if (!dl?.success || !db?.success) setErr("일부 데이터를 불러오지 못했습니다.");
+      } catch (e) {
+        if (!dead) setErr("불러오지 못했습니다. 인터넷 연결을 확인해주세요.");
+      } finally {
+        if (!dead) setLoading(false);
+      }
+    })();
+    return () => { dead = true; };
+  }, [mk]);
+
+  const F = "'Pretendard Variable', -apple-system, sans-serif";
+  const kw = q.trim().toLowerCase();
+  const shown = kw ? students.filter(s => String(s.name || "").toLowerCase().includes(kw)) : students;
+  const bookCount = areas.reduce((n, a) => n + (a.books || []).length, 0);
+  const videoCount = areas.reduce((n, a) => n + (a.books || []).reduce((m, b) => m + (b.videos || []).length, 0), 0);
+
+  const openStudent = (s) => {
+    const sp = new URLSearchParams();
+    sp.set("id", String(s.id));
+    if (s.t) sp.set("t", s.t);
+    sp.set("master", "1");
+    window.location.href = window.location.pathname + "?" + sp.toString();
+  };
+
+  // 원장 전용 단어 TEST — id를 __master__로 열어 진도를 학생과 완전히 분리한다.
+  // t에는 마스터 열쇠를 넣는다(워커가 이 조합만 원장 id로 인정). books= 없음 → 전권.
+  // mk=1 은 voca.html이 원장 전용 책(보카바이블)까지 책장에 올리게 하는 플래그.
+  const vocaSrc = (() => {
+    const p = new URLSearchParams();
+    p.set("id", MASTER_ID);
+    p.set("t", mk);
+    p.set("n", "원장");
+    if (WORKER_ORIGIN) p.set("api", WORKER_ORIGIN);
+    p.set("mk", "1");
+    return `${VOCA_APP_URL}?${p.toString()}`;
+  })();
+
+  const card = { width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 10, padding: "13px 14px", marginBottom: 8, borderRadius: 12, border: "1px solid #eceef4", background: "#fff", cursor: "pointer", fontFamily: "inherit" };
+  const busyBox = <div style={{ padding: 40, textAlign: "center", color: "#999", fontSize: 14 }}>불러오는 중...</div>;
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#f6f7fb", fontFamily: F }}>
+      <div style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)", padding: "18px 24px 20px", color: "#fff" }}>
+        <div style={{ maxWidth: MAX_W, margin: "0 auto" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 18 }}>👑</span>
+            <span style={{ fontSize: 17, fontWeight: 800, color: "#f0c419" }}>마스터 홈</span>
+            <span style={{ marginLeft: "auto", fontSize: 11.5, color: "rgba(255,255,255,0.5)" }}>원장 전용</span>
+          </div>
+          <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.6)", marginTop: 6 }}>
+            학생 {students.length}명 · 교재 {bookCount}권 · 강의 {videoCount}개
+          </div>
+        </div>
+      </div>
+
+      <div style={{ background: "#fff", borderBottom: "1px solid #eee", position: "sticky", top: 0, zIndex: 10 }}>
+        <div style={{ maxWidth: MAX_W, margin: "0 auto", display: "flex" }}>
+          {[
+            { key: "voca", label: "📚 단어 TEST" },
+            { key: "videos", label: "🎬 강의 영상" },
+            { key: "students", label: "👥 학생" },
+          ].map((t) => (
+            <button key={t.key} onClick={() => setTab(t.key)} style={{
+              flex: 1, padding: "14px 0", border: "none", cursor: "pointer", background: "transparent",
+              fontSize: 14, fontWeight: tab === t.key ? 700 : 500,
+              color: tab === t.key ? "#2A2A28" : "#999",
+              borderBottom: tab === t.key ? "2.5px solid #2A2A28" : "2.5px solid transparent",
+              fontFamily: "inherit",
+            }}>{t.label}</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ maxWidth: MAX_W, margin: "0 auto", padding: 16 }}>
+        {err && <div style={{ marginBottom: 12, padding: "9px 12px", borderRadius: 10, background: "#fff7ed", border: "1px solid #fed7aa", color: "#c2410c", fontSize: 12, fontWeight: 700 }}>⚠️ {err}</div>}
+
+        {tab === "voca" && (
+          <div style={{ background: "#fff", borderRadius: 14, overflow: "hidden", border: "1px solid #eee" }}>
+            <iframe title="원장 단어 TEST" src={vocaSrc}
+              style={{ width: "100%", height: "calc(100vh - 210px)", minHeight: 520, border: "none", display: "block", background: "#FBF7EF" }} />
+          </div>
+        )}
+
+        {tab === "videos" && (loading ? busyBox : openBook ? (
+          <div>
+            <button onClick={() => { setOpenBook(null); setPlaying(null); }} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "8px 12px", marginBottom: 12, borderRadius: 9, border: "1px solid #dfe3ef", background: "#fff", color: "#555", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>← 교재 목록</button>
+            <div style={{ fontSize: 17, fontWeight: 800, color: "#2A2A28", marginBottom: 3 }}>{openBook.name}</div>
+            <div style={{ fontSize: 12.5, color: "#999", marginBottom: 14 }}>{openBook.areaLabel} · 강의 {(openBook.videos || []).length}개</div>
+            {(openBook.videos || []).map((v) => {
+              const isOpen = playing === v.id;
+              const ytId = v.type === "playlist" ? "" : extractYoutubeId(v.url || "");
+              const plId = v.type === "playlist" ? extractPlaylistId(v.playlistUrl || v.url || "") : "";
+              return (
+                <div key={v.id} style={{ background: "#fff", borderRadius: 14, marginBottom: 10, border: isOpen ? "2px solid #1C66A5" : "2px solid transparent", boxShadow: "0 1px 4px rgba(0,0,0,0.04)", overflow: "hidden" }}>
+                  <div onClick={() => setPlaying(isOpen ? null : v.id)} style={{ padding: 14, cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: 10, flexShrink: 0, background: v.type === "playlist" ? "linear-gradient(135deg,#e74c3c,#e67e22)" : "linear-gradient(135deg,#667eea,#764ba2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>{v.type === "playlist" ? "📋" : "▶️"}</div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 14.5, fontWeight: 600, color: "#2A2A28" }}>{v.title}</div>
+                      {v.type === "playlist" && <div style={{ fontSize: 11.5, color: "#bbb", marginTop: 2 }}>재생목록 전체 보기</div>}
+                    </div>
+                    <span style={{ flexShrink: 0, color: "#c8cdd8", fontSize: 15 }}>{isOpen ? "▲" : "▼"}</span>
+                  </div>
+                  {isOpen && (
+                    <div style={{ padding: "0 14px 14px" }}>
+                      {plId ? (
+                        <iframe title={v.title} src={`https://www.youtube.com/embed/videoseries?list=${plId}&rel=0`} allowFullScreen style={{ width: "100%", aspectRatio: "16/9", border: "none", borderRadius: 10, background: "#000" }} />
+                      ) : ytId ? (
+                        <iframe title={v.title} src={`https://www.youtube.com/embed/${ytId}?rel=0`} allowFullScreen style={{ width: "100%", aspectRatio: "16/9", border: "none", borderRadius: 10, background: "#000" }} />
+                      ) : (v.url || v.playlistUrl) ? (
+                        <a href={v.url || v.playlistUrl} target="_blank" rel="noreferrer" style={{ display: "inline-block", background: "#ff0033", color: "#fff", padding: "10px 20px", borderRadius: 9, textDecoration: "none", fontSize: 13.5, fontWeight: 700 }}>▶ 영상 보기</a>
+                      ) : (
+                        <div style={{ fontSize: 12.5, color: "#c0392b" }}>영상 주소가 없습니다.</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div>
+            <div style={{ fontSize: 12.5, color: "#999", marginBottom: 12 }}>교재를 누르면 그 안의 강의가 나옵니다. 강의가 없는 교재는 표시되지 않습니다.</div>
+            {areas.length === 0 && <div style={{ padding: 40, textAlign: "center", color: "#aaa", fontSize: 13.5 }}>등록된 강의가 없습니다.</div>}
+            {areas.map((a) => (
+              <div key={a.areaId} style={{ marginBottom: 18 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: "#8b909a", marginBottom: 8, letterSpacing: 0.3 }}>{a.areaLabel}</div>
+                {(a.books || []).map((b) => (
+                  <button key={b.bookId} onClick={() => { setOpenBook(b); setPlaying(null); }} style={card}>
+                    <span style={{ fontSize: 17 }}>📘</span>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: 700, color: "#2A2A28" }}>{b.name}</span>
+                    <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 700, color: "#1C66A5", background: "#eaf2fb", padding: "3px 8px", borderRadius: 8 }}>{(b.videos || []).length}</span>
+                    <span style={{ flexShrink: 0, color: "#c8cdd8", fontSize: 15 }}>›</span>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+        ))}
+
+        {tab === "students" && (loading ? busyBox : (
+          <div>
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="학생 이름 검색"
+              style={{ width: "100%", padding: "12px 14px", fontSize: 15, border: "1px solid #dfe3ef", borderRadius: 10, boxSizing: "border-box", background: "#fff", outline: "none", marginBottom: 12, fontFamily: "inherit" }} />
+            <div style={{ fontSize: 12.5, color: "#999", marginBottom: 10 }}>이름을 누르면 그 학생의 실제 앱 화면이 열립니다. ({shown.length}명)</div>
+            {shown.map((s) => (
+              <button key={s.id} onClick={() => openStudent(s)} style={card}>
+                <span style={{ width: 34, height: 34, flexShrink: 0, borderRadius: 10, background: "#eef1f8", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, color: "#5a6a85" }}>{String(s.name || "?")[0]}</span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: 700, color: "#2A2A28" }}>{s.name}</span>
+                <span style={{ flexShrink: 0, color: "#c8cdd8", fontSize: 15 }}>›</span>
+              </button>
+            ))}
+            {shown.length === 0 && <div style={{ padding: 30, textAlign: "center", color: "#aaa", fontSize: 13.5 }}>일치하는 학생이 없습니다.</div>}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -2279,6 +2549,9 @@ export default function App() {
 
   useEffect(() => {
     const flush = async () => {
+      // [마스터] 부팅 직후 도는 재전송. 원장 폰에 남아 있던 대기 기록이
+      // 마스터 홈이 뜨기도 전에 학생 기록으로 나가는 것을 막는다.
+      if (IS_MASTER_MODE) return;
       try {
         // 1) pending_away 고아 데이터 복구: 앱이 이탈 상태에서 강제 종료된 경우, 다음 접속 때 이탈 기록만 Worker로 보냄
         try {
@@ -2356,6 +2629,11 @@ export default function App() {
     const pendingTimer = setInterval(() => setPendingVideoCount(getPendingVideoWatch().length), 5000);
     return () => clearInterval(pendingTimer);
   }, []);
+
+  // [마스터] 열쇠는 있고 학생 id는 없음 → 원장 전용 홈. 학생 데이터 로딩은 이미 건너뛴 상태.
+  if (IS_MASTER_MODE && !studentId) {
+    return <MasterHome mk={MASTER_MK} />;
+  }
 
   if (loading) {
     return (
@@ -2493,15 +2771,31 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "#f6f7fb", fontFamily: F }}>
       {/* [PWA] 홈 화면 설치 안내 배너 — 설치본/닫음/PC에선 자동 숨김 */}
       <PwaInstallBanner />
+      {/* [마스터] 지금 남의 화면을 보고 있다는 표시 + 홈 복귀. 학생에게는 절대 안 뜬다(열쇠 없음). */}
+      {IS_MASTER_MODE && (
+        <div style={{ background: "#16213e", borderBottom: "1px solid #c9a227", padding: "9px 24px" }}>
+          <div style={{ maxWidth: MAX_W, margin: "0 auto", display: "flex", alignItems: "center", gap: 7 }}>
+            <span style={{ fontSize: 13, fontWeight: 800, color: "#f0c419", flexShrink: 0 }}>👑 마스터</span>
+            <span style={{ fontSize: 12.5, color: "rgba(255,255,255,0.85)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>· {student.name}</span>
+            <button onClick={() => { window.location.href = window.location.pathname + "?master=1"; }}
+              style={{ marginLeft: "auto", flexShrink: 0, padding: "5px 11px", borderRadius: 8, border: "1px solid rgba(240,196,25,0.5)", background: "rgba(240,196,25,0.14)", color: "#f0c419", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>마스터 홈</button>
+          </div>
+        </div>
+      )}
       <div style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)", padding: "20px 24px 24px", color: "#fff" }}>
         <div style={{ maxWidth: MAX_W, margin: "0 auto" }}>
         {/* 브랜드 로고 락업 */}
         <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 16 }}>
           <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 19, border: "2px solid rgba(255,255,255,0.6)", borderRadius: 4, fontSize: 11, fontWeight: 700, letterSpacing: -0.5 }}>MP</span>
           <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: -0.3 }}>마플영어</span>
-          <button onClick={() => setShowAttQr(true)} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 9, border: "1px solid rgba(255,255,255,0.25)", background: "rgba(255,255,255,0.12)", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-            <span style={{ fontSize: 13 }}>▦</span> 출석 QR
-          </button>
+          {/* [마스터] 원장이 학생 화면에서 출석 QR을 띄워 잘못 찍히는 일이 없도록 숨긴다. */}
+          {IS_MASTER_MODE ? (
+            <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.45)" }}>출석 QR 숨김</span>
+          ) : (
+            <button onClick={() => setShowAttQr(true)} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 9, border: "1px solid rgba(255,255,255,0.25)", background: "rgba(255,255,255,0.12)", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+              <span style={{ fontSize: 13 }}>▦</span> 출석 QR
+            </button>
+          )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
           {/* 아바타 + 코너 브래킷 (로고 시그니처) */}
