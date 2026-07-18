@@ -402,6 +402,7 @@ const STU = (() => {
     name: q.get('n') || '',
     api: (q.get('api') || '').replace(/\/+$/, ''),
     books: (q.get('books') || '').split(',').map(x => x.trim()).filter(Boolean),
+    master: q.get('mk') === '1',   // 원장 전용 앱(마스터 홈)에서 열렸는지 — 원장 전용 책까지 책장에 올린다
   };
 })();
 
@@ -528,7 +529,7 @@ const bookUrl = b => b.builtin ? '' : (dataBase() ? `${dataBase().replace(/\/+$/
 const bookReady = b => b.builtin || (!!bookUrl(b) && (!READY_IDS || READY_IDS.includes(b.id)));
 const shelfBooks = () => BOOKS.filter(b => {
   if (!STU) return true;                                   // 원장 모드: 전권 표시(준비 중 포함)
-  if (b.priv) return false;                                // 원장 전용은 학생앱에서 숨김
+  if (b.priv && !STU.master) return false;                 // 원장 전용은 학생앱에서만 숨김(마스터 홈에서는 표시)
   if (STU.books.length && !STU.books.includes(b.id)) return false;   // 진도로 배정된 책만
   return bookReady(b);                                     // 학생앱: 완성된 책만
 });
@@ -958,7 +959,7 @@ function showFeedback(w, p, res, input){
   setTimeout(()=>$('#btnNext').focus(), 60);
 }
 $('#btnGo').onclick = () => submit(false);
-$('#ans').addEventListener('keydown', e => { if (e.key === 'Enter') submit(false); });
+$('#ans').addEventListener('keyup', e => { if (e.key === 'Enter' || e.keyCode === 13) submit(false); });
 $('#btnPass').onclick = () => submit(true);
 $('#btnNext').onclick = () => {
   if (qi === Q.length-1) return showSummary();
