@@ -131,7 +131,7 @@ header{position:sticky; top:0; z-index:10; background:var(--paper);
 .morph .plus{background:none; border:none; color:var(--ink-soft); padding:3px 1px}
 .deriv{font-size:13.5px; color:var(--ink-soft); text-align:center; margin-top:9px; line-height:1.6}
 
-.ansrow{display:flex; flex-direction:column; align-items:flex-end; gap:10px; margin-top:20px}
+.ansrow{display:flex; flex-direction:column; align-items:center; gap:10px; margin-top:20px}
 .ansrow input{width:100%; border:1.5px solid var(--line); border-radius:11px;
   padding:12px 14px; font-size:16px; background:#fff}
 .ansrow input:focus{border-color:var(--ink); outline:none}
@@ -575,6 +575,7 @@ function migrateS(s){
 
 /* ───────── 책장 (단어장 선택) ───────── */
 const bookCache = {};                              // 세션 내 다운로드 캐시 (새로고침 전까지 재사용)
+const countCache = {};                             // 시작 전 책의 단어 개수 세션 캐시(상태 미생성 책용)
 function renderShelf(){
   const g = $('#bookGrid'); if (!g) return;
   g.innerHTML = '';
@@ -590,16 +591,35 @@ function renderShelf(){
     const st = ROOT.books[b.id];
     const ready = bookReady(b);
     const crowns = st?.crowns || 0;
-    const total = b.builtin ? VB_DATA.length : st?.total;
+    const total = b.builtin ? VB_DATA.length : (st?.total || countCache[b.id]);
     const card = document.createElement('div');
     card.className = 'book' + (ready ? '' : ' soon');
     card.innerHTML =
       `<div class="bt">${b.title}</div>` +
-      `<div class="bs">${ready ? (st ? `${st.round}회독 진행 중${total ? ` · ${total}단어` : ''}` : `시작 전 · ${b.sub}`) : '자료 준비 중'}</div>` +
+      `<div class="bs">${ready ? (st ? `${st.round}회독 진행 중${total ? ` · ${total}단어` : ''}` : `시작 전 · ${b.sub}${total ? ` · ${total}단어` : ''}`) : '자료 준비 중'}</div>` +
       `<div class="bc">${crowns ? '👑'.repeat(crowns) : ''}</div>` +
       (b.priv ? `<div class="bpriv">원장 전용</div>` : '');
     if (ready) card.onclick = () => openBook(b.id);
     g.appendChild(card);
+  }
+  backfillCounts(shelf);            // 개수 모르는 책은 조용히 받아와 단어 수 표시
+}
+/* 준비된 책 중 단어 개수(total)를 아직 모르는 것들을 백그라운드로 세어 카드에 반영 */
+async function backfillCounts(shelf){
+  for (const b of shelf){
+    if (!bookReady(b)) continue;                 // 자료 준비 안 된 책은 건너뜀
+    const st = ROOT.books[b.id];
+    const known = b.builtin ? VB_DATA.length : st?.total;
+    if (known) continue;                         // 이미 개수를 알면 스킵
+    try {
+      const list = await loadBookData(b);        // 캐시가 있으면 재사용됨
+      const n = Array.isArray(list) ? list.length : 0;
+      if (!n) continue;
+      const bs = ROOT.books[b.id];
+      if (bs) bs.total = n;                       // 상태가 있으면 저장(다음부터 즉시 표시)
+      countCache[b.id] = n;                       // 상태가 없어도(시작 전) 세션 캐시에 보관
+      renderShelf();                             // 개수 반영해 다시 그림
+    } catch(e){ /* 실패해도 조용히 무시 — 개수만 안 보일 뿐 */ }
   }
 }
 async function loadBookData(b){
