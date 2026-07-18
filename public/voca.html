@@ -162,6 +162,12 @@ header{position:sticky; top:0; z-index:10; background:var(--paper);
   background:var(--ink); color:#fff; font-weight:700; font-size:15px}
 
 /* ── 결과 ── */
+.aicard{border:1.5px solid var(--line); border-radius:11px; padding:10px 12px; margin-top:8px; text-align:left; background:#fff}
+.aicard .w{font-weight:800}
+.aicard .vd{font-size:12px; font-weight:800; float:right}
+.aicard .vd.ok{color:#1a7f4e}
+.aicard .vd.no{color:#b3402a}
+.aicard .d{font-size:12.5px; color:var(--ink-soft); margin-top:4px; line-height:1.5}
 .sumcard{background:var(--card); border:1px solid var(--line); border-radius:16px;
   padding:26px 20px; text-align:center}
 .sumcard .score{font-size:44px; font-weight:800; letter-spacing:-.03em}
@@ -329,6 +335,11 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
         <button class="home" id="btnHome">홈으로</button>
       </div>
       <div class="wronglist" id="wrongList"></div>
+      <div id="aiSec" style="display:none; margin-top:14px">
+        <button class="re" id="btnAi" style="width:100%">애매한 오답 AI 재검토</button>
+        <div id="aiQuota" style="font-size:12px; color:var(--ink-soft); text-align:center; margin-top:6px"></div>
+        <div id="aiList" style="margin-top:10px"></div>
+      </div>
     </div>
   </section>
 </div>
@@ -844,14 +855,14 @@ function updateRangeBtn(){
 $('#btnRange').onclick = () => { const l = rangeList(); if (l.length) startSession(l); };
 
 /* ───────── 학습 세션 ───────── */
-let Q = [], qi = 0, sesOk = 0, sesWrong = [];
+let Q = [], qi = 0, sesOk = 0, sesWrong = [], sesInputs = {};   // sesInputs: AI 재검토용 오답 입력 기록
 function startSession(list, opts){
   if (!list.length) return;
   Q = [...list];
   for (let i = Q.length-1; i > 0; i--){   // 항상 셔플
     const j = Math.floor(Math.random()*(i+1)); [Q[i],Q[j]] = [Q[j],Q[i]];
   }
-  qi = 0; sesOk = 0; sesWrong = [];
+  qi = 0; sesOk = 0; sesWrong = []; sesInputs = {};
   show('study'); renderCard();
 }
 function renderCard(){
@@ -942,6 +953,7 @@ function submit(pass){
   } else {
     p.w++; p.r[S.round] = 0;
     sesWrong.push(w);
+    if (!pass && input && !res.prevRound) sesInputs[w.id] = input;   // AI 재검토 후보: 실제로 입력한 오답만
   }
   store.save();
   showFeedback(w, p, res, input);
@@ -988,8 +1000,7 @@ $('#btnNext').onclick = () => {
 $('#btnQuit').onclick = () => { renderHome(); show('home'); };
 
 /* ───────── 결과 ───────── */
-function showSummary(){
-  $('#stampSum').innerHTML = `<b>${S.round}</b>회독`;
+function refreshSummary(){
   $('#sumScore').innerHTML = `${sesOk}<small> / ${Q.length}</small>`;
   $('#sumSub').textContent = sesWrong.length ?
     `오답 ${sesWrong.length}개 — 오답만 다시 도전해 보세요` : '전부 맞혔어요!';
@@ -998,9 +1009,67 @@ function showSummary(){
     '<h3>오답 단어</h3>' + sesWrong.map(w =>
       `<div class="witem"><span class="w">${w.w}</span><span class="m">${w.senses.map(s=>s.m[0]).slice(0,3).join(' · ')}</span></div>`
     ).join('') : '';
+}
+function showSummary(){
+  $('#stampSum').innerHTML = `<b>${S.round}</b>회독`;
+  refreshSummary();
+  $('#aiList').innerHTML = '';
+  $('#aiQuota').textContent = '';
+  const ab = $('#btnAi');
+  if (ab){ ab.disabled = false; ab.style.display = 'block'; ab.textContent = '애매한 오답 AI 재검토'; }
+  $('#aiSec').style.display = (STU && syncOn() && sesWrong.some(w => sesInputs[w.id])) ? 'block' : 'none';
   renderHome(); show('sum');
   maybeCelebrate();   // 회독 완주 감지 → 왕관·축하 모달
 }
+/* ── AI 재검토: 오답 중 실제 입력한 것만 묶어 워커(/voca/recheck)로 보내고,
+     인정된 답은 그 자리에서 정답 처리(진도·회독 반영). 하루 30회 선착순(학원 전체). ── */
+$('#btnAi').onclick = async () => {
+  const targets = sesWrong.filter(w => sesInputs[w.id]).slice(0, 10);
+  if (!targets.length || !STU) return;
+  const btn = $('#btnAi');
+  btn.disabled = true; btn.textContent = 'AI가 검토하고 있어요…';
+  try{
+    const r = await fetch(`${STU.api}/voca/recheck?id=${encodeURIComponent(STU.id)}&t=${encodeURIComponent(STU.t)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: targets.map(w => ({
+        w: w.w, input: sesInputs[w.id],
+        senses: w.senses.map(s => ({ sid: s.sid, m: s.m }))
+      })) })
+    });
+    const d = await r.json().catch(() => null);
+    if (!d || d.success === false){
+      btn.style.display = 'none';
+      $('#aiQuota').textContent = (d && d.quota)
+        ? '오늘 재검토 횟수를 모두 사용했어요 — 내일 다시 열려요'
+        : '지금은 재검토를 사용할 수 없어요';
+      return;
+    }
+    const cards = [];
+    (d.results || []).forEach(res => {
+      const w = targets[res.i]; if (!w) return;
+      const input = sesInputs[w.id];
+      let accepted = false;
+      if (res.ok && Number.isInteger(res.si) && w.senses[res.si]){
+        const p = W(w.id), sid = w.senses[res.si].sid;
+        if (p.u[sid] == null){                        // 아직 어느 회독에도 안 쓴 뜻일 때만 인정
+          p.u[sid] = S.round; p.c++; p.w = Math.max(0, p.w - 1); p.r[S.round] = 1;
+          sesOk++; accepted = true;
+          sesWrong = sesWrong.filter(x => x.id !== w.id);
+          delete sesInputs[w.id];
+        }
+      }
+      cards.push(`<div class="aicard"><span class="vd ${accepted ? 'ok' : 'no'}">${accepted ? '정답 인정' : '오답 유지'}</span><span class="w">${w.w}</span><div class="d">내 답: ${input}${res.note ? '<br>' + res.note : ''}${accepted ? '<br>점수와 진도에 반영했어요.' : ''}</div></div>`);
+    });
+    store.save();
+    $('#aiList').innerHTML = cards.join('');
+    $('#aiQuota').textContent = (typeof d.remaining === 'number') ? `오늘 남은 재검토 · 학원 전체 ${d.remaining}회` : '';
+    btn.style.display = 'none';
+    refreshSummary();
+  }catch(e){
+    btn.disabled = false; btn.textContent = '애매한 오답 AI 재검토';
+    $('#aiQuota').textContent = '연결에 실패했어요 — 잠시 후 다시 시도해 주세요';
+  }
+};
 $('#btnRetry').onclick = () => startSession(sesWrong);
 $('#btnHome').onclick = () => { renderHome(); show('home'); };
 
