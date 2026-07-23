@@ -13,6 +13,7 @@ self.addEventListener("push", (event) => {
   event.waitUntil((async () => {
     let title = "마플영어";
     let body = "새 소식이 도착했어요. 앱에서 확인해 주세요!";
+    let silent = false; // true면 소리·진동 없이 알림센터·배지만 (투두 배지용)
     // 1) 이 기기 구독의 endpoint로 알림 문구 조회 (실패해도 기본 문구로 알림은 뜬다)
     try {
       const sub = await self.registration.pushManager.getSubscription();
@@ -23,7 +24,7 @@ self.addEventListener("push", (event) => {
           body: JSON.stringify({ endpoint: sub.endpoint }),
         });
         const d = await r.json().catch(() => null);
-        if (d && d.title) { title = String(d.title); body = String(d.body || ""); }
+        if (d && d.title) { title = String(d.title); body = String(d.body || ""); silent = d.silent === true; }
       }
     } catch (e) { /* 조회 실패 시 기본 문구 사용 */ }
     // 2) 앱 아이콘 배지 (지원 기기: 설치된 PWA — 안드로이드/아이폰 16.4+)
@@ -36,7 +37,8 @@ self.addEventListener("push", (event) => {
       body,
       icon: APP_ICON,
       badge: APP_ICON,
-      tag: "mapl-latest", // 같은 태그면 최신 알림으로 교체 (알림이 쌓이지 않게)
+      silent, // 무음 알림: 화면에 번쩍 뜨지 않고 알림센터에만 조용히 들어간다 (기종에 따라 정도 차이)
+      tag: silent ? "mapl-quiet" : "mapl-latest", // 태그 분리: 무음 알림이 설문 알림을 덮어쓰지 않게
       data: { url: "/" },
     });
   })());
