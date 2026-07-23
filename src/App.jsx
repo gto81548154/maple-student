@@ -1699,6 +1699,33 @@ function StudentLinkRecover({ apiBase }) {
   );
 }
 
+// ─── [설문 이미지] 원장앱이 첨부한 사진(R2 키, 예: survey/svy_123.jpg)을 워커 /files/ 프록시로 받아 표시 ───
+// 키가 없거나 로드에 실패하면 아무것도 그리지 않는다 — 구형 설문·네트워크 오류에도 카드가 깨지지 않게.
+function StudentSurveyImage({ imageKey }) {
+  const [src, setSrc] = useState("");
+  useEffect(() => {
+    let alive = true; let objUrl = "";
+    setSrc("");
+    if (!imageKey || !WORKER_ORIGIN) return undefined;
+    (async () => {
+      try {
+        const headers = {};
+        if (VIDEO_WATCH_API_KEY) headers.Authorization = `Bearer ${VIDEO_WATCH_API_KEY}`;
+        const path = String(imageKey).split("/").map(encodeURIComponent).join("/");
+        const r = await fetch(`${WORKER_ORIGIN}/files/${path}`, { headers });
+        if (!r.ok) throw new Error(`이미지 요청 실패 (${r.status})`);
+        const buf = await r.arrayBuffer();
+        if (!alive) return;
+        objUrl = URL.createObjectURL(new Blob([buf], { type: "image/jpeg" }));
+        setSrc(objUrl);
+      } catch (e) { console.warn("설문 이미지 로드 실패:", e?.message || e); }
+    })();
+    return () => { alive = false; if (objUrl) URL.revokeObjectURL(objUrl); };
+  }, [imageKey]);
+  if (!imageKey || !src) return null;
+  return <img src={src} alt="설문 이미지" style={{ maxWidth: "100%", borderRadius: 10, display: "block", marginBottom: 10 }} />;
+}
+
 // ─── 설문 응답 카드 ───
 // 단일 선택: 선택지를 누르면 바로 제출. 복수 선택(maxChoices>1): 정확히 maxChoices개를 골라야 [제출하기]가 활성화된다.
 function StudentSurveyCard({ survey, myResponse, student, onSubmitted }) {
@@ -1759,6 +1786,7 @@ function StudentSurveyCard({ survey, myResponse, student, onSubmitted }) {
         {submitted && <span style={{ fontSize: 11.5, fontWeight: 800, color: "#1B8A5A" }}>제출 완료</span>}
       </div>
       <div style={{ fontSize: 15, fontWeight: 800, color: "#2A2A28", marginBottom: 10, lineHeight: 1.45 }}>{survey.title}</div>
+      {survey.image && <StudentSurveyImage imageKey={survey.image} />}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         {(survey.options || []).map((op, idx) => {
           const on = activeSet.includes(idx);
