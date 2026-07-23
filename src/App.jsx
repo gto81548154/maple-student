@@ -1723,7 +1723,7 @@ function StudentSurveyImage({ imageKey }) {
     return () => { alive = false; if (objUrl) URL.revokeObjectURL(objUrl); };
   }, [imageKey]);
   if (!imageKey || !src) return null;
-  return <img src={src} alt="설문 이미지" style={{ maxWidth: "100%", maxHeight: 280, borderRadius: 10, display: "block" }} />;
+  return <img src={src} alt="설문 이미지" style={{ width: "100%", height: "auto", borderRadius: 10, display: "block" }} />;
 }
 
 // ─── 설문 응답 카드 ───
@@ -1790,7 +1790,8 @@ function StudentSurveyCard({ survey, myResponse, student, onSubmitted }) {
         // 여러 장(images 배열) 지원 — 구버전 설문의 단일 image 필드도 목록으로 취급
         const keys = Array.isArray(survey.images) && survey.images.length ? survey.images : (survey.image ? [survey.image] : []);
         return keys.length ? (
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+          // [설문 이미지] 2열 그리드 — 사진이 1장뿐이면 1열로 크게
+          <div style={{ display: "grid", gridTemplateColumns: keys.length === 1 ? "1fr" : "1fr 1fr", gap: 8, marginBottom: 10 }}>
             {keys.map((k, i) => <StudentSurveyImage key={i} imageKey={k} />)}
           </div>
         ) : null;
@@ -3988,4 +3989,3 @@ function StepSection({ step, displayNum, isChecked, isFailed, getFailReason, stu
     </div>
   );
 }
- 
