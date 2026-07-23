@@ -2829,7 +2829,7 @@ export default function App() {
             <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.45)" }}>출석 QR 숨김</span>
           ) : (
             <button onClick={() => setShowAttQr(true)} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 9, border: "1px solid rgba(255,255,255,0.25)", background: "rgba(255,255,255,0.12)", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-              <span style={{ fontSize: 13 }}>▦</span> 출석 QR
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ display: "block" }}><path d="M3 3h8v8H3V3zm2 2v4h4V5H5zm8-2h8v8h-8V3zm2 2v4h4V5h-4zM3 13h8v8H3v-8zm2 2v4h4v-4H5zm8-2h3v3h-3v-3zm5 0h3v3h-3v-3zm-5 5h3v3h-3v-3zm5 0h3v3h-3v-3z"/></svg> 출석 QR
             </button>
           )}
         </div>
@@ -2953,14 +2953,21 @@ export default function App() {
       )}
 
       {/* [설문] 진행 중 설문 — 선택지를 누르면 제출, 마감 전까지 변경 가능 */}
-      {surveys.length > 0 && (
-        <div style={{ maxWidth: MAX_W, margin: "12px auto 0", padding: "0 16px", boxSizing: "border-box" }}>
-          {surveys.map((sv) => (
-            <StudentSurveyCard key={sv.id} survey={sv} myResponse={surveyResponses[sv.id]} student={student}
-              onSubmitted={(svId, resp) => setSurveyResponses((prev) => ({ ...prev, [svId]: resp }))} />
-          ))}
-        </div>
-      )}
+      {(() => {
+        // [설문 기간] 시작 전·기간 종료 설문은 표시하지 않는다 (워커도 거르지만 캐시 번들 대비 이중 안전장치)
+        const t = new Date(); const z = (n) => String(n).padStart(2, "0");
+        const today = `${t.getFullYear()}-${z(t.getMonth() + 1)}-${z(t.getDate())}`;
+        const list = surveys.filter((sv) => sv && !(sv.startDate && today < sv.startDate) && !(sv.endDate && today > sv.endDate));
+        if (!list.length) return null;
+        return (
+          <div style={{ maxWidth: MAX_W, margin: "12px auto 0", padding: "0 16px", boxSizing: "border-box" }}>
+            {list.map((sv) => (
+              <StudentSurveyCard key={sv.id} survey={sv} myResponse={surveyResponses[sv.id]} student={student}
+                onSubmitted={(svId, resp) => setSurveyResponses((prev) => ({ ...prev, [svId]: resp }))} />
+            ))}
+          </div>
+        );
+      })()}
 
       <div style={{ background: "#fff", borderBottom: "1px solid #eee", position: "sticky", top: 0, zIndex: 10 }}>
         <div style={{ maxWidth: MAX_W, margin: "0 auto", display: "flex" }}>
