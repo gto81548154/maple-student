@@ -130,6 +130,86 @@ const setupStudentPwa = () => {
   } catch (e) { console.warn("PWA 셋업 실패:", e?.message || e); }
 };
 
+// ─── [푸시] 웹 푸시 알림 구독 (2026-07-23) ───
+// 흐름: [알림 켜기] → 권한 허용 → 이 폰의 구독을 워커 /push/subscribe에 저장.
+// 이후 원장앱이 설문을 보내면 워커가 이 폰으로 빈 푸시를 쏘고, public/sw.js가 받아서 알림+배지를 띄운다.
+const PUSH_VAPID_PUBLIC_KEY = "BFKk73eo2D2L82x5lpRRY2ySZq-K9tVV3TwntnWn65v4FCeVhXc0oyA4JXXZUY7MMJ7xPgl3D8PS828uXpPys_Y";
+const pushSupport = () =>
+  ("serviceWorker" in navigator && "PushManager" in window && "Notification" in window) ? "supported" : "unsupported";
+const pushB64urlToUint8 = (s) => {
+  const pad = "=".repeat((4 - (s.length % 4)) % 4);
+  const b64 = (s + pad).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(b64);
+  return Uint8Array.from(Array.from(raw).map((c) => c.charCodeAt(0)));
+};
+const registerMaplSw = async () => {
+  if (!("serviceWorker" in navigator)) return null;
+  try { return await navigator.serviceWorker.register("/sw.js"); }
+  catch (e) { console.warn("서비스 워커 등록 실패:", e?.message || e); return null; }
+};
+// 구독 생성 + 워커 저장. 권한이 granted인 상태에서 호출해야 한다.
+const subscribeMaplPush = async (student) => {
+  if (!WORKER_ORIGIN) throw new Error("동기화 서버 주소가 없습니다");
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: pushB64urlToUint8(PUSH_VAPID_PUBLIC_KEY) });
+  const t = new URLSearchParams(window.location.search).get("t") || "";
+  const r = await fetch(WORKER_ORIGIN + "/push/subscribe", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: String(student?.id || ""), t, subscription: sub.toJSON() }),
+  });
+  const d = await r.json().catch(() => null);
+  if (!r.ok || !d?.success) throw new Error(d?.error || "알림 등록 저장 실패");
+  return d;
+};
+// 홈 상단 "알림 켜기" 배너 — 마스터 모드·미지원 기기·이미 허용된 폰에서는 안 보인다
+function PushEnableBanner({ student }) {
+  const [state, setState] = useState(() => {
+    if (IS_MASTER_MODE || pushSupport() === "unsupported") return "hidden";
+    if (Notification.permission === "granted") return "hidden"; // 허용된 폰은 앱이 알아서 구독을 갱신한다
+    if (Notification.permission === "denied") return "denied";
+    return "off";
+  });
+  const [busy, setBusy] = useState(false);
+  if (state === "hidden") return null;
+  const enable = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await registerMaplSw();
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") { setState(perm === "denied" ? "denied" : "off"); setBusy(false); return; }
+      await subscribeMaplPush(student);
+      setState("done");
+      setTimeout(() => setState("hidden"), 5000);
+    } catch (e) { alert("알림 설정에 실패했어요: " + (e?.message || e)); }
+    setBusy(false);
+  };
+  return (
+    <div style={{ maxWidth: MAX_W, margin: "12px auto 0", padding: "0 16px", boxSizing: "border-box" }}>
+      {state === "done" ? (
+        <div style={{ background: "#E8F6EE", border: "1.5px solid #BFE5CE", borderRadius: 14, padding: "12px 16px", fontSize: 13.5, fontWeight: 800, color: "#1B8A5A" }}>
+          ✅ 알림이 켜졌어요! 새 설문·공지가 오면 알려드릴게요.
+        </div>
+      ) : state === "denied" ? (
+        <div style={{ background: "#FFF7E6", border: "1.5px solid #F3D97B", borderRadius: 14, padding: "12px 16px", fontSize: 12.5, color: "#7A5A00", lineHeight: 1.5 }}>
+          🔕 알림이 꺼져 있어요. 폰 <b>설정 → 알림 → 마플영어</b>에서 허용해 주면 새 설문·공지를 놓치지 않아요.
+        </div>
+      ) : (
+        <div style={{ background: "#fff", border: "1.5px solid #E4E0D8", borderRadius: 14, padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
+          <span style={{ fontSize: 20, flexShrink: 0 }}>🔔</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: "#2A2A28" }}>새 설문·공지 알림 받기</div>
+            <div style={{ fontSize: 11.5, color: "#888", marginTop: 1 }}>중요한 안내가 오면 바로 알려드려요</div>
+          </div>
+          <button onClick={enable} disabled={busy} style={{ flexShrink: 0, padding: "9px 16px", borderRadius: 10, border: "none", background: busy ? "#c9d6ea" : "#2A6FDB", color: "#fff", fontSize: 13, fontWeight: 800, cursor: busy ? "default" : "pointer" }}>
+            {busy ? "설정 중..." : "알림 켜기"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // 설치 안내 배너: 폰에서만, 설치본이 아니고, 닫은 적 없을 때만 표시
 const PWA_BANNER_DISMISS_KEY = "mapl_pwa_banner_dismissed_v1";
 function PwaInstallBanner() {
@@ -2164,6 +2244,28 @@ export default function App() {
   // [PWA] manifest·아이콘 메타 주입 (학생별 start_url 포함) — 1회
   useEffect(() => { setupStudentPwa(); }, []);
 
+  // [푸시] 앱을 열면: 배지(빨간 숫자) 지우기 + 서비스 워커 등록 + 이미 허용된 폰이면 구독을 조용히 최신으로 갱신
+  useEffect(() => {
+    const clearBadge = () => { try { if (navigator.clearAppBadge) navigator.clearAppBadge().catch(() => {}); } catch (e) {} };
+    clearBadge();
+    const onVis = () => { if (document.visibilityState === "visible") clearBadge(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
+  const pushSyncedRef = useRef(false);
+  useEffect(() => {
+    if (!student?.id || IS_MASTER_MODE || pushSupport() === "unsupported" || pushSyncedRef.current) return;
+    pushSyncedRef.current = true;
+    (async () => {
+      const reg = await registerMaplSw();
+      if (!reg) return;
+      if (Notification.permission === "granted") {
+        // 허용은 되어 있는데 구독이 끊겼거나 새 기기인 경우를 대비해 매 실행마다 저장을 갱신한다
+        try { await subscribeMaplPush(student); } catch (e) { console.warn("푸시 구독 갱신 실패:", e?.message || e); }
+      }
+    })();
+  }, [student?.id]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [student, setStudent] = useState(null);
@@ -2952,6 +3054,9 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* [푸시] 알림 켜기 배너 — 허용 전인 폰에만 보인다 */}
+      {student && <PushEnableBanner student={student} />}
 
       {/* [설문] 진행 중 설문 — 선택지를 누르면 제출, 마감 전까지 변경 가능 */}
       {(() => {
