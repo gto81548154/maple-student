@@ -2252,20 +2252,6 @@ export default function App() {
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
-  const pushSyncedRef = useRef(false);
-  useEffect(() => {
-    if (!student?.id || IS_MASTER_MODE || pushSupport() === "unsupported" || pushSyncedRef.current) return;
-    pushSyncedRef.current = true;
-    (async () => {
-      const reg = await registerMaplSw();
-      if (!reg) return;
-      if (Notification.permission === "granted") {
-        // 허용은 되어 있는데 구독이 끊겼거나 새 기기인 경우를 대비해 매 실행마다 저장을 갱신한다
-        try { await subscribeMaplPush(student); } catch (e) { console.warn("푸시 구독 갱신 실패:", e?.message || e); }
-      }
-    })();
-  }, [student?.id]);
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [student, setStudent] = useState(null);
@@ -2297,6 +2283,44 @@ export default function App() {
   const [lastLoadedAt, setLastLoadedAt] = useState(null); // 마지막 동기화 시각
   const [offlineNotice, setOfflineNotice] = useState(""); // Worker 실패 시 로컬 백업 표시 안내
   const loadInFlightRef = useRef(false); // 30초 polling 중복 호출 방지
+
+  // [PASS] 새로 완주한 책 감지 → 앱 진입 시 축하 연출 (책당 딱 1번, 이 폰 기준)
+  // ※ 반드시 위의 student·todos·progressTree state 선언 "뒤"에 있어야 함 — 앞에 두면 TDZ 크래시로 앱이 안 열림
+  const [passQueue, setPassQueue] = useState([]);
+  const passCheckedRef = useRef(false);
+  useEffect(() => {
+    if (passCheckedRef.current || !student?.id || IS_MASTER_MODE) return;
+    if (!progressTree || !Array.isArray(progressTree.lanes) || !Object.keys(todos || {}).length) return;
+    passCheckedRef.current = true;
+    try {
+      const completed = computeCompletedBooks(student.id, todos, progressTree) || [];
+      const key = `mapl_pass_seen_${student.id}`;
+      let seen = null;
+      try { seen = JSON.parse(localStorage.getItem(key) || "null"); } catch (e) { seen = null; }
+      const ids = completed.map(b => String(b.id));
+      if (!seen || !Array.isArray(seen.ids)) {
+        // 첫 실행: 이미 끝나 있던 책은 기준선으로만 기록 (과거 완주까지 축하가 쏟아지지 않게)
+        localStorage.setItem(key, JSON.stringify({ ids }));
+        return;
+      }
+      const fresh = completed.filter(b => !seen.ids.includes(String(b.id)));
+      localStorage.setItem(key, JSON.stringify({ ids }));
+      if (fresh.length) setPassQueue(fresh);
+    } catch (e) { console.warn("완주 감지 실패:", e?.message || e); }
+  }, [student?.id, todos, progressTree]);
+  const pushSyncedRef = useRef(false);
+  useEffect(() => {
+    if (!student?.id || IS_MASTER_MODE || pushSupport() === "unsupported" || pushSyncedRef.current) return;
+    pushSyncedRef.current = true;
+    (async () => {
+      const reg = await registerMaplSw();
+      if (!reg) return;
+      if (Notification.permission === "granted") {
+        // 허용은 되어 있는데 구독이 끊겼거나 새 기기인 경우를 대비해 매 실행마다 저장을 갱신한다
+        try { await subscribeMaplPush(student); } catch (e) { console.warn("푸시 구독 갱신 실패:", e?.message || e); }
+      }
+    })();
+  }, [student?.id]);
 
   // 이탈 추적용 ref (state로 안 쓰는 이유: 매 visibilitychange마다 리렌더 안 시키기 위함)
   const awayStartRef = useRef(null);   // 영상 재생 중 이탈 시작 시각(Date.now() 또는 null)
@@ -3055,6 +3079,9 @@ export default function App() {
         </div>
       )}
 
+      {/* [PASS] 교재 완주 축하 오버레이 — 새 완주가 있을 때만 */}
+      {passQueue.length > 0 && <BookPassCelebration books={passQueue} onClose={() => setPassQueue([])} />}
+
       {/* [푸시] 알림 켜기 배너 — 허용 전인 폰에만 보인다 */}
       {student && <PushEnableBanner student={student} />}
 
@@ -3126,6 +3153,7 @@ export default function App() {
                 key={step.key}
                 step={step}
                 displayNum={idx + 1}
+                stampDate={(() => { const q = String(activeDate || "").split("-"); return q.length === 3 ? `${Number(q[1])}/${Number(q[2])}` : ""; })()}
                 isChecked={isChecked}
                 isFailed={isFailed}
                 getFailReason={getFailReason}
@@ -3323,6 +3351,69 @@ const effectiveTreeDone = (node, matched, ovr) => {
   if (ovr && ovr.forceDone) return node.total || 0;
   return Math.min(node.total || 0, (matched || 0) + (Number(ovr && ovr.baseDone) || 0));
 };
+// ─── [PASS] 교재 완주 축하 (2026-07-23) ───
+// 진도 트리에서 100%가 된 교재(투두 자동 집계 + 원장 보정/완료 처리 포함)를 찾아,
+// 폰에 기억해 둔 "이미 축하한 책"과 비교해 새로 완주한 책만 앱 진입 시 축하한다.
+const computeCompletedBooks = (sid, todos, tree) => {
+  if (!sid || !tree) return null;
+  const prog = computeTreeProgressForStudent(sid, todos, tree);
+  const ovrMap = (tree.ovr || {})[String(sid)] || (tree.ovr || {})[sid] || {};
+  const out = [];
+  (tree.lanes || []).forEach(l => (l.nodes || []).forEach(n => {
+    const matched = prog.units[n.id] ? prog.units[n.id].size : 0;
+    const done = effectiveTreeDone(n, matched, ovrMap[n.id] || null);
+    if ((n.total || 0) > 0 && done >= (n.total || 0)) out.push({ id: String(n.id), name: String(n.name || "교재") });
+  }));
+  return out;
+};
+function BookPassCelebration({ books, onClose }) {
+  const [idx, setIdx] = useState(0);
+  const book = books[idx];
+  const pieces = useMemo(() => Array.from({ length: 18 }, (_, i) => ({
+    left: Math.random() * 100, delay: Math.random() * 0.5,
+    color: ["#ffd166", "#4aa3e8", "#E24B4A", "#7bd88f"][i % 4], dur: 1.5 + Math.random() * 1.2,
+  })), [idx]);
+  useEffect(() => {
+    // 쾅 효과음 + 진동 (첫 진입이라 브라우저가 소리를 막으면 조용히 넘어간다 — 연출은 그대로)
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) {
+        const ac = new AC();
+        if (ac.state === "suspended") ac.resume().catch(() => {});
+        const o = ac.createOscillator(), g = ac.createGain();
+        o.type = "sine"; o.frequency.setValueAtTime(150, ac.currentTime); o.frequency.exponentialRampToValueAtTime(38, ac.currentTime + 0.16);
+        g.gain.setValueAtTime(0.9, ac.currentTime); g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.28);
+        o.connect(g); g.connect(ac.destination); o.start(); o.stop(ac.currentTime + 0.3);
+      }
+    } catch (e) { /* 무시 */ }
+    try { if (navigator.vibrate) navigator.vibrate([20, 40, 90]); } catch (e) { /* 무시 */ }
+  }, [idx]);
+  if (!book) return null;
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(10,15,40,0.88)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, overflow: "hidden" }}>
+      <style>{`
+        @keyframes mplPassSlam{0%{transform:scale(3.4) rotate(16deg);opacity:0}55%{transform:scale(.85) rotate(-9deg);opacity:1}75%{transform:scale(1.1) rotate(-11deg)}100%{transform:scale(1) rotate(-10deg)}}
+        @keyframes mplConfetti{0%{transform:translateY(-30px) rotate(0);opacity:1}100%{transform:translateY(78vh) rotate(560deg);opacity:0}}
+        @keyframes mplPassPop{0%{transform:scale(.6);opacity:0}100%{transform:scale(1);opacity:1}}
+      `}</style>
+      {pieces.map((pc, i) => (
+        <span key={`${idx}_${i}`} style={{ position: "absolute", top: 0, left: `${pc.left}%`, width: 9, height: 14, background: pc.color, borderRadius: 2, animation: `mplConfetti ${pc.dur}s ease-in ${pc.delay}s both` }} />
+      ))}
+      <div key={book.id} style={{ textAlign: "center", animation: "mplPassPop .3s ease-out both" }}>
+        <div style={{ color: "#ffd166", fontSize: 13, fontWeight: 900, letterSpacing: 4, marginBottom: 10 }}>BOOK CLEAR</div>
+        <div style={{ color: "#fff", fontSize: 22, fontWeight: 900, lineHeight: 1.35, wordBreak: "keep-all", marginBottom: 26 }}>{book.name}<br />완주!</div>
+        <div style={{ width: 150, height: 150, margin: "0 auto 26px", borderRadius: "50%", border: "5px solid #E24B4A", background: "rgba(252,235,235,0.1)", color: "#ff6b6a", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", animation: "mplPassSlam .45s cubic-bezier(.2,.9,.3,1.2) both" }}>
+          <span style={{ fontSize: 38, fontWeight: 900, letterSpacing: 4 }}>PASS</span>
+          <span style={{ fontSize: 11, fontWeight: 800, marginTop: 4, letterSpacing: 1 }}>MAPLE ENGLISH</span>
+        </div>
+        <button onClick={() => { if (idx + 1 < books.length) setIdx(idx + 1); else onClose(); }}
+          style={{ padding: "12px 36px", borderRadius: 999, border: "none", background: "#ffd166", color: "#1a1a2e", fontSize: 15, fontWeight: 900, cursor: "pointer" }}>
+          {idx + 1 < books.length ? `다음 (${idx + 1}/${books.length})` : "확인"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function StudentProgressTree({ student, todos, progressTree }) {
   const G = { bg: "linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%)", tile: "#1d2b4e", tileDim: "#172441", glow: "#4aa3e8", gold: "#ffd166", text: "#e9edff", dim: "#8fa3c8" };
@@ -3381,7 +3472,7 @@ function StudentProgressTree({ student, todos, progressTree }) {
                   <div key={n.id} style={{ display: "flex", alignItems: "center" }}>
                     {i > 0 && <div style={{ width: 24, borderTop: `2px ${info.st === "locked" ? "dashed" : "solid"} ${info.st === "locked" ? "#26355f" : lane.color || G.glow}` }} />}
                     <div style={{
-                      width: 104, padding: "11px 8px", borderRadius: 13, textAlign: "center",
+                      width: 104, padding: "11px 8px", borderRadius: 13, textAlign: "center", position: "relative",
                       background: info.st === "locked" ? G.tileDim : G.tile,
                       border: `1.5px solid ${info.st === "done" ? G.gold : info.st === "current" ? (lane.color || G.glow) : info.st === "next" ? "#33477e" : "#22335f"}`,
                       boxShadow: info.st === "done" ? `0 0 14px ${G.gold}55` : info.st === "current" ? `0 0 16px ${(lane.color || G.glow)}66` : "none",
@@ -3389,6 +3480,7 @@ function StudentProgressTree({ student, todos, progressTree }) {
                       opacity: info.st === "locked" ? 0.5 : 1,
                     }}>
                       <div style={{ fontWeight: 900, fontSize: 11.5, color: info.st === "done" ? G.gold : G.text, lineHeight: 1.3, minHeight: 30, display: "flex", alignItems: "center", justifyContent: "center" }}>{n.name}</div>
+                      {info.st === "done" && <div aria-hidden="true" style={{ position: "absolute", top: -9, right: -9, width: 36, height: 36, borderRadius: "50%", border: "2.5px solid #E24B4A", background: "#1a1a2e", color: "#ff6b6a", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9.5, fontWeight: 900, transform: "rotate(-14deg)", letterSpacing: 0.5 }}>PASS</div>}
                       {info.st === "done" && <div style={{ fontSize: 10, fontWeight: 900, color: G.gold, marginTop: 4 }}>정복 완료</div>}
                       {info.st === "current" && (<>
                         <div style={{ height: 6, borderRadius: 4, background: "#0a0f28", marginTop: 6, overflow: "hidden" }}>
@@ -3894,7 +3986,7 @@ function extractPlaylistId(url) {
 // ─── HomeworkItem: 숙제 항목 한 줄 (영상 매칭 + 인라인 플레이어 + 폴백) ───
 // [디자인 수정] 영상 매칭 ▶ 버튼들을 텍스트 행에서 분리하여 별도 줄(체크박스와 좌측 정렬)에 배치.
 // 이전엔 매칭 영상이 4개 이상이면 텍스트가 한 글자씩 세로로 쪼개지는 버그가 있었음.
-function HomeworkItem({ item, isLast, isCheckedFn, isFailedFn, getFailReasonFn, studentVideos, viewingVideo, toggleVideo }) {
+function HomeworkItem({ item, stampDate, isLast, isCheckedFn, isFailedFn, getFailReasonFn, studentVideos, viewingVideo, toggleVideo }) {
   const [showAll, setShowAll] = useState(false);
   const done = isCheckedFn(item);
   const fail = isFailedFn ? isFailedFn(item) : false;
@@ -3945,6 +4037,22 @@ function HomeworkItem({ item, isLast, isCheckedFn, isFailedFn, getFailReasonFn, 
             <span style={{ flex: 1, fontSize: 14, lineHeight: 1.5, color: done ? "#999" : "#333", textDecoration: done ? "line-through" : "none", minWidth: 0 }}>{item.text}</span>
           );
         })()}
+        {/* [도장] 조교가 원장앱에서 체크 완료한 항목 = "통과" 도장 마크 (학생은 직접 체크 불가 — 도장은 조교 서명) */}
+        {done && (
+          <span aria-hidden="true" style={{
+            flexShrink: 0, width: 40, height: 40, borderRadius: "50%",
+            border: "2.5px solid #E24B4A", background: "rgba(252,235,235,0.55)",
+            color: "#E24B4A", transform: "rotate(-10deg)",
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          }}>
+            <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1.5 }}>통과</span>
+            {stampDate ? <span style={{ fontSize: 8, fontWeight: 700, marginTop: 0.5 }}>{stampDate}</span> : null}
+          </span>
+        )}
+        {/* [도장] 미완료(재시) — 애니메이션 없이 뱃지만 (확정안) */}
+        {fail && (
+          <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: "#A32D2D", background: "#F7C1C1", padding: "3px 9px", borderRadius: 999, whiteSpace: "nowrap" }}>재시</span>
+        )}
       </div>
 
       {/* 매칭된 영상 ▶ 버튼들: 텍스트 아래 별도 줄. 체크박스와 좌측 정렬되도록 padding-left로 들여씀. */}
@@ -4047,7 +4155,7 @@ function HomeworkItem({ item, isLast, isCheckedFn, isFailedFn, getFailReasonFn, 
 }
 
 // ─── StepSection: 단계별 카드 (라벨 + 배지 + notice + 체크리스트) ───
-function StepSection({ step, displayNum, isChecked, isFailed, getFailReason, studentVideos = [], viewingVideo, toggleVideo }) {
+function StepSection({ step, displayNum, stampDate, isChecked, isFailed, getFailReason, studentVideos = [], viewingVideo, toggleVideo }) {
   const { label, color, bg, badges = [], notice, items } = step;
   return (
     <div style={{ marginBottom: 20 }}>
@@ -4081,6 +4189,7 @@ function StepSection({ step, displayNum, isChecked, isFailed, getFailReason, stu
           <HomeworkItem
             key={item.key || item.legacyKey || `${item.type}_${item.idx}`}
             item={item}
+            stampDate={stampDate}
             isLast={i === items.length - 1}
             isCheckedFn={isChecked}
             isFailedFn={isFailed}
