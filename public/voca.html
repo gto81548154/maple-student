@@ -620,7 +620,7 @@ async function backfillCounts(shelf){
   for (const b of shelf){
     if (!bookReady(b)) continue;                 // 자료 준비 안 된 책은 건너뜀
     const st = ROOT.books[b.id];
-    const known = b.builtin ? VB_DATA.length : st?.total;
+    const known = b.builtin ? VB_DATA.length : (st?.total || countCache[b.id]);
     if (known) continue;                         // 이미 개수를 알면 스킵
     try {
       const list = await loadBookData(b);        // 캐시가 있으면 재사용됨
