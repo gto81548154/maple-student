@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+// [4차] QR 만드는 라이브러리. 앱 안에 같이 들어가므로 인터넷 없이도 QR이 그려진다.
+//       설치: npm install qrcode   (예전에 쓰던 cdnjs qrcodejs와는 다른 물건이다)
+import QRCodeLib from "qrcode";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -162,15 +165,23 @@ const subscribeMaplPush = async (student) => {
   return d;
 };
 // 홈 상단 "알림 켜기" 배너 — 마스터 모드·미지원 기기·이미 허용된 폰에서는 안 보인다
+// [수정 07-30] 학생이 배너를 닫았는지 폰에 기억해 둔다 (설치 안내 배너와 같은 방식).
+const PUSH_BANNER_DISMISS_KEY = "mapl_push_banner_dismissed_v1";
 function PushEnableBanner({ student }) {
   const [state, setState] = useState(() => {
     if (IS_MASTER_MODE || pushSupport() === "unsupported") return "hidden";
     if (Notification.permission === "granted") return "hidden"; // 허용된 폰은 앱이 알아서 구독을 갱신한다
-    if (Notification.permission === "denied") return "denied";
+    // [수정 07-30] 차단(denied)은 앱에서 되돌릴 수 없어 배너가 영구히 남았다 → 아예 띄우지 않는다.
+    if (Notification.permission === "denied") return "hidden";
+    try { if (localStorage.getItem(PUSH_BANNER_DISMISS_KEY) === "1") return "hidden"; } catch (e) {}
     return "off";
   });
   const [busy, setBusy] = useState(false);
   if (state === "hidden") return null;
+  const dismiss = () => {
+    try { localStorage.setItem(PUSH_BANNER_DISMISS_KEY, "1"); } catch (e) {}
+    setState("hidden");
+  };
   const enable = async () => {
     if (busy) return;
     setBusy(true);
@@ -190,10 +201,6 @@ function PushEnableBanner({ student }) {
         <div style={{ background: "#E8F6EE", border: "1.5px solid #BFE5CE", borderRadius: 14, padding: "12px 16px", fontSize: 13.5, fontWeight: 800, color: "#1B8A5A" }}>
           ✅ 알림이 켜졌어요! 새 설문·공지가 오면 알려드릴게요.
         </div>
-      ) : state === "denied" ? (
-        <div style={{ background: "#FFF7E6", border: "1.5px solid #F3D97B", borderRadius: 14, padding: "12px 16px", fontSize: 12.5, color: "#7A5A00", lineHeight: 1.5 }}>
-          🔕 알림이 꺼져 있어요. 폰 <b>설정 → 알림 → 마플영어</b>에서 허용해 주면 새 설문·공지를 놓치지 않아요.
-        </div>
       ) : (
         <div style={{ background: "#fff", border: "1.5px solid #E4E0D8", borderRadius: 14, padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
           <span style={{ fontSize: 20, flexShrink: 0 }}>🔔</span>
@@ -204,6 +211,8 @@ function PushEnableBanner({ student }) {
           <button onClick={enable} disabled={busy} style={{ flexShrink: 0, padding: "9px 16px", borderRadius: 10, border: "none", background: busy ? "#c9d6ea" : "#2A6FDB", color: "#fff", fontSize: 13, fontWeight: 800, cursor: busy ? "default" : "pointer" }}>
             {busy ? "설정 중..." : "알림 켜기"}
           </button>
+          {/* [수정 07-30] 닫기 버튼이 없어 원치 않는 학생에게 배너가 계속 남았다. */}
+          <button onClick={dismiss} disabled={busy} aria-label="알림 배너 닫기" style={{ flexShrink: 0, border: "none", background: "transparent", color: "#bbb", fontSize: 15, fontWeight: 900, cursor: busy ? "default" : "pointer", padding: 4, lineHeight: 1 }}>✕</button>
         </div>
       )}
     </div>
@@ -873,14 +882,17 @@ const getExamRangeTextForStudent = (examRanges, schoolCode, exam = {}) => {
   return text ? { slot, year, text, value: entry[slot] } : null;
 };
 function StudentExamRangeCard({ student, items, examRanges }) {
-  const [open, setOpen] = useState(false);
+  // [수정 07-31] 평소에는 접어두고, 시험이 일주일 안으로 들어오면 저절로 펼쳐지게.
+  // null = 학생이 아직 안 눌렀다는 뜻(위 StudentExamDdaySection과 같은 방식).
+  const [userOpen, setUserOpen] = useState(null);
+  const open = userOpen === null ? isExamSoon(items) : userOpen;
   const naesin = (items || []).find(x => x && x.type === "내신") || null;
   const code = getStudentSchoolCodeForRange(student || {});
   const info = naesin ? getExamRangeTextForStudent(examRanges, code, { name: naesin.name, date: naesin.start, kind: naesin.kind, semester: naesin.semester }) : null;
   if (!info) return null;
   return (
     <div style={{ background: "rgba(255,255,255,0.035)", borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
-      <button onClick={() => setOpen(o => !o)} style={{ width: "100%", border: "none", background: "transparent", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, textAlign: "left" }}>
+      <button onClick={() => setUserOpen(!open)} style={{ width: "100%", border: "none", background: "transparent", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, textAlign: "left" }}>
         <span style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.85)", letterSpacing: -0.2 }}>📋 이번 시험 범위</span>
         <span style={{ fontSize: 10.5, fontWeight: 600, color: "rgba(255,255,255,0.45)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{code} · {info.slot}</span>
         <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: "#34d399", flexShrink: 0 }}>{open ? "접기 ▲" : "펼치기 ▼"}</span>
@@ -907,8 +919,39 @@ function StudentExamRangeCard({ student, items, examRanges }) {
   );
 }
 
+// [수정 07-31] 앱을 켜면 위쪽에 배너·시험·경고·설문이 쌓여 정작 숙제가 첫 화면에 안 보였다.
+// 그래서 이 칸을 평소에는 한 줄로 접어두고, 시험이 일주일 안으로 들어오면 자동으로 펼친다.
+// ※ 시험이 하나도 없으면 예전처럼 칸 자체가 안 나온다(아래 return null).
+//    단, useState는 "칸이 안 나오는 경우"보다 반드시 위에 있어야 한다.
+//    (React 규칙 — 화면을 그리다 말고 중간에 useState 개수가 달라지면 앱이 하얗게 죽는다.
+//     시험이 없다가 새로고침으로 생기는 경우가 실제로 있으므로 이 순서가 중요하다.)
+const isExamSoon = (list) => (list || []).some(
+  (x) => x && (x.ongoing || (typeof x.diff === "number" && x.diff >= 0 && x.diff <= 7))
+);
 function StudentExamDdaySection({ items }) {
-  if (!items || items.length === 0) return null;
+  const list = Array.isArray(items) ? items.filter(Boolean) : [];
+  const examSoon = isExamSoon(list);
+  // null = 학생이 아직 한 번도 안 눌렀다는 뜻. 그동안은 시험이 가까운지에 따라 저절로 열린다.
+  // 한 번 누른 뒤로는 학생이 고른 상태를 그대로 지킨다(앱이 멋대로 다시 펼치지 않는다).
+  const [userOpen, setUserOpen] = useState(null);
+  const open = userOpen === null ? examSoon : userOpen;
+  if (list.length === 0) return null;
+
+  // [수정 07-30] 예전에는 "내신 1 · 모의 1"이 글자로 박혀 있어 실제 개수와 무관하게 늘 같았다.
+  const mockCnt = list.filter((x) => x.type === "모의고사").length;
+  const naesinCnt = list.length - mockCnt;
+  const countParts = [];
+  if (naesinCnt > 0) countParts.push(`내신 ${naesinCnt}`);
+  if (mockCnt > 0) countParts.push(`모의 ${mockCnt}`);
+  const countText = countParts.join(" · ");
+
+  // 접었을 때 한 줄 요약에 쓸 "가장 가까운 시험" (시험 기간 중이면 그게 0순위)
+  const rank = (x) => (typeof x.diff === "number" ? Math.max(x.diff, 0) : 99999);
+  const nearest = list.reduce((a, b) => (rank(b) < rank(a) ? b : a));
+  const nearestAccent = nearest.type === "모의고사" ? "#a78bfa" : "#34d399";
+  const nearestDdayColor = nearest.ddayLabel === "영어 끝"
+    ? "rgba(255,255,255,0.45)" : nearest.ongoing ? "#fde68a" : nearestAccent;
+
   return (
     <div style={{
       background: "rgba(255,255,255,0.035)",
@@ -916,16 +959,32 @@ function StudentExamDdaySection({ items }) {
       padding: "12px 14px",
       marginBottom: 12,
     }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.85)", letterSpacing: -0.2 }}>
+      <button
+        onClick={() => setUserOpen(!open)}
+        style={{
+          width: "100%", border: "none", background: "transparent", padding: 0, cursor: "pointer",
+          display: "flex", alignItems: "center", gap: 8, textAlign: "left", fontFamily: "inherit",
+          marginBottom: open ? 10 : 0,
+        }}
+      >
+        <span style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.85)", letterSpacing: -0.2, flexShrink: 0 }}>
           다가오는 시험
-        </div>
-        <div style={{ fontSize: 10, fontWeight: 500, color: "rgba(255,255,255,0.4)" }}>
-          내신 1 · 모의 1
-        </div>
-      </div>
+        </span>
+        {open ? (
+          <span style={{ fontSize: 10, fontWeight: 500, color: "rgba(255,255,255,0.4)" }}>{countText}</span>
+        ) : (
+          <span style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.75)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {nearest.name}
+            <span style={{ color: nearestDdayColor, marginLeft: 6 }}>{nearest.ddayLabel}</span>
+          </span>
+        )}
+        <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: "#34d399", flexShrink: 0 }}>
+          {open ? "접기 ▲" : "펼치기 ▼"}
+        </span>
+      </button>
+      {open && (
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        {items.map(item => {
+        {list.map(item => {
           const isMock = item.type === "모의고사";
           const accent = isMock ? "#a78bfa" : "#34d399";
           const ddayColor = item.ddayLabel === "영어 끝" ? "rgba(255,255,255,0.45)" : item.ongoing ? "#fde68a" : accent;
@@ -975,6 +1034,7 @@ function StudentExamDdaySection({ items }) {
           );
         })}
       </div>
+      )}
     </div>
   );
 }
@@ -1215,59 +1275,60 @@ const dispatchVideoPlayerEvent = (name, detail) => {
   } catch (e) { /* ignore */ }
 };
 
-// ─── QR 그리기: 주소 하나를 QR 이미지로 (카톡 문의 QR 등) ───
+// ─── QR 그리기: 값 하나를 QR 그림으로 (출석 QR·카톡 문의 QR 공용) ───
+// [4차] 예전에는 QR 만드는 코드를 그때그때 인터넷(cdnjs)에서 내려받았다.
+//       학원 와이파이가 끊기면 QR이 안 나왔다. 이제는 앱 안에 들어있는 qrcode로 그린다.
+//       실패하면 하얀 네모를 남기지 않고 "왜 안 되는지"를 글자로 보여준다.
+//       그림(img)으로 그리는 이유: 좁은 폰에서도 정사각형을 지키며 저절로 줄어들어 잘리지 않는다.
 function QrBox({ value, size = 168 }) {
-  const ref = useRef(null);
+  const [src, setSrc] = useState("");
+  const [failed, setFailed] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
-    const render = async () => {
-      if (!window.QRCode) {
-        await new Promise((res, rej) => {
-          const s = document.createElement("script");
-          s.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";
-          s.onload = res; s.onerror = () => rej(new Error("qr load fail"));
-          document.head.appendChild(s);
-        });
-      }
-      if (cancelled || !ref.current || !window.QRCode) return;
-      ref.current.innerHTML = "";
-      new window.QRCode(ref.current, { text: value, width: size, height: size, correctLevel: window.QRCode.CorrectLevel.M });
-    };
-    render().catch(() => {});
+    setSrc("");
+    setFailed(false);
+    const text = value == null ? "" : String(value);
+    // 값이 비어 있으면(예: 열쇠값 누락) 만들어봐야 스캔이 안 되므로 바로 안내를 띄운다.
+    if (!text) { setFailed(true); return undefined; }
+    // 화면 크기의 2배로 만들어 두면 고화질 폰에서도 또렷하다. 실제 표시 크기는 아래 style이 정한다.
+    QRCodeLib.toDataURL(text, { width: Math.round(size * 2), margin: 1, errorCorrectionLevel: "M" })
+      .then((url) => { if (!cancelled) { setSrc(url); setFailed(false); } })
+      .catch(() => { if (!cancelled) { setSrc(""); setFailed(true); } });
     return () => { cancelled = true; };
   }, [value, size]);
-  return <div style={{ display: "inline-flex", padding: 8, background: "#fff", borderRadius: 10 }}><div ref={ref} /></div>;
+
+  return (
+    <div style={{ display: "inline-flex", padding: 8, background: "#fff", borderRadius: 10, border: "1px solid #eef0f3", maxWidth: "100%", boxSizing: "border-box" }}>
+      {failed ? (
+        <div style={{ width: size, maxWidth: "100%", aspectRatio: "1 / 1", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", fontSize: 13, fontWeight: 700, color: "#c0392b", lineHeight: 1.6, padding: 12, boxSizing: "border-box" }}>
+          QR을 못 만들었어요<br />데스크 선생님께<br />이름을 말해주세요
+        </div>
+      ) : src ? (
+        <img
+          src={src}
+          alt="QR"
+          style={{ display: "block", width: size, maxWidth: "100%", height: "auto", background: "#fff" }}
+        />
+      ) : (
+        // 만드는 중(아주 잠깐). 빈 img를 두면 깨진 그림 아이콘이 뜨므로 빈 칸으로 자리만 잡아둔다.
+        <div style={{ width: size, maxWidth: "100%", aspectRatio: "1 / 1", background: "#fff" }} />
+      )}
+    </div>
+  );
 }
 
 // ─── 출석 QR 모달: 데스크에서 스캔할 개인 QR(maple-att:{id}:{token}) ───
+// [4차] QR 그리는 코드를 따로 갖고 있지 않고 QrBox를 그대로 쓴다(크기만 240으로 넘김).
+//       고칠 일이 생기면 QrBox 한 군데만 고치면 된다.
 function AttQrModal({ value, studentName, onClose }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    let cancelled = false;
-    const render = async () => {
-      if (!window.QRCode) {
-        await new Promise((res, rej) => {
-          const s = document.createElement("script");
-          s.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";
-          s.onload = res; s.onerror = () => rej(new Error("qr load fail"));
-          document.head.appendChild(s);
-        });
-      }
-      if (cancelled || !ref.current || !window.QRCode) return;
-      ref.current.innerHTML = "";
-      new window.QRCode(ref.current, { text: value, width: 240, height: 240, correctLevel: window.QRCode.CorrectLevel.M });
-    };
-    render().catch(() => {});
-    return () => { cancelled = true; };
-  }, [value]);
-
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,20,30,0.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 24 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 20, padding: "26px 26px 22px", width: "100%", maxWidth: 320, textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,20,30,0.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 20, padding: "24px 20px 20px", width: "100%", maxWidth: 340, textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,0.3)", boxSizing: "border-box" }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: "#1C66A5", marginBottom: 2 }}>출석 QR</div>
         <div style={{ fontSize: 18, fontWeight: 800, color: "#2A2A28", marginBottom: 16 }}>{studentName}</div>
-        <div style={{ display: "flex", justifyContent: "center", padding: 10, background: "#fff", borderRadius: 14, border: "1px solid #eef0f3" }}>
-          <div ref={ref} />
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <QrBox value={value} size={240} />
         </div>
         <div style={{ fontSize: 12, color: "#8b909a", marginTop: 14, lineHeight: 1.5 }}>데스크 선생님께 이 화면을 보여주세요</div>
         <button onClick={onClose} style={{ marginTop: 16, width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: "#1C66A5", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>닫기</button>
@@ -1895,7 +1956,8 @@ function StudentSurveyCard({ survey, myResponse, student, onSubmitted }) {
           fontSize: 14, fontWeight: 800, cursor: submitDisabled ? "default" : "pointer",
         }}>{busy ? "제출 중..." : needMore ? `${maxChoices}개를 선택해주세요 (${picked.length}/${maxChoices})` : submitted ? (dirty ? "변경 저장" : "제출됨") : "제출하기"}</button>
       )}
-      {msg && <div style={{ marginTop: 8, fontSize: 12, color: msg.includes("실패") || msg.includes("오류") || msg.includes("유효") ? "#D2402E" : msg.includes("최대") ? "#B45309" : "#1B8A5A", fontWeight: 700 }}>{msg}</div>}
+      {/* [수정 07-30] 경고 색 조건이 "최대"를 찾는데 실제 문구엔 그 낱말이 없어 경고가 성공 초록으로 떴다. */}
+      {msg && <div style={{ marginTop: 8, fontSize: 12, color: msg.includes("실패") || msg.includes("오류") || msg.includes("유효") ? "#D2402E" : (msg.includes("개만 선택") || msg.includes("마스터")) ? "#B45309" : "#1B8A5A", fontWeight: 700 }}>{msg}</div>}
       {!submitted && !msg && <div style={{ marginTop: 8, fontSize: 12, color: "#999" }}>{maxChoices > 1 ? `원하는 항목을 꼭 ${maxChoices}개 고르고 [제출하기]를 눌러주세요.` : "선택지를 누르면 바로 제출됩니다."}</div>}
     </div>
   );
@@ -2134,14 +2196,20 @@ function MasterHome({ mk }) {
       </div>
 
       <div style={{ background: "#fff", borderBottom: "1px solid #eee", position: "sticky", top: 0, zIndex: 10 }}>
-        <div style={{ maxWidth: MAX_W, margin: "0 auto", display: "flex" }}>
+        {/* [수정 07-31] 학생 화면 탭 바와 같은 처리 — 글자 접힘 방지 + 넘치면 옆으로 밀기 */}
+        <style>{`.mplTabScroll::-webkit-scrollbar{display:none}`}</style>
+        <div className="mplTabScroll" style={{
+          maxWidth: MAX_W, margin: "0 auto", display: "flex",
+          overflowX: "auto", WebkitOverflowScrolling: "touch",
+          scrollbarWidth: "none",
+        }}>
           {[
             { key: "voca", label: "📚 단어 TEST" },
             { key: "videos", label: "🎬 강의 영상" },
             { key: "students", label: "👥 학생" },
           ].map((t) => (
             <button key={t.key} onClick={() => setTab(t.key)} style={{
-              flex: 1, padding: "14px 0", border: "none", cursor: "pointer", background: "transparent",
+              flex: "1 0 auto", whiteSpace: "nowrap", padding: "14px 12px", border: "none", cursor: "pointer", background: "transparent",
               fontSize: 14, fontWeight: tab === t.key ? 700 : 500,
               color: tab === t.key ? "#2A2A28" : "#999",
               borderBottom: tab === t.key ? "2.5px solid #2A2A28" : "2.5px solid transparent",
@@ -2157,7 +2225,7 @@ function MasterHome({ mk }) {
         {tab === "voca" && (
           <div style={{ background: "#fff", borderRadius: 14, overflow: "hidden", border: "1px solid #eee" }}>
             <iframe title="원장 단어 TEST" src={vocaSrc}
-              style={{ width: "100%", height: "calc(100vh - 210px)", minHeight: 520, border: "none", display: "block", background: "#FBF7EF" }} />
+              style={{ width: "100%", height: "calc(100dvh - 210px)", minHeight: 520, border: "none", display: "block", background: "#FBF7EF" }} />
           </div>
         )}
 
@@ -2240,6 +2308,9 @@ function MasterHome({ mk }) {
 export default function App() {
   const params = new URLSearchParams(window.location.search);
   const studentId = params.get("id");
+  // [4차] 출석 QR에 들어가는 열쇠값. 없으면 QR을 만들어도 데스크에서 인식이 안 되므로
+  //       아예 버튼을 안 띄우고 안내 문구로 바꾼다.
+  const attToken = params.get("t") || "";
 
   // [PWA] manifest·아이콘 메타 주입 (학생별 start_url 포함) — 1회
   useEffect(() => { setupStudentPwa(); }, []);
@@ -2283,6 +2354,12 @@ export default function App() {
   const [lastLoadedAt, setLastLoadedAt] = useState(null); // 마지막 동기화 시각
   const [offlineNotice, setOfflineNotice] = useState(""); // Worker 실패 시 로컬 백업 표시 안내
   const loadInFlightRef = useRef(false); // 30초 polling 중복 호출 방지
+  // [3차] 영상 시청 중인지 여부를 항상 최신으로 들고 있는 ref.
+  // 새로고침 useEffect는 studentId가 바뀔 때만 다시 만들어지기 때문에,
+  // 그 안에서 viewingVideo state를 그냥 읽으면 옛날 값이 잡힌다. 그래서 ref로 읽는다.
+  const viewingVideoRef = useRef(null);
+  // [3차] 대기열 재전송(flush)이 겹쳐 도는 것을 막는 문지기. 겹치면 같은 기록이 두 번 저장된다.
+  const flushingRef = useRef(false);
 
   // [PASS] 새로 완주한 책 감지 → 앱 진입 시 축하 연출 (책당 딱 1번, 이 폰 기준)
   // ※ 반드시 위의 student·todos·progressTree state 선언 "뒤"에 있어야 함 — 앞에 두면 TDZ 크래시로 앱이 안 열림
@@ -2407,10 +2484,38 @@ export default function App() {
     }
   };
 
+  // viewingVideo state가 바뀔 때마다 ref를 최신으로 맞춰준다.
+  useEffect(() => { viewingVideoRef.current = viewingVideo; }, [viewingVideo]);
+
+  // [3차 ①] 자동 새로고침 방식
+  //  - 화면을 보고 있을 때: 예전처럼 30초마다
+  //  - 화면을 껐거나 다른 앱으로 갔을 때: 아예 멈춤 (데이터·배터리 절약)
+  //  - 화면을 다시 켠 순간: 즉시 한 번 불러오기
+  //  - 단, 강의 영상을 보는 중이면 즉시 불러오기는 건너뛴다.
+  //    (영상 보다가 잠깐 나갔다 온 경우 화면을 다시 그리면 영상이 튈 수 있어서)
+  //    이때도 30초 타이머는 다시 돌기 때문에 최대 30초 안에 최신이 된다.
   useEffect(() => {
+    // 학생 id가 없는 경우(링크 복구 첫 화면)에도 loadData를 한 번은 불러야 한다.
+    // loadData 안에서 로딩 표시를 꺼주기 때문에, 여기서 그냥 return 하면 화면이 계속 "불러오는 중"에 멈춘다.
+    if (!studentId) { loadData(); return; }
+
+    let timer = null;
+    const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+    const start = () => { stop(); timer = setInterval(() => loadData(), 30000); };
+
+    const onVisRefresh = () => {
+      if (document.hidden) {
+        stop();
+      } else {
+        if (!viewingVideoRef.current) loadData();
+        start();
+      }
+    };
+
     loadData();
-    const interval = setInterval(() => loadData(), 30000);
-    return () => clearInterval(interval);
+    if (!document.hidden) start();
+    document.addEventListener("visibilitychange", onVisRefresh);
+    return () => { stop(); document.removeEventListener("visibilitychange", onVisRefresh); };
   }, [studentId]);
 
   const finishAwayMeasurement = () => {
@@ -2715,6 +2820,11 @@ export default function App() {
       // [마스터] 부팅 직후 도는 재전송. 원장 폰에 남아 있던 대기 기록이
       // 마스터 홈이 뜨기도 전에 학생 기록으로 나가는 것을 막는다.
       if (IS_MASTER_MODE) return;
+      // [3차 ④] 문지기. 인터넷 복귀와 화면 복귀가 거의 동시에 오면 flush가 두 번 겹칠 수 있고,
+      // 그러면 같은 기록이 두 번 저장된다. 이미 돌고 있으면 그냥 돌아간다.
+      // finally에서 반드시 풀어줘야 한다. 안 그러면 한 번 돌고 영영 안 돈다.
+      if (flushingRef.current) return;
+      flushingRef.current = true;
       try {
         // 1) pending_away 고아 데이터 복구: 앱이 이탈 상태에서 강제 종료된 경우, 다음 접속 때 이탈 기록만 Worker로 보냄
         try {
@@ -2787,10 +2897,23 @@ export default function App() {
         setPendingVideoCount(failed.length);
         setLastVideoSaveStatus(failed.length > 0 ? `저장 대기 ${failed.length}개` : "대기 기록 전송 완료");
       } catch (e) { /* ignore */ }
+      finally { flushingRef.current = false; }
     };
+
+    // [3차 ④] 예전에는 앱을 켤 때 딱 한 번만 다시 보냈다.
+    // 인터넷이 돌아왔을 때와 화면을 다시 켰을 때도 다시 보내게 한다.
+    // 화면에 적힌 "인터넷 연결 후 자동 재전송됩니다"가 이제 사실이 된다.
     flush();
+    const onOnline = () => { flush(); };
+    const onVisFlush = () => { if (!document.hidden) flush(); };
+    window.addEventListener("online", onOnline);
+    document.addEventListener("visibilitychange", onVisFlush);
     const pendingTimer = setInterval(() => setPendingVideoCount(getPendingVideoWatch().length), 5000);
-    return () => clearInterval(pendingTimer);
+    return () => {
+      clearInterval(pendingTimer);
+      window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVisFlush);
+    };
   }, []);
 
   // [마스터] 열쇠는 있고 학생 id는 없음 → 원장 전용 홈. 학생 데이터 로딩은 이미 건너뛴 상태.
@@ -2860,7 +2983,12 @@ export default function App() {
     .sort((a, b) => b.localeCompare(a))
     .slice(0, 3);
 
-  const activeDate = selectedDate || allDates[0] || getTodayStr();
+  // [3차 ②] 앱을 열었을 때 기본으로 보여줄 날짜.
+  // 오늘 기록이 있으면 오늘, 없으면 예전처럼 가장 나중에 기록된 날짜.
+  // 학생이 날짜 단추를 눌러 고른 것(selectedDate)이 언제나 먼저다.
+  const todayStrForTab = getTodayStr();
+  const defaultDate = allDates.includes(todayStrForTab) ? todayStrForTab : (allDates[0] || todayStrForTab);
+  const activeDate = selectedDate || defaultDate;
   const todo = todos[activeDate]?.[studentId] || todos[activeDate]?.[Number(studentId)] || {};
 
   // 5단계 그룹
@@ -2954,6 +3082,9 @@ export default function App() {
           {/* [마스터] 원장이 학생 화면에서 출석 QR을 띄워 잘못 찍히는 일이 없도록 숨긴다. */}
           {IS_MASTER_MODE ? (
             <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.45)" }}>출석 QR 숨김</span>
+          ) : !attToken ? (
+            /* [4차] 열쇠값 없는 링크 — QR을 만들어도 데스크에서 안 읽힌다. 미리 안내로 바꾼다. */
+            <span style={{ marginLeft: "auto", flexShrink: 0, whiteSpace: "nowrap", fontSize: 11, fontWeight: 700, color: "rgba(255,214,120,0.95)" }}>QR 없음 — 선생님께 문의</span>
           ) : (
             <button onClick={() => setShowAttQr(true)} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 9, border: "1px solid rgba(255,255,255,0.25)", background: "rgba(255,255,255,0.12)", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ display: "block" }}><path d="M3 3h8v8H3V3zm2 2v4h4V5H5zm8-2h8v8h-8V3zm2 2v4h4V5h-4zM3 13h8v8H3v-8zm2 2v4h4v-4H5zm8-2h3v3h-3v-3zm5 0h3v3h-3v-3zm-5 5h3v3h-3v-3zm5 0h3v3h-3v-3z"/></svg> 출석 QR
@@ -3024,9 +3155,9 @@ export default function App() {
         </div>
       </div>
 
-      {showAttQr && student && (
+      {showAttQr && student && attToken && (
         <AttQrModal
-          value={`maple-att:${student.id}:${params.get("t") || ""}`}
+          value={`maple-att:${student.id}:${attToken}`}
           studentName={student.name}
           onClose={() => setShowAttQr(false)}
         />
@@ -3103,7 +3234,14 @@ export default function App() {
       })()}
 
       <div style={{ background: "#fff", borderBottom: "1px solid #eee", position: "sticky", top: 0, zIndex: 10 }}>
-        <div style={{ maxWidth: MAX_W, margin: "0 auto", display: "flex" }}>
+        {/* [수정 07-31] 탭이 최대 6개까지 늘어나면 폰에서 글자가 두 줄로 접혔다.
+            폭을 똑같이 나누는 대신, 글자 폭만큼 차지하고 넘치면 옆으로 미는 방식으로 바꾼다. */}
+        <style>{`.mplTabScroll::-webkit-scrollbar{display:none}`}</style>
+        <div className="mplTabScroll" style={{
+          maxWidth: MAX_W, margin: "0 auto", display: "flex",
+          overflowX: "auto", WebkitOverflowScrolling: "touch",
+          scrollbarWidth: "none",
+        }}>
         {[
           { key: "tasks", label: "📋 숙제/과제" },
           { key: "cal", label: "일정" },
@@ -3113,7 +3251,7 @@ export default function App() {
           ...((progressTree?.lanes || []).length ? [{ key: "progress", label: "🌳 진도" }] : []),
         ].map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
-            flex: 1, padding: "14px 0", border: "none", cursor: "pointer",
+            flex: "1 0 auto", whiteSpace: "nowrap", padding: "14px 12px", border: "none", cursor: "pointer",
             background: "transparent", fontSize: 14, fontWeight: tab === t.key ? 700 : 500,
             color: tab === t.key ? "#2A2A28" : "#999",
             borderBottom: tab === t.key ? "2.5px solid #2A2A28" : "2.5px solid transparent",
@@ -3141,9 +3279,27 @@ export default function App() {
               </div>
             )}
             {allDates.length > 0 && (
-              <div style={{ fontSize: 16, fontWeight: 700, color: "#2A2A28", margin: "12px 0 16px" }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#2A2A28", margin: "12px 0 6px" }}>
                 {fmtDateKR(activeDate)}
                 {isToday(activeDate) && <span style={{ fontSize: 12, color: "#1C66A5", marginLeft: 8, fontWeight: 600 }}>TODAY</span>}
+              </div>
+            )}
+            {/* [추가 07-30] 학생은 체크할 수 없다. 눌러도 반응이 없어 고장으로 오해하던 것을 안내 한 줄로 막는다. */}
+            {allDates.length > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, margin: totalTasks > 0 ? "0 0 10px" : "0 0 16px", fontSize: 12, color: "#999", lineHeight: 1.5 }}>
+                <span style={{ fontSize: 13, flexShrink: 0 }}>ℹ️</span>
+                <span>체크와 통과 도장은 조교 선생님이 찍어줘요</span>
+              </div>
+            )}
+            {/* [추가 07-31] 진행률은 이미 계산해 놓고 화면에 안 쓰고 있었다(재시 항목은 분모에서 제외됨). */}
+            {allDates.length > 0 && totalTasks > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 16px" }}>
+                <div style={{ flex: 1, height: 7, borderRadius: 4, background: "#e9ecf2", overflow: "hidden" }}>
+                  <div style={{ width: `${pct}%`, height: "100%", borderRadius: 4, background: pct === 100 ? "#00b894" : "#1C66A5", transition: "width .3s" }} />
+                </div>
+                <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 800, color: pct === 100 ? "#00b894" : "#666" }}>
+                  {doneTasks}/{totalTasks}
+                </span>
               </div>
             )}
 
@@ -3195,7 +3351,7 @@ export default function App() {
               <iframe
                 title="단어 TEST"
                 src={src}
-                style={{ width: "100%", height: "calc(100vh - 190px)", minHeight: 520, border: "none", display: "block", background: "#FBF7EF" }}
+                style={{ width: "100%", height: "calc(100dvh - 190px)", minHeight: 520, border: "none", display: "block", background: "#FBF7EF" }}
               />
             </div>
           );
@@ -3465,12 +3621,13 @@ function StudentProgressTree({ student, todos, progressTree }) {
         {(progressTree?.lanes || []).map(lane => (
           <div key={lane.id}>
             <div style={{ fontWeight: 900, fontSize: 12, color: G.dim, letterSpacing: 2, marginBottom: 9 }}>{lane.name}</div>
-            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", rowGap: 12 }}>
+            {/* [수정 07-31] 칸 사이 연결선을 없앴다. 줄바꿈되면 새 줄 맨 앞에도 선이 붙어
+                아무것도 잇지 않는 선이 허공에 떴기 때문. 대신 columnGap으로 칸 사이를 띄운다. */}
+            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", rowGap: 12, columnGap: 10 }}>
               {(lane.nodes || []).map((n, i) => {
                 const info = nodeInfo(n, i, lane.nodes);
                 return (
                   <div key={n.id} style={{ display: "flex", alignItems: "center" }}>
-                    {i > 0 && <div style={{ width: 24, borderTop: `2px ${info.st === "locked" ? "dashed" : "solid"} ${info.st === "locked" ? "#26355f" : lane.color || G.glow}` }} />}
                     <div style={{
                       width: 104, padding: "11px 8px", borderRadius: 13, textAlign: "center", position: "relative",
                       background: info.st === "locked" ? G.tileDim : G.tile,
@@ -3517,6 +3674,8 @@ function VocabWrongTab({ vocabWrongWords = {}, studentId }) {
   const [startedAt, setStartedAt] = useState(null);
   const [summary, setSummary] = useState(null);
   const [sendStatus, setSendStatus] = useState("");
+  // [3차 ③] 테스트 도중에 목록으로 나가려 할 때 띄우는 확인 카드
+  const [askLeave, setAskLeave] = useState(false);
 
   const monthLabel = (mk) => {
     const [y, m] = String(mk || "").split("-");
@@ -3554,6 +3713,7 @@ function VocabWrongTab({ vocabWrongWords = {}, studentId }) {
     setAnswers([]);
     setSummary(null);
     setSendStatus("");
+    setAskLeave(false); // [3차 ③] 새로 시작하거나 목록으로 돌아갈 때 확인 카드는 항상 닫아둔다
   };
 
   const startTest = (m) => {
@@ -3707,9 +3867,20 @@ function VocabWrongTab({ vocabWrongWords = {}, studentId }) {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
-        <button onClick={backToList} style={{ border: "none", background: "transparent", color: "#777", fontSize: 14, cursor: "pointer" }}>← 목록</button>
+        {/* [3차 ③] 아직 아무것도 안 풀었으면 그냥 나가고, 하나라도 풀었으면 확인 카드를 띄운다 */}
+        <button onClick={() => { if (idx === 0 && !revealed) backToList(); else setAskLeave(true); }} style={{ border: "none", background: "transparent", color: "#777", fontSize: 14, cursor: "pointer" }}>← 목록</button>
         <div style={{ marginLeft: "auto", fontSize: 13, color: "#777", fontWeight: 700 }}>{idx + 1} / {words.length}</div>
       </div>
+      {askLeave && (
+        <div style={{ background: "#fff", border: "1.5px solid #fecaca", borderRadius: 14, padding: 16, marginBottom: 12 }}>
+          <div style={{ fontSize: 14.5, fontWeight: 800, color: "#c0392b", marginBottom: 4 }}>지금 나가면 푼 게 사라져요</div>
+          <div style={{ fontSize: 13, color: "#777", marginBottom: 12 }}>{idx + 1}번째까지 풀었어요. 그래도 나갈까요?</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => setAskLeave(false)} style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "none", background: "#1C66A5", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>계속 풀기</button>
+            <button onClick={() => { setAskLeave(false); backToList(); }} style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid #e0e0e0", background: "#fff", color: "#c0392b", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>나가기</button>
+          </div>
+        </div>
+      )}
       {!current ? (
         <div style={{ padding: 24, textAlign: "center", color: "#999", background: "#fff", borderRadius: 14 }}>단어가 없습니다.</div>
       ) : (
