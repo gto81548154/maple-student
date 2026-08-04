@@ -780,7 +780,12 @@ let ROOT = { v:3, auto:false, books:{} };
 let BOOK = null;                 // 현재 선택된 책 (BOOKS 항목)
 let DATA = [], byLec = {};       // 현재 책의 단어 목록
 let S = null;
-const W = id => (S.words[id] ||= { u:{}, s:0, r:{}, w:0, c:0 });
+const W = id => {
+  const p = (S.words[id] ||= { u:{}, s:0, r:{}, w:0, c:0 });
+  if (!p.u || typeof p.u !== 'object') p.u = {};   // 옛/불완전 기록 방어
+  if (!p.r || typeof p.r !== 'object') p.r = {};
+  return p;
+};
 const newBookState = () => ({ round:1, crowns:0, cg:{}, words:{} });
 function setBookData(list){
   DATA = list; byLec = {};
@@ -804,9 +809,14 @@ function migrateRoot(d){
 function migrateS(s){
   if (!s || !s.words) return s;
   for (const id in s.words){
-    const u = s.words[id].u || {}, nu = {};
+    // 서버·과거 기록에 빠진 칸이 있어도 앱이 멈추지 않게 기본 칸부터 채운다(08-04 방어)
+    const rec = Object.assign({ u:{}, s:0, r:{}, w:0, c:0 }, s.words[id]);
+    if (!rec.u || typeof rec.u !== 'object') rec.u = {};
+    if (!rec.r || typeof rec.r !== 'object') rec.r = {};
+    const u = rec.u, nu = {};
     for (const k in u) nu[/^\d+$/.test(k) ? 's'+(+k+1) : k] = u[k];
-    s.words[id].u = nu;
+    rec.u = nu;
+    s.words[id] = rec;
   }
   s.v = 2;
   return s;
@@ -1040,14 +1050,14 @@ const lecFull = n => {
 function filterWords(list){
   return list.filter(w => {
     const p = S.words[w.id];
-    if (mode === 'new')   return !p || p.r[S.round] === undefined;
-    if (mode === 'wrong') return p && p.r[S.round] === 0;
+    if (mode === 'new')   return !p || !p.r || p.r[S.round] === undefined;
+    if (mode === 'wrong') return !!(p && p.r && p.r[S.round] === 0);
     if (mode === 'star')  return p && p.s;
     return true;
   });
 }
 function renderHome(){
-  const correct = DATA.filter(w => S.words[w.id]?.r[S.round] === 1).length;
+  const correct = DATA.filter(w => S.words[w.id]?.r?.[S.round] === 1).length;
   $('#statMain').textContent = `${correct} / ${DATA.length}`;
   $('#statBar').style.width = (correct/DATA.length*100).toFixed(1) + '%';
   $('#stampHome').innerHTML = `<b>${S.round}</b>회독`;
@@ -1068,8 +1078,8 @@ function renderHome(){
   const g = $('#lecGrid'); g.innerHTML = '';
   for (const lec of Object.keys(byLec).map(Number).sort((a,b)=>a-b)){
     const list = byLec[lec];
-    const ok = list.filter(w => S.words[w.id]?.r[S.round] === 1).length;
-    const ng = list.filter(w => S.words[w.id]?.r[S.round] === 0).length;
+    const ok = list.filter(w => S.words[w.id]?.r?.[S.round] === 1).length;
+    const ng = list.filter(w => S.words[w.id]?.r?.[S.round] === 0).length;
     const sel = filterWords(list).length;
     if (!sel) selLecs.delete(lec);   // 대상 단어가 없는 강은 선택에서 제외
     const b = document.createElement('div');
@@ -1842,7 +1852,7 @@ function confirmFullReset(){
 }
 function maybeCelebrate(){
   if (!BOOK || !S || !DATA.length) return;
-  const done = DATA.filter(w => S.words[w.id]?.r[S.round] === 1).length;
+  const done = DATA.filter(w => S.words[w.id]?.r?.[S.round] === 1).length;
   if (done < DATA.length) return;
   S.cg ||= {};
   if (S.cg[S.round]) return;                       // 이번 사이클에서 이미 축하했으면 생략
@@ -1872,7 +1882,7 @@ function maybeCelebrate(){
 $('#btnReset').onclick = confirmFullReset;
 $('#btnRound').onclick = () => {
   if (!BOOK || !S) return;
-  const correct = DATA.filter(w => S.words[w.id]?.r[S.round] === 1).length;
+  const correct = DATA.filter(w => S.words[w.id]?.r?.[S.round] === 1).length;
   const usedSenses = Object.values(S.words).reduce((n,p)=>n+Object.keys(p.u||{}).length, 0);
   const atMax = S.round >= MAX_ROUND;
   const complete = correct === DATA.length;
