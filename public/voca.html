@@ -741,14 +741,13 @@ const dataBase = () => (STU && STU.api) ? STU.api + '/voca/books'
   : (DATA_BASE || (CFG.url ? syncBase() + '/voca/books' : ''));   // 단독 열람은 설정의 워커 주소 재사용
 const bookUrl = b => dataBase() ? `${dataBase().replace(/\/+$/, '')}/${b.id}.json` : '';
 const bookReady = b => !!bookUrl(b) && (!READY_IDS || READY_IDS.includes(b.id));
-/* ── 보스 사다리 (2026-08-04 원장 확정) ──
- * 중간보스 하이스트: 원장이 진도로 배정(books에 포함)했거나, 수능 2000 왕관 2개(2회독 완주)면 열림.
- * 히든보스 보카바이블: 하이스트 왕관 2개(2회독 완주)면 열림. 원장(마스터·단독 열람)은 항상 전부 보임.
- * "???" 잠금 카드는 바로 앞 단계 책이 책장에 보이는 학생에게만 노출. */
+/* ── 히든보스 (2026-08-04 원장 최종 확정: 중간보스는 폐지) ──
+ * 하이스트는 일반 책과 똑같이 배정 규칙만 따른다(배정 목록이 비면 전권 표시).
+ * 히든보스 보카바이블: 하이스트 왕관 3개(3회독 완주)면 열림. 원장(마스터·단독)은 항상 전부 보임.
+ * "???" 잠금 카드는 하이스트가 책장에 보이는 학생에게만 노출. */
 const crownsOf = id => (ROOT.books[id] && ROOT.books[id].crowns) || 0;
 const BOSS_TEASER = {
-  wm_hi:     '워드마스터 수능 2000을<br>2회독 완주하면 열려요',
-  vocabible: '워드마스터 하이스트를<br>2회독 완주하면 열려요',
+  vocabible: '워드마스터 하이스트를<br>3회독 완주하면 열려요',
 };
 /* 책마다 'normal'(보임) / 'locked'(??? 카드) / 'hide' 계산 */
 function shelfStates(){
@@ -757,15 +756,10 @@ function shelfStates(){
   for (const b of BOOKS){
     if (!stu){ st[b.id] = 'normal'; continue; }             // 원장·마스터: 전부 표시(현행)
     if (b.id === 'vocabible'){ st[b.id] = 'hide'; continue; }   // 아래에서 재결정
-    if (b.id === 'wm_hi' && !STU.books.includes('wm_hi')){   // 배정이 없으면 중간보스 잠금 — 배정 목록이 비어도 동일(08-04 원장 지적)
-      st[b.id] = crownsOf('wm_sn') >= 2 ? 'normal'
-               : (!STU.books.length || STU.books.includes('wm_sn')) ? 'locked' : 'hide';
-      continue;
-    }
     if (STU.books.length && !STU.books.includes(b.id)){ st[b.id] = 'hide'; continue; }
     st[b.id] = 'normal';
   }
-  if (stu) st.vocabible = crownsOf('wm_hi') >= 2 ? 'normal' : (st.wm_hi === 'normal' ? 'locked' : 'hide');
+  if (stu) st.vocabible = crownsOf('wm_hi') >= 3 ? 'normal' : (st.wm_hi === 'normal' ? 'locked' : 'hide');
   return st;
 }
 const shelfBooks = () => {                                  // 실제로 열 수 있는 책(개수 세기용)
@@ -831,9 +825,17 @@ function renderShelf(){
   const states = shelfStates();
   const stu = STU && !STU.master;
   let shown = 0;
-  for (const b of BOOKS){
-    const state = states[b.id];
-    if (state === 'hide') continue;
+  // 학생: 자기 교재(진도 배정 > 공부 기록 있는 책)를 맨 위로, ??? 잠금 카드는 맨 아래(08-04 원장 요청)
+  const order = BOOKS.map((b, i) => ({ b, i, state: states[b.id] })).filter(x => x.state !== 'hide');
+  if (stu){
+    const score = x => {
+      if (x.state === 'locked') return -1;
+      const rec = ROOT.books[x.b.id];
+      return (STU.books.includes(x.b.id) ? 2 : 0) + ((rec && Object.keys(rec.words || {}).length) ? 1 : 0);
+    };
+    order.sort((a, c) => score(c) - score(a) || a.i - c.i);
+  }
+  for (const { b, state } of order){
     if (state === 'locked'){                                 // ??? 잠금 카드 — 아직 열 수 없음
       const card = document.createElement('div');
       card.className = 'book lockedbook';
@@ -869,11 +871,10 @@ function renderShelf(){
 function maybeBossToast(states){
   if (!STU || STU.master) return;
   ROOT.bossSeen ||= {};
-  let changed = false;
-  if (states.wm_hi === 'normal' && !STU.books.includes('wm_hi')
-      && crownsOf('wm_sn') >= 2 && !ROOT.bossSeen.wm_hi){ ROOT.bossSeen.wm_hi = 1; changed = true; }
-  if (states.vocabible === 'normal' && crownsOf('wm_hi') >= 2 && !ROOT.bossSeen.vocabible){ ROOT.bossSeen.vocabible = 1; changed = true; }
-  if (changed){ store.save(); toast('🎉 숨겨진 단어장이 열렸어요!'); }
+  if (states.vocabible === 'normal' && crownsOf('wm_hi') >= 3 && !ROOT.bossSeen.vocabible){
+    ROOT.bossSeen.vocabible = 1;
+    store.save(); toast('🎉 숨겨진 단어장이 열렸어요!');
+  }
 }
 /* 준비된 책 중 단어 개수(total)를 아직 모르는 것들을 백그라운드로 세어 카드에 반영 */
 async function backfillCounts(shelf){
