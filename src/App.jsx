@@ -2255,7 +2255,7 @@ function MasterHome({ mk }) {
           scrollbarWidth: "none",
         }}>
           {[
-            { key: "voca", label: "📚 단어 TEST" },
+            { key: "voca", label: "📚 단어장" },
             { key: "videos", label: "🎬 강의 영상" },
             { key: "students", label: "👥 학생" },
           ].map((t) => (
@@ -2275,7 +2275,7 @@ function MasterHome({ mk }) {
 
         {tab === "voca" && (
           <div style={{ background: "#fff", borderRadius: 14, overflow: "hidden", border: "1px solid #eee" }}>
-            <VocaFrame title="원장 단어 TEST" src={vocaSrc} />
+            <VocaFrame title="원장 단어장" src={vocaSrc} />
           </div>
         )}
 
@@ -3295,7 +3295,7 @@ export default function App() {
         {[
           { key: "tasks", label: "📋 숙제/과제" },
           { key: "cal", label: "일정" },
-          ...(VOCA_TAB_ENABLED ? [{ key: "voca", label: "📚 단어 TEST" }] : []),
+          ...(VOCA_TAB_ENABLED ? [{ key: "voca", label: "📚 단어장" }] : []),
           ...(studentVideos.length > 0 ? [{ key: "videos", label: "🎬 강의 영상" }] : []),
           ...(hasVocabWrong ? [{ key: "vocabWrong", label: "📝 오답 단어" }] : []),
           ...((progressTree?.lanes || []).length ? [{ key: "progress", label: "🌳 진도" }] : []),
@@ -3398,7 +3398,7 @@ export default function App() {
           const src = `${VOCA_APP_URL}?${q.toString()}`;
           return (
             <div style={{ background: "#fff", borderRadius: 14, overflow: "hidden", border: "1px solid #eee" }}>
-              <VocaFrame title="단어 TEST" src={src} />
+              <VocaFrame title="단어장" src={src} />
             </div>
           );
         })()}
