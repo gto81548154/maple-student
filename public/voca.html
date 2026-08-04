@@ -319,6 +319,10 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
 .exall{display:block; margin:12px auto 0; font-size:12.5px; color:var(--ink-soft); text-decoration:underline}
 .exempty{text-align:center; color:var(--ink-soft); font-size:13px; padding:22px 0}
 
+/* ── 임베드(학생앱 안) 모드: 스크롤은 학생앱 하나로, 모달·토스트는 보이는 영역에 맞춰 ── */
+.emb .modal{position:absolute; inset:auto; left:0; right:0}
+.emb .toast{position:absolute; bottom:auto}
+
 .toast{position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
   background:var(--ink); color:#fff; font-size:13.5px; padding:9px 18px; border-radius:20px;
   opacity:0; pointer-events:none; transition:opacity .2s; z-index:60}
@@ -753,9 +757,9 @@ function shelfStates(){
   for (const b of BOOKS){
     if (!stu){ st[b.id] = 'normal'; continue; }             // 원장·마스터: 전부 표시(현행)
     if (b.id === 'vocabible'){ st[b.id] = 'hide'; continue; }   // 아래에서 재결정
-    if (b.id === 'wm_hi' && STU.books.length && !STU.books.includes('wm_hi')){
+    if (b.id === 'wm_hi' && !STU.books.includes('wm_hi')){   // 배정이 없으면 중간보스 잠금 — 배정 목록이 비어도 동일(08-04 원장 지적)
       st[b.id] = crownsOf('wm_sn') >= 2 ? 'normal'
-               : STU.books.includes('wm_sn') ? 'locked' : 'hide';
+               : (!STU.books.length || STU.books.includes('wm_sn')) ? 'locked' : 'hide';
       continue;
     }
     if (STU.books.length && !STU.books.includes(b.id)){ st[b.id] = 'hide'; continue; }
@@ -856,7 +860,7 @@ function maybeBossToast(states){
   if (!STU || STU.master) return;
   ROOT.bossSeen ||= {};
   let changed = false;
-  if (states.wm_hi === 'normal' && STU.books.length && !STU.books.includes('wm_hi')
+  if (states.wm_hi === 'normal' && !STU.books.includes('wm_hi')
       && crownsOf('wm_sn') >= 2 && !ROOT.bossSeen.wm_hi){ ROOT.bossSeen.wm_hi = 1; changed = true; }
   if (states.vocabible === 'normal' && crownsOf('wm_hi') >= 2 && !ROOT.bossSeen.vocabible){ ROOT.bossSeen.vocabible = 1; changed = true; }
   if (changed){ store.save(); toast('🎉 숨겨진 단어장이 열렸어요!'); }
@@ -1012,12 +1016,15 @@ function show(name){
   Object.values(scr).forEach(s => s.classList.remove('show'));
   scr[name].classList.add('show');
   const onShelf = name === 'shelf';
+  if (!onShelf) navArm();                          // 책장이 아니면 뒤로가기 계단 장전
   $('#btnShelf').style.display = onShelf ? 'none' : '';
   $('#btnRound').style.display = onShelf ? 'none' : '';
   window.scrollTo(0,0);
+  embScrollTop();                                  // 학생앱 안이면 부모 스크롤을 맨 위로
 }
 function toast(msg){
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  applyVis();                                      // 학생앱 안이면 보이는 영역에 띄움
   clearTimeout(t._t); t._t = setTimeout(()=>t.classList.remove('show'), 1800);
 }
 
@@ -1674,8 +1681,76 @@ $('#exAll').onclick = () => {
   });
 };
 
+/* ───────── 안드로이드 뒤로가기: 앱이 꺼지지 않고 한 단계씩 ─────────
+ * 원리: 책장을 벗어나면 가짜 기록(계단)을 하나 쌓아둔다. 뒤로가기를 누르면 그 계단이
+ * 소모되면서 여기서 한 단계만 되돌리고(열린 창 닫기 → 학습 → 홈 → 책장) 계단을 다시 쌓는다.
+ * 책장에서 누르면 계단을 안 쌓아 진짜로 밖(학생앱)으로 나간다. */
+let navArmed = false;
+function navArm(){
+  if (navArmed) return;
+  try{ history.pushState({ mapl: 1 }, ''); navArmed = true; }catch(e){}
+}
+function navBackStep(){
+  const m = document.querySelector('.modal.show');
+  if (m){                                          // 1) 열린 창부터 닫기
+    if (m.id === 'mConfirm') $('#cfNo').click();
+    else m.classList.remove('show');
+    return true;
+  }
+  if (scr.sum.classList.contains('show')){ $('#btnHome').click(); return true; }
+  if (scr.study.classList.contains('show')){ $('#btnQuit').click(); return true; }
+  if (scr.flash.classList.contains('show')){ $('#flQuit').click(); return true; }
+  if (scr.blink.classList.contains('show')){ $('#bkQuit').click(); return true; }
+  if (scr.mc.classList.contains('show')){ $('#mcQuit').click(); return true; }
+  if (scr.home.classList.contains('show')){ goShelf(); return true; }
+  return false;                                    // 책장 → 진짜 뒤로
+}
+window.addEventListener('popstate', () => {
+  const stayed = navBackStep();
+  navArmed = false;
+  if (stayed) navArm();
+  else { try{ history.back(); }catch(e){} }
+});
+
+/* ───────── 학생앱 임베드: 스크롤 하나로 통일 ─────────
+ * 부모(학생앱)가 있으면 문서 높이를 계속 알려 iframe 높이를 내용에 맞추고(내부 스크롤 제거),
+ * 부모가 보내주는 "지금 보이는 영역"(maplVis)에 맞춰 모달·토스트를 화면 안에 띄운다.
+ * 단독 열람(브라우저에서 직접)은 아무것도 달라지지 않는다. */
+let EMB = false;
+let VIS = { top: 0, h: window.innerHeight || 640 };
+function postH(){
+  if (window.parent === window) return;
+  const h = Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
+  try{ window.parent.postMessage({ type: 'maplVocaHeight', h }, '*'); }catch(e){}
+}
+function embScrollTop(){
+  if (!EMB || window.parent === window) return;
+  try{ window.parent.postMessage({ type: 'maplVocaScroll', y: 0 }, '*'); }catch(e){}
+}
+function applyVis(){
+  if (!EMB) return;
+  document.documentElement.classList.add('emb');
+  const m = document.querySelector('.modal.show');
+  if (m){ m.style.top = VIS.top + 'px'; m.style.height = VIS.h + 'px'; }
+  const t = document.querySelector('#toast');
+  if (t) t.style.top = (VIS.top + VIS.h - 88) + 'px';
+}
+window.addEventListener('message', (e) => {
+  const d = e.data;
+  if (!d || d.type !== 'maplVis') return;
+  EMB = true;
+  VIS = { top: Math.max(0, d.top | 0), h: Math.max(200, d.h | 0) };
+  applyVis();
+});
+if (window.parent !== window){
+  try{ new ResizeObserver(postH).observe(document.documentElement); }
+  catch(e){ setInterval(postH, 800); }
+  window.addEventListener('load', postH);
+  postH();
+}
+
 /* ───────── 모달·설정 ───────── */
-function openModal(id){ $(id).classList.add('show'); }
+function openModal(id){ $(id).classList.add('show'); navArm(); applyVis(); }
 document.querySelectorAll('[data-close]').forEach(b =>
   b.onclick = () => b.closest('.modal').classList.remove('show'));
 document.querySelectorAll('.modal').forEach(m =>
