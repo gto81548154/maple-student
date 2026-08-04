@@ -21,6 +21,57 @@ if (!STUDENT_SYNC_API_URL) {
 const VOCA_APP_URL = import.meta.env.VITE_VOCA_APP_URL || "/voca.html";
 // [단어 TEST] 탭 스위치 — 마플보카 3단계 배포(워커 /voca/* + public/voca.html + R2 단어 데이터) 완료 후 true로 변경
 const VOCA_TAB_ENABLED = true;
+
+// ─── [08-04] 마플보카 임베드 공용 프레임: 스크롤을 학생앱 하나로 통일 ───
+// voca.html이 문서 높이(maplVocaHeight)를 계속 보내오면 iframe 높이를 그 값으로 맞춰
+// 내부 스크롤을 없앤다. 반대로 여기서는 "지금 보이는 영역"(maplVis)을 계속 알려줘
+// 마플보카의 모달·토스트가 화면 안에 뜨게 하고, 화면 전환(maplVocaScroll) 때는 맨 위로 스크롤한다.
+// 옛 voca.html(높이를 안 보내는 판)과 섞이면 아래가 잘리므로 두 파일은 반드시 한 커밋으로 배포.
+function VocaFrame({ title, src, topOffset = 60 }) {
+  const ref = useRef(null);
+  const [h, setH] = useState(560);
+  useEffect(() => {
+    let raf = 0;
+    const sendVis = () => {
+      raf = 0;
+      const el = ref.current;
+      if (!el || !el.contentWindow) return;
+      const r = el.getBoundingClientRect();
+      const top = Math.max(0, -r.top);
+      const vh = Math.max(0, Math.min(window.innerHeight, r.bottom) - Math.max(r.top, 0));
+      try { el.contentWindow.postMessage({ type: "maplVis", top: Math.round(top), h: Math.round(vh) }, "*"); } catch (e) {}
+    };
+    const queueVis = () => { if (!raf) raf = requestAnimationFrame(sendVis); };
+    const onMsg = (e) => {
+      const el = ref.current;
+      if (!el || e.source !== el.contentWindow) return;
+      const d = e.data;
+      if (!d || typeof d !== "object") return;
+      if (d.type === "maplVocaHeight" && Number.isFinite(d.h)) { setH(Math.max(360, Math.ceil(d.h))); queueVis(); }
+      if (d.type === "maplVocaScroll") {
+        const r = el.getBoundingClientRect();
+        window.scrollTo({ top: Math.max(0, window.scrollY + r.top + (d.y || 0) - topOffset), behavior: "auto" });
+        queueVis();
+      }
+    };
+    window.addEventListener("message", onMsg);
+    window.addEventListener("scroll", queueVis, { passive: true });
+    window.addEventListener("resize", queueVis);
+    const tick = setInterval(queueVis, 700);       // 레이아웃 변동 대비 보험
+    queueVis();
+    return () => {
+      window.removeEventListener("message", onMsg);
+      window.removeEventListener("scroll", queueVis);
+      window.removeEventListener("resize", queueVis);
+      clearInterval(tick);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [topOffset]);
+  return (
+    <iframe ref={ref} title={title} src={src} scrolling="no"
+      style={{ width: "100%", height: h, border: "none", display: "block", background: "#FBF7EF", overflow: "hidden" }} />
+  );
+}
 const WORKER_ORIGIN = (() => { try { return new URL(STUDENT_SYNC_API_URL).origin; } catch (e) { return ""; } })();
 // 진도 맵·강의 영상의 교재명에서 이 학생이 배우는 단어장을 추정한다. (정규 커리큘럼 연동)
 // 매칭되는 책이 하나도 없으면 전체(원장 전용 제외)를 보여준다 — 새 학생도 막히지 않게.
@@ -2224,8 +2275,7 @@ function MasterHome({ mk }) {
 
         {tab === "voca" && (
           <div style={{ background: "#fff", borderRadius: 14, overflow: "hidden", border: "1px solid #eee" }}>
-            <iframe title="원장 단어 TEST" src={vocaSrc}
-              style={{ width: "100%", height: "calc(100dvh - 210px)", minHeight: 520, border: "none", display: "block", background: "#FBF7EF" }} />
+            <VocaFrame title="원장 단어 TEST" src={vocaSrc} />
           </div>
         )}
 
@@ -3348,11 +3398,7 @@ export default function App() {
           const src = `${VOCA_APP_URL}?${q.toString()}`;
           return (
             <div style={{ background: "#fff", borderRadius: 14, overflow: "hidden", border: "1px solid #eee" }}>
-              <iframe
-                title="단어 TEST"
-                src={src}
-                style={{ width: "100%", height: "calc(100dvh - 190px)", minHeight: 520, border: "none", display: "block", background: "#FBF7EF" }}
-              />
+              <VocaFrame title="단어 TEST" src={src} />
             </div>
           );
         })()}
