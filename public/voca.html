@@ -61,8 +61,8 @@ header{position:sticky; top:0; z-index:10; background:var(--paper);
 .mode.on{border-color:var(--ink); color:var(--ink); background:#fff}
 .mode .cnt{display:block; font-size:11px; font-weight:500; margin-top:1px}
 
-.allbtn{width:100%; padding:12px; margin-bottom:14px; border-radius:12px;
-  background:var(--ink); color:#fff; font-weight:700; font-size:15px}
+.allbtn{width:100%; padding:9px; margin-bottom:14px; border-radius:11px;
+  border:1px solid var(--line); background:var(--paper); color:var(--ink-soft); font-weight:700; font-size:13px}
 .allbtn:disabled{opacity:.35; cursor:default}
 
 .lecgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(100px,1fr)); gap:8px}
@@ -86,14 +86,15 @@ header{position:sticky; top:0; z-index:10; background:var(--paper);
 .lec.disabled .leccheck{display:none}
 
 /* ── 범위 학습 ── */
-.rangerow{display:flex; align-items:center; gap:7px; margin-bottom:14px; flex-wrap:wrap}
-.rangerow .rlabel{font-size:13px; font-weight:700; color:var(--ink-soft)}
+.rangerow{display:flex; align-items:center; gap:7px; margin-bottom:10px; flex-wrap:wrap;
+  border:1px solid var(--line); border-radius:12px; padding:10px 12px; background:var(--card)}
+.rangerow .rlabel{font-size:13px; font-weight:800; color:var(--ink)}
 .rangerow select{font:inherit; font-size:13.5px; padding:7px 9px; border:1px solid var(--line);
   border-radius:9px; background:var(--card); color:inherit}
 .rangerow .rtil{color:var(--ink-soft)}
 .rangerow .rangebtn{margin-left:auto; padding:8px 15px; border:1px solid var(--teal);
-  border-radius:9px; background:var(--teal-soft); color:var(--ink); font-weight:700; font-size:13px}
-.rangerow .rangebtn:disabled{opacity:.4; cursor:default; border-color:var(--line); background:var(--paper)}
+  border-radius:9px; background:var(--teal); color:#fff; font-weight:700; font-size:13px}
+.rangerow .rangebtn:disabled{opacity:.4; cursor:default; border-color:var(--line); background:var(--paper); color:var(--ink)}
 
 /* ── 학습 ── */
 .top{display:flex; align-items:center; justify-content:space-between; margin:4px 0 12px}
@@ -160,6 +161,8 @@ header{position:sticky; top:0; z-index:10; background:var(--paper);
   font-family:Charter,Georgia,serif}
 .nextbtn{width:100%; margin-top:14px; padding:12px; border-radius:11px;
   background:var(--ink); color:#fff; font-weight:700; font-size:15px}
+.tapnext{margin-top:14px; padding:10px 0; text-align:center; font-size:12.5px;
+  font-weight:700; color:var(--ink-soft)}
 
 /* ── 결과 ── */
 .aicard{border:1.5px solid var(--line); border-radius:11px; padding:10px 12px; margin-top:8px; text-align:left; background:#fff}
@@ -241,6 +244,11 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
   padding:9px; font-size:12px; margin-top:8px; font-family:ui-monospace,monospace}
 
 /* ── 학습 방식 선택 모달 ── */
+.mmhead{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px}
+.mmhead h2{margin:0}
+.shufbtn{flex:none; border:1.5px solid var(--line); background:var(--paper); color:var(--ink-soft);
+  font-size:12.5px; font-weight:700; border-radius:14px; padding:5px 13px; white-space:nowrap}
+.shufbtn.on{border-color:var(--ink); background:var(--ink); color:#fff}
 .mmsub{font-size:12.5px; color:var(--ink-soft); margin:-8px 0 12px}
 .pickrow{display:flex; align-items:center; gap:11px; width:100%; text-align:left;
   border:1px solid var(--line); background:#fff; border-radius:12px; padding:13px 14px; margin-bottom:8px}
@@ -282,7 +290,7 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
 .mcops{display:flex; flex-direction:column; gap:8px; margin-top:20px}
 .mcop{text-align:left; border:1.5px solid var(--line); background:#fff; border-radius:11px;
   padding:12px 14px; font-size:15px; color:var(--ink); line-height:1.45}
-.mcop:disabled{cursor:default; color:var(--ink)}
+.mcop:disabled,.mcop.locked{cursor:default; color:var(--ink)}
 .mcop.right{border-color:var(--teal); background:var(--teal-soft); font-weight:700}
 .mcop.wrongpick{border-color:var(--crimson); background:var(--crimson-soft)}
 .mcop.sel{border-color:var(--teal); background:var(--teal-soft); font-weight:700}
@@ -371,12 +379,12 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
       <button class="mode" data-m="star">별표<span class="cnt"></span></button>
     </div>
     <div class="exlink" id="exLink" style="display:none">🚫 제외한 단어 <b id="exCount">0</b>개 보기</div>
-    <button class="allbtn" id="btnAll">전체 범위에서 학습 시작</button>
     <div class="rangerow" id="rangeRow">
       <span class="rlabel">범위 선택 시험</span>
-      <span class="rtil" id="rangePick">아래에서 범위를 체크하세요</span>
+      <span class="rtil" id="rangePick">아래 단원 목록에서 체크하세요</span>
       <button class="rangebtn" id="btnRange" disabled>범위 시험</button>
     </div>
+    <button class="allbtn" id="btnAll">전체 범위에서 학습 시작</button>
     <div class="lecgrid" id="lecGrid"></div>
   </section>
 
@@ -507,7 +515,7 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
         <div class="head" id="mcFbHead"></div>
         <div class="msg" id="mcFbMsg" style="display:none"></div>
         <div class="senselist" id="mcFbSenses"></div>
-        <button class="nextbtn" id="mcNext">다음 →</button>
+        <div class="tapnext" id="mcTap">화면을 터치하면 다음 문제 →</div>
       </div>
     </div>
   </section>
@@ -554,7 +562,10 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
 
 <!-- 학습 방식 선택 모달 -->
 <div class="modal" id="mMode"><div class="sheet">
-  <h2>어떻게 공부할까요?</h2>
+  <div class="mmhead">
+    <h2>어떻게 공부할까요?</h2>
+    <button class="shufbtn on" id="tgShuf" type="button" aria-pressed="true">🔀 랜덤</button>
+  </div>
   <div class="mmsub" id="mmSub"></div>
   <button class="pickrow" id="pickCard"><span class="ic">📇</span>
     <span><span class="tt">카드</span><div class="dd">넘기면서 외워요 — 카드를 누르면 뜻이 보여요</div></span>
@@ -1116,13 +1127,19 @@ function updateRangeBtn(){
   const picks = [...selLecs].sort((a, b) => a - b);
   const n = rangeList().length;
   const uw = BOOK ? (BOOK.unit === '강' ? '강' : BOOK.unit) : '강';
-  $('#rangePick').textContent = picks.length ? `${uw} ${picks.length}개 · 단어 ${n}개` : '아래에서 범위를 체크하세요';
+  $('#rangePick').textContent = picks.length ? `${uw} ${picks.length}개 · 단어 ${n}개` : '아래 단원 목록에서 체크하세요';
   $('#btnRange').textContent = picks.length ? `범위 시험 (${n}개)` : '범위 시험';
   $('#btnRange').disabled = !n;
 }
 $('#btnRange').onclick = () => { const l = rangeList(); if (l.length) openModePicker(l, '범위 시험'); };
 
 /* ───────── 학습 세션 ───────── */
+/* [08-06] 랜덤: 카드·블링크·객관식·시험 네 방식 모두에 적용된다.
+ * 한 번 정해두면 이 기기에 기억되고, 다른 단어장·다른 단원으로 가도 그대로다.
+ * ROOT가 아니라 localStorage 단독 키를 쓴다 — 서버 동기화·백업 가져오기를 건드리지 않기 위함.
+ * 기본값은 켜짐(처음 쓰는 학생은 섞여서 나온다). */
+let shufStudy = true;
+try{ shufStudy = localStorage.getItem('maplevoca_shuffle') !== '0'; }catch(e){}
 let Q = [], qi = 0, sesOk = 0, sesWrong = [], sesInputs = {};   // sesInputs: AI 재검토용 오답 입력 기록
 let SES = { kind:'test' };               // 이번 세션의 학습 방식: test | mc | card | blink
 function startSession(list, opts){
@@ -1134,7 +1151,7 @@ function startSession(list, opts){
     Q = Q.filter(w => !(S.words[w.id] && S.words[w.id].x));
     if (!Q.length){ toast('이 범위의 단어가 전부 제외돼 있어요 — 홈의 제외 모음에서 되돌릴 수 있어요'); return; }
   }
-  if (SES.kind === 'test' || SES.kind === 'mc'){   // 시험류만 셔플 — 카드·블링크는 책 순서 유지
+  if (shufStudy){                                  // [08-06] 랜덤이 켜져 있으면 네 방식 모두 섞는다
     for (let i = Q.length-1; i > 0; i--){
       const j = Math.floor(Math.random()*(i+1)); [Q[i],Q[j]] = [Q[j],Q[i]];
     }
@@ -1271,7 +1288,11 @@ function showFeedback(w, p, res, input){
   $('#ansRow').style.display = 'none';
   $('#btnPass').style.display = 'none';
   $('#btnNext').textContent = qi === Q.length-1 ? '결과 보기' : '다음 →';
-  setTimeout(()=>$('#btnNext').focus(), 60);
+  setTimeout(()=>{                                   // [08-06] focus가 학생앱 화면을 끌어내리지 않게
+    const y = window.scrollY;
+    try{ $('#btnNext').focus({ preventScroll:true }); }catch(e){ $('#btnNext').focus(); }
+    if (window.scrollY !== y) window.scrollTo(0, y);
+  }, 60);
 }
 $('#btnGo').onclick = () => submit(false);
 $('#ans').addEventListener('keyup', e => { if (e.key === 'Enter' || e.keyCode === 13) submit(false); });
@@ -1368,8 +1389,21 @@ function openModePicker(list, label){
   $('#pickMc').disabled = !mcOk;
   $('#pickMcDesc').textContent = mcOk ? '보기에서 뜻을 골라요 — 다의어는 답이 2개' : '🔒 1회독에서만 쓸 수 있어요';
   $('#pickMcBadge').style.display = mcOk ? '' : 'none';
+  paintShuf();
   openModal('#mMode');
 }
+function paintShuf(){
+  const b = $('#tgShuf');
+  if (!b) return;
+  b.classList.toggle('on', shufStudy);
+  b.setAttribute('aria-pressed', shufStudy ? 'true' : 'false');
+}
+$('#tgShuf').onclick = () => {
+  shufStudy = !shufStudy;
+  paintShuf();
+  try{ localStorage.setItem('maplevoca_shuffle', shufStudy ? '1' : '0'); }catch(e){}
+  toast(shufStudy ? '랜덤으로 섞어서 나와요' : '책에 나온 순서대로 나와요');
+};
 function pickGo(kind){
   $('#mMode').classList.remove('show');
   const list = pickList; pickList = null;
@@ -1492,7 +1526,7 @@ document.addEventListener('visibilitychange', () => { // 앱을 벗어나면 자
  * 정답 보기 = 각 뜻묶음의 대표 뜻(첫 뜻) 낱개. 맞히면 첫 뜻묶음 하나만 "쓴 뜻"으로 기록해
  * 2회독 서술형에서 다른 뜻을 쓰게 함(원장 확정). 오답 보기 = 같은 책 다른 단어의 낱개 뜻 —
  * 이 단어의 어떤 뜻과라도 채점 규칙(matchSense)으로 겹치면 제외. */
-let mcList = [], mcDone = false, mcNeed = 1, mcSel = new Set();
+let mcList = [], mcDone = false, mcNeed = 1, mcSel = new Set(), mcDoneAt = 0;
 function pickMeaning(w){                            // 단어에서 낱개 뜻 하나를 무작위로 뽑기
   const s = w.senses[Math.floor(Math.random()*w.senses.length)];
   if (!s || !s.m || !s.m.length) return '';
@@ -1537,8 +1571,32 @@ function buildChoices(w){
   }
   return list;
 }
+/* [08-06] 채점 결과가 화면 밖이면 필요한 만큼만 내려서 보여준다.
+ * 예전에는 $('#mcNext').focus() 로 브라우저가 대신 스크롤했다. 그런데 학생앱 안에서는
+ * 마플보카가 스크롤 없는 창(scrolling=no, 높이=문서 전체)이라, 안쪽 요소에 focus를 걸면
+ * 브라우저가 학생앱 화면을 통째로 끌어내린다 — 보기 5개 문제에서 화면이 아래로 튀던 원인. */
+function mcRevealScroll(){
+  const fb = $('#mcFb'), wd = $('#mcWord');
+  if (!fb) return;
+  if (EMB && window.parent !== window){
+    const r = fb.getBoundingClientRect();            // 내부 스크롤이 없어 top이 곧 문서 좌표
+    const wt = wd ? wd.getBoundingClientRect().top : 0;
+    if (r.bottom <= VIS.top + VIS.h) return;         // 이미 다 보이면 그대로 둔다
+    let want = r.bottom - VIS.h + 16;                // 결과 아래가 딱 들어오는 위치
+    want = Math.min(want, Math.max(0, wt - 8));      // 단어가 화면 위로 잘리지 않게
+    if (want <= VIS.top) return;                     // 위로 되돌릴 일은 없다
+    try{ window.parent.postMessage({ type:'maplVocaScroll', y: want + 60 }, '*'); }catch(e){}
+  } else {
+    try{ fb.scrollIntoView({ block:'nearest' }); }catch(e){}
+  }
+}
+function mcTopScroll(){                              // 새 문제는 카드 맨 위에서 시작
+  if (EMB && window.parent !== window) embScrollTop();
+  else window.scrollTo(0, 0);
+}
 function renderMc(){
   const w = Q[qi], p = W(w.id);
+  mcTopScroll();
   $('#mcProgNum').textContent = `${qi+1} / ${Q.length}`;
   $('#mcProgUnit').textContent = lecFull(w.lec);
   $('#stampMc').innerHTML = `<b>${S.round}</b>회독`;
@@ -1546,7 +1604,7 @@ function renderMc(){
   $('#mcWord').innerHTML = `${w.w}<span class="spk">🔊</span>`;
   $('#mcPron').innerHTML = pronHtml(w);
   $('#mcFb').classList.remove('show','ok','no');
-  mcDone = false;
+  mcDone = false; mcDoneAt = 0;
   mcList = buildChoices(w);
   mcNeed = mcList.filter(c => c.ok).length;        // 1 또는 2
   mcSel = new Set();
@@ -1584,7 +1642,7 @@ function answerMc(picked){                          // picked: 고른 보기 번
   const ok = mcList.every((c, j) => !!c.ok === pset.has(j));   // 정답만 정확히 다 골랐는가
   $('#mcGo').style.display = 'none';
   [...$('#mcOps').children].forEach((b, j) => {
-    b.disabled = true; b.classList.remove('sel');
+    b.classList.add('locked'); b.classList.remove('sel');   // [08-06] disabled면 클릭을 삼켜 터치 넘김이 막힌다
     if (mcList[j].ok){
       b.classList.add('right');
       b.insertAdjacentHTML('beforeend', '<span class="mark ok">정답</span>');
@@ -1618,14 +1676,31 @@ function answerMc(picked){                          // picked: 고른 보기 번
     const syn = s.syn && s.syn.length ? `<span class="syn">= ${s.syn.join(', ')}</span>` : '';
     return `<div class="${cls}">${tag}${s.pos ? `<span class="pos">${s.pos}</span>` : ''}<span class="m">${s.m.join(', ')}</span>${syn}</div>`;
   }).join('');
-  $('#mcNext').textContent = qi === Q.length-1 ? '결과 보기' : '다음 →';
+  $('#mcTap').textContent = qi === Q.length-1 ? '화면을 터치하면 결과 보기 →' : '화면을 터치하면 다음 문제 →';
+  mcDoneAt = Date.now();
   if (ROOT.auto) speak(w.w);
-  setTimeout(() => $('#mcNext').focus(), 60);
+  mcRevealScroll();
 }
-$('#mcNext').onclick = () => {
+/* [08-06] 채점 뒤에는 [다음] 버튼 없이 화면을 터치하면 넘어간다.
+ * 400ms 잠금은 반드시 필요하다 — 답 1개 문제는 보기를 누르는 순간 채점되므로,
+ * 잠금이 없으면 그 한 번의 탭이 채점과 다음 넘김으로 이어져 문제가 훌쩍 지나간다. */
+function mcAdvance(){
+  if (!mcDone) return;
+  if (Date.now() - mcDoneAt < 400) return;
   if (qi === Q.length-1) return showSummary();
   qi++; renderMc();
-};
+}
+$('#scrMc').addEventListener('click', (e) => {
+  if (e.target.closest('#mcQuit, #mcStar, #mcWord, .top')) return;   // 종료·별표·발음은 제외
+  mcAdvance();
+});
+document.addEventListener('keydown', (e) => {                        // PC에서 엔터/스페이스
+  if (!scr.mc.classList.contains('show')) return;
+  if (document.querySelector('.modal.show')) return;
+  const ae = document.activeElement;
+  if (ae && (ae.id === 'mcQuit' || ae.id === 'mcStar')) return;       // 종료·별표에 커서가 있으면 그 버튼이 우선
+  if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); mcAdvance(); }
+});
 $('#mcWord').onclick = () => speak(Q[qi].w);
 $('#mcStar').onclick = () => {
   const p = W(Q[qi].id); p.s = p.s ? 0 : 1;
