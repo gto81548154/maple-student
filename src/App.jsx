@@ -367,6 +367,21 @@ const getStudentFromPayload = (payload, studentId) => {
   const students = payload.students || payload.stu3 || [];
   return (students || []).find(s => String(s.id) === String(studentId) && !s.deletedAt) || null;
 };
+// [08-07] 삭제(deletedAt)·일시정지(paused) 상태까지 포함해 찾는다.
+// 위 함수가 null을 주더라도 자료 자체는 남아 있으므로, "링크가 잘못됨"과 "그만둔 학생"을 구분할 수 있다.
+const findStudentAnyState = (payload, studentId) => {
+  if (payload.student && String(payload.student.id) === String(studentId)) return payload.student;
+  const students = payload.students || payload.stu3 || [];
+  return (students || []).find(s => String(s.id) === String(studentId)) || null;
+};
+// 지금 학원에 다니지 않는 상태인지 (삭제 또는 일시정지)
+const isWithdrawnStudent = (s) => !!(s && (s.deletedAt || s.paused));
+const makeWithdrawnError = (s) => {
+  const e = new Error("현재 수강 중이 아닌 학생입니다");
+  e.code = "withdrawn";
+  e.studentName = String(s?.name || "");
+  return e;
+};
 
 // Worker가 전체 원본(todo4/chk3)을 보내도, 학생 1명만 필터링해서 쓰고,
 // Worker가 이미 학생 1명 데이터만 보내도 기존 화면 구조({date:{sid:row}})로 맞춘다.
@@ -435,7 +450,14 @@ const loadStudentBundleFromWorker = async (studentId) => {
   const raw = await resp.json();
   const payload = unwrapBundlePayload(raw);
   const student = getStudentFromPayload(payload, studentId);
-  if (!student) throw new Error("학생 정보를 찾을 수 없습니다");
+  if (!student) {
+    // [08-07] 자료는 있는데 삭제·정지 상태라면 "잘못된 링크"가 아니라 "그만둔 학생"이다 — 따로 알린다.
+    const anyState = findStudentAnyState(payload, studentId);
+    if (isWithdrawnStudent(anyState)) throw makeWithdrawnError(anyState);
+    throw new Error("학생 정보를 찾을 수 없습니다");
+  }
+  // 워커가 정지 학생까지 그대로 보내는 경우에도 여기서 막는다.
+  if (isWithdrawnStudent(student)) throw makeWithdrawnError(student);
 
   const todoSource = payload.todos || payload.todo4 || {};
   const chkSource = payload.checklistData || payload.chk3 || payload.checklist || {};
@@ -2375,6 +2397,7 @@ export default function App() {
   }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [withdrawnName, setWithdrawnName] = useState(""); // [08-07] 그만둔 학생 안내에 이름을 넣기 위해
   const [student, setStudent] = useState(null);
   const [todos, setTodos] = useState({});
   const [checklistData, setChecklistData] = useState({});
@@ -2520,6 +2543,13 @@ export default function App() {
       setError(null);
     } catch (e) {
       console.error("Load error:", e);
+      // [08-07] 그만둔(삭제·정지) 학생은 폰에 남아 있던 자료로도 열리면 안 된다 — 저장본을 지우고 안내만 띄운다.
+      if (e && e.code === "withdrawn") {
+        try { localStorage.removeItem(getStudentBundleStorageKey(studentId)); } catch (err) { /* ignore */ }
+        setWithdrawnName(String(e.studentName || ""));
+        setError("withdrawn");
+        return;
+      }
       const localBundle = restoreStudentBundleFromLocal(studentId);
       if (localBundle) {
         applyBundle(localBundle);
@@ -2985,6 +3015,31 @@ export default function App() {
 
   if (!studentId) {
     return <StudentLinkRecover apiBase={STUDENT_SYNC_API_URL} />;
+  }
+
+  // [08-07] 그만둔(삭제·정지) 학생 — 잘못된 링크가 아니라 "지금은 멈춰 있다"고 알리고 재등록을 안내한다.
+  if (error === "withdrawn") {
+    return (
+      <div style={{ minHeight: "100vh", background: "#f6f7fb", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font)", padding: 24 }}>
+        <div style={{ textAlign: "center", maxWidth: 340, background: "#fff", borderRadius: 18, padding: "36px 24px", boxShadow: "0 8px 30px rgba(15,23,42,.08)" }}>
+          <div style={{ fontSize: 44, marginBottom: 14 }}>🌱</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: "#1a1a2e", marginBottom: 10, lineHeight: 1.5 }}>
+            {withdrawnName ? `${withdrawnName} 학생, ` : ""}지금은 수업이 멈춰 있어요
+          </div>
+          <div style={{ fontSize: 14, color: "#5a6076", lineHeight: 1.75 }}>
+            다시 등록하면 <b style={{ color: "#1C66A5" }}>바로 이어서</b> 쓸 수 있어요.<br />
+            그동안 공부한 기록은 그대로 남아 있습니다.
+          </div>
+          <div style={{ marginTop: 14, padding: "10px 12px", background: "#fff5f5", border: "1px solid #f7c9cd", borderRadius: 10, fontSize: 12.5, color: "#b03a2e", fontWeight: 700, lineHeight: 1.65 }}>
+            다만 <b>새해가 되면 기록이 다 사라집니다</b>
+          </div>
+          <div style={{ marginTop: 12, padding: "12px 14px", background: "#eef2ff", borderRadius: 12, fontSize: 13, color: "#3552d4", fontWeight: 700, lineHeight: 1.6 }}>
+            다시 시작하고 싶으면<br />원장님께 연락해 주세요
+          </div>
+          <div style={{ fontSize: 11.5, color: "#a0a8c0", marginTop: 16 }}>마플영어</div>
+        </div>
+      </div>
+    );
   }
 
   if (error === "not_found") {
