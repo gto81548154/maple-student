@@ -376,11 +376,22 @@ const findStudentAnyState = (payload, studentId) => {
 };
 // 지금 학원에 다니지 않는 상태인지 (삭제 또는 일시정지)
 const isWithdrawnStudent = (s) => !!(s && (s.deletedAt || s.paused));
-const makeWithdrawnError = (s) => {
-  const e = new Error("현재 수강 중이 아닌 학생입니다");
+// 🌱 차단 화면을 띄우는 전용 오류. 이름을 알면 넣고, 모르면 빈 값으로 둔다.
+const makeWithdrawnError = (s, msg) => {
+  const e = new Error(msg || "현재 수강 중이 아닌 학생입니다");
   e.code = "withdrawn";
   e.studentName = String(s?.name || "");
   return e;
+};
+// [08-07] 워커가 "제대로 된 답"을 줬는지 본다.
+// 학생 목록(students/stu3)이 배열로 왔거나 student 객체가 왔으면 제대로 된 답이다.
+//   → 그런데 그 안에 본인이 없다 = 워커가 이 학생을 빼고 보냈다 = 그만둔 학생. 차단해야 한다.
+// 빈 응답 {}, success:false 같은 반쪽 답은 서버가 아픈 것으로 보고 예전처럼 폰 저장본을 쓴다.
+//   → 멀쩡한 학생이 서버 장애로 막히는 일을 막기 위함.
+const looksLikeValidBundle = (raw, payload) => {
+  if (raw && raw.success === false) return false;
+  if (payload && payload.student && typeof payload.student === "object") return true;
+  return Array.isArray(payload?.students || payload?.stu3);
 };
 
 // Worker가 전체 원본(todo4/chk3)을 보내도, 학생 1명만 필터링해서 쓰고,
@@ -446,18 +457,36 @@ const loadStudentBundleFromWorker = async (studentId) => {
   const url = resolveStudentSyncUrl(studentId);
   if (!url) throw new Error("STUDENT_SYNC_API_URL 미설정");
   const resp = await fetchWithTimeout(url, { method: "GET", cache: "no-store" }, 10000);
-  if (!resp.ok) throw new Error(`학생 동기화 API 오류: ${resp.status}`);
+  if (!resp.ok) {
+    // [08-07] "서버가 거절한 것"과 "서버가 아픈 것"을 가른다.
+    //  401·403·404 = 토큰이 죽었거나 그런 학생이 없다는 뜻 → 폰 저장본으로 우회하면 안 된다.
+    //  500대·429  = 서버 장애 → 멀쩡한 학생이 막히면 안 되므로 예전처럼 폰 저장본을 쓴다.
+    if (!IS_MASTER_MODE && (resp.status === 401 || resp.status === 403 || resp.status === 404)) {
+      throw makeWithdrawnError(null, `학생 동기화 API 거절: ${resp.status}`);
+    }
+    throw new Error(`학생 동기화 API 오류: ${resp.status}`);
+  }
   const raw = await resp.json();
   const payload = unwrapBundlePayload(raw);
-  const student = getStudentFromPayload(payload, studentId);
-  if (!student) {
+  let student = getStudentFromPayload(payload, studentId);
+  const anyState = findStudentAnyState(payload, studentId);
+  let withdrawnFlag = false;
+
+  if (IS_MASTER_MODE) {
+    // [08-07] 원장이 학생앱을 열어보는 경우 — 그만둔 학생도 그대로 보여주고, 화면 위에 띠로만 알린다.
+    if (!student && anyState) student = anyState;
+    withdrawnFlag = isWithdrawnStudent(student);
+    if (!student) throw new Error("학생 정보를 찾을 수 없습니다");
+  } else if (!student) {
     // [08-07] 자료는 있는데 삭제·정지 상태라면 "잘못된 링크"가 아니라 "그만둔 학생"이다 — 따로 알린다.
-    const anyState = findStudentAnyState(payload, studentId);
     if (isWithdrawnStudent(anyState)) throw makeWithdrawnError(anyState);
+    // [08-07] 답 모양은 정상인데 본인만 없다 = 워커가 삭제 학생을 아예 안 보내는 경우. 이때도 차단한다.
+    if (looksLikeValidBundle(raw, payload)) throw makeWithdrawnError(null, "학생 목록에 없는 학생입니다");
     throw new Error("학생 정보를 찾을 수 없습니다");
+  } else if (isWithdrawnStudent(student)) {
+    // 워커가 정지 학생까지 그대로 보내는 경우에도 여기서 막는다.
+    throw makeWithdrawnError(student);
   }
-  // 워커가 정지 학생까지 그대로 보내는 경우에도 여기서 막는다.
-  if (isWithdrawnStudent(student)) throw makeWithdrawnError(student);
 
   const todoSource = payload.todos || payload.todo4 || {};
   const chkSource = payload.checklistData || payload.chk3 || payload.checklist || {};
@@ -469,6 +498,7 @@ const loadStudentBundleFromWorker = async (studentId) => {
   return {
     source: "worker",
     student,
+    withdrawnFlag, // [08-07] 마스터 모드에서만 true가 될 수 있다 — 화면 위 안내 띠용
     todos: normalizeByDateForStudent(todoSource, studentId),
     checklistData: normalizeByDateForStudent(chkSource, studentId),
     records: normalizeRecordsForStudent(recSource, studentId),
@@ -492,12 +522,20 @@ const loadStudentBundle = async (studentId) => {
 
 const getStudentBundleStorageKey = (studentId) => `maple_student_bundle_${studentId}`;
 
+// [08-08] 학원 서버에 기록을 저장할 때 "본인 확인 값"으로 함께 보내는 링크의 t 값.
+// 주소가 없거나 값이 없으면 빈 문자열 — 워커는 값이 없으면 예전처럼 받아준다.
+const getSelfAccessToken = () => {
+  try { return new URLSearchParams(window.location.search).get("t") || ""; } catch (e) { return ""; }
+};
+
 const restoreStudentBundleFromLocal = (studentId) => {
   try {
     const raw = localStorage.getItem(getStudentBundleStorageKey(studentId));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed?.bundle || !parsed.bundle.student) return null;
+    // [08-07] 예전 판(정지를 안 보던 때)이 저장해 둔 자료로 그만둔 학생이 열리는 것을 막는다.
+    if (isWithdrawnStudent(parsed.bundle.student)) return null;
     // 오래된 백업을 그대로 보여주면 혼란이 크므로 24시간 이내 자료만 사용한다.
     if (Date.now() - (parsed.savedAt || 0) > 24 * 60 * 60 * 1000) return null;
     return { ...parsed.bundle, source: "local-backup" };
@@ -1218,8 +1256,13 @@ const VOCAB_TEST_RESULT_API_URL = (() => {
   const explicit = import.meta.env.VITE_VOCAB_TEST_RESULT_API_URL || "";
   if (explicit) return explicit;
   const base = import.meta.env.VITE_MAPL_SYNC_URL || "";
-  if (!base) return "";
-  return String(base).replace(/\/+$/, "") + "/vocab-test-result";
+  if (base) return String(base).replace(/\/+$/, "") + "/vocab-test-result";
+  // [08-08] 위 두 값이 설정에 없어도 되게 한다.
+  // 영상 기록 주소(…/video-watch)의 끝만 바꿔서 쓴다. 같은 워커의 옆 문이라 주소가 항상 같다.
+  // 이게 없으면 주소가 빈 문자열이 되어 오답 TEST 결과가 전송조차 안 된다(08-08 발견한 버그).
+  const vw = String(VIDEO_WATCH_API_URL || "").replace(/\/+$/, "");
+  if (vw) return vw.replace(/\/video-watch$/, "") + "/vocab-test-result";
+  return "";
 })();
 const VOCAB_TEST_PENDING_KEY = "maple_pending_vocab_test_v1";
 const VOCAB_PASS_MAX_WRONG_RATE = 0.10; // 오답률 10% 이하 통과 (= 정답률 90% 이상)
@@ -1264,7 +1307,9 @@ const postVocabTestResult = async (payload, { queueOnFail = true } = {}) => {
     const resp = await fetch(VOCAB_TEST_RESULT_API_URL, {
       method: "POST",
       headers,
-      body: JSON.stringify(payload),
+      // [08-08] 본인 확인 값(t)을 보낼 때 붙인다. 대기열에 들어간 옛 기록도 보내는 순간 붙으므로
+      //         앱을 바꾸기 전에 쌓인 기록이 버려지지 않는다.
+      body: JSON.stringify({ ...payload, t: getSelfAccessToken() }),
     });
     if (!resp.ok) throw new Error(`vocab-test-result 저장 실패: ${resp.status}`);
     return true;
@@ -1594,7 +1639,8 @@ const postVideoWatchToWorker = async (payload) => {
   const resp = await fetch(VIDEO_WATCH_API_URL, {
     method: "POST",
     headers,
-    body: JSON.stringify(payload),
+    // [08-08] 본인 확인 값(t)을 보낼 때 붙인다. 대기열에 쌓여 있던 옛 기록도 보내는 순간 붙는다.
+    body: JSON.stringify({ ...payload, t: getSelfAccessToken() }),
   });
   if (!resp.ok) {
     const msg = await resp.text().catch(() => "");
@@ -2398,6 +2444,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [withdrawnName, setWithdrawnName] = useState(""); // [08-07] 그만둔 학생 안내에 이름을 넣기 위해
+  const [masterWithdrawn, setMasterWithdrawn] = useState(false); // [08-07] 마스터가 그만둔 학생 화면을 볼 때 띄우는 띠
   const [student, setStudent] = useState(null);
   const [todos, setTodos] = useState({});
   const [checklistData, setChecklistData] = useState({});
@@ -2427,6 +2474,9 @@ export default function App() {
   const [lastLoadedAt, setLastLoadedAt] = useState(null); // 마지막 동기화 시각
   const [offlineNotice, setOfflineNotice] = useState(""); // Worker 실패 시 로컬 백업 표시 안내
   const loadInFlightRef = useRef(false); // 30초 polling 중복 호출 방지
+  // [08-07] 한 번 차단된 링크인지. true가 되면 30초 자동 새로고침이 서버를 그만 두드린다.
+  //         학생이 [다시 확인]을 누를 때(manual)만 다시 물어본다.
+  const withdrawnRef = useRef(false);
   // [3차] 영상 시청 중인지 여부를 항상 최신으로 들고 있는 ref.
   // 새로고침 useEffect는 studentId가 바뀔 때만 다시 만들어지기 때문에,
   // 그 안에서 viewingVideo state를 그냥 읽으면 옛날 값이 잡힌다. 그래서 ref로 읽는다.
@@ -2504,6 +2554,8 @@ export default function App() {
   const applyBundle = (bundle) => {
     if (!bundle?.student) return;
     setStudent(bundle.student);
+    // [08-07] 마스터가 그만둔 학생 화면을 열었을 때만 켜진다. 학생 화면에서는 항상 꺼져 있다.
+    setMasterWithdrawn(!!bundle.withdrawnFlag && IS_MASTER_MODE);
     setProgressTree(bundle.progressTree || null);
     setTodos(prev => keepPrevIfUnexpectedEmpty(prev, bundle.todos || {}, "todos"));
     setChecklistData(prev => keepPrevIfUnexpectedEmpty(prev, bundle.checklistData || {}, "checklistData"));
@@ -2526,6 +2578,9 @@ export default function App() {
 
   const loadData = async ({ manual = false } = {}) => {
     if (!studentId) { setLoading(false); return; }
+    // [08-07] 이미 차단된 링크면 자동 새로고침은 서버를 두드리지 않는다.
+    //         학생이 [다시 확인]을 눌렀을 때만(manual) 다시 물어본다.
+    if (withdrawnRef.current && !manual) return;
     if (loadInFlightRef.current) {
       if (manual) setRefreshing(false);
       return;
@@ -2540,16 +2595,21 @@ export default function App() {
       }
       applyBundle(bundle);
       saveStudentBundleToLocal(studentId, bundle);
+      withdrawnRef.current = false; // 다시 등록되면 여기로 들어와 잠금이 풀린다
       setError(null);
     } catch (e) {
       console.error("Load error:", e);
       // [08-07] 그만둔(삭제·정지) 학생은 폰에 남아 있던 자료로도 열리면 안 된다 — 저장본을 지우고 안내만 띄운다.
       if (e && e.code === "withdrawn") {
         try { localStorage.removeItem(getStudentBundleStorageKey(studentId)); } catch (err) { /* ignore */ }
+        withdrawnRef.current = true;
         setWithdrawnName(String(e.studentName || ""));
         setError("withdrawn");
         return;
       }
+      // [08-07] 차단 화면에서 [다시 확인]을 눌렀는데 인터넷이 안 되는 경우.
+      //         "연결 오류" 화면으로 넘기지 말고 차단 화면을 그대로 둔다.
+      if (withdrawnRef.current) return;
       const localBundle = restoreStudentBundleFromLocal(studentId);
       if (localBundle) {
         applyBundle(localBundle);
@@ -2900,6 +2960,8 @@ export default function App() {
       // [마스터] 부팅 직후 도는 재전송. 원장 폰에 남아 있던 대기 기록이
       // 마스터 홈이 뜨기도 전에 학생 기록으로 나가는 것을 막는다.
       if (IS_MASTER_MODE) return;
+      // [08-07] 차단된 링크에서는 남은 기록을 더 보내지 않는다(서버를 계속 두드리지 않게).
+      if (withdrawnRef.current) return;
       // [3차 ④] 문지기. 인터넷 복귀와 화면 복귀가 거의 동시에 오면 flush가 두 번 겹칠 수 있고,
       // 그러면 같은 기록이 두 번 저장된다. 이미 돌고 있으면 그냥 돌아간다.
       // finally에서 반드시 풀어줘야 한다. 안 그러면 한 번 돌고 영영 안 돈다.
@@ -3036,7 +3098,14 @@ export default function App() {
           <div style={{ marginTop: 12, padding: "12px 14px", background: "#eef2ff", borderRadius: 12, fontSize: 13, color: "#3552d4", fontWeight: 700, lineHeight: 1.6 }}>
             다시 시작하고 싶으면<br />원장님께 연락해 주세요
           </div>
-          <div style={{ fontSize: 11.5, color: "#a0a8c0", marginTop: 16 }}>마플영어</div>
+          {/* [08-07] 다시 등록한 뒤 앱을 껐다 켜지 않아도 되게. 자동 새로고침은 멈춰 있으므로 이 단추가 유일한 재확인 통로다. */}
+          <button onClick={() => loadData({ manual: true })} disabled={refreshing}
+            style={{ width: "100%", marginTop: 16, padding: "12px 0", borderRadius: 10, border: "1px solid #dfe3ef", background: refreshing ? "#f2f4f9" : "#fff", color: refreshing ? "#a0a8c0" : "#5a6076", fontSize: 13.5, fontWeight: 700, cursor: refreshing ? "default" : "pointer", fontFamily: "inherit" }}>
+            {refreshing ? "확인 중..." : "다시 확인"}
+          </button>
+          {/* [08-07] 진짜로 링크가 잘못된 경우도 이 화면으로 온다 — 한 줄로만 알린다. */}
+          <div style={{ fontSize: 11.5, color: "#a0a8c0", marginTop: 14, lineHeight: 1.6 }}>링크가 잘못됐을 수도 있어요</div>
+          <div style={{ fontSize: 11.5, color: "#a0a8c0", marginTop: 6 }}>마플영어</div>
         </div>
       </div>
     );
@@ -3175,6 +3244,14 @@ export default function App() {
             <span style={{ fontSize: 12.5, color: "rgba(255,255,255,0.85)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>· {student.name}</span>
             <button onClick={() => { window.location.href = window.location.pathname + "?master=1"; }}
               style={{ marginLeft: "auto", flexShrink: 0, padding: "5px 11px", borderRadius: 8, border: "1px solid rgba(240,196,25,0.5)", background: "rgba(240,196,25,0.14)", color: "#f0c419", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>마스터 홈</button>
+          </div>
+        </div>
+      )}
+      {/* [08-07] 원장은 그만둔 학생 화면도 볼 수 있게 통과시키되, 지금 보는 게 그만둔 학생임을 알린다. */}
+      {IS_MASTER_MODE && masterWithdrawn && (
+        <div style={{ background: "#fff5f5", borderBottom: "1px solid #f7c9cd", padding: "9px 24px" }}>
+          <div style={{ maxWidth: MAX_W, margin: "0 auto", fontSize: 12.5, fontWeight: 700, color: "#b03a2e" }}>
+            ⏸ 그만둔 학생입니다 — 학생 본인에게는 이 화면이 열리지 않습니다
           </div>
         </div>
       )}
