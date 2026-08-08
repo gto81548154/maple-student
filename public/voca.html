@@ -1014,6 +1014,50 @@ function applyStudentMode(){                        // 학생 모드: 이름 표
   if (b) b.style.display = 'none';
 }
 
+/* ───────── [08-08] 그만둔 학생 차단 ─────────
+   학생이 이 주소를 직접 열어도(학생앱을 거치지 않아도) 학원 서버에 먼저 물어본다.
+   403(링크 죽음)·404(그런 학생 없음)이면 단어장을 아예 안 보여주고 안내 화면만 띄운다.
+   인터넷이 끊겼거나 서버가 아플 때(그 밖의 응답)는 예전처럼 그냥 쓰게 둔다. */
+function showWithdrawnScreen(){
+  document.body.innerHTML =
+    '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;'
+    + 'background:#f6f7fb;font-family:\'Pretendard Variable\',-apple-system,sans-serif;box-sizing:border-box">'
+    + '<div style="text-align:center;max-width:340px;background:#fff;border-radius:18px;padding:36px 24px;'
+    + 'box-shadow:0 8px 30px rgba(15,23,42,.08)">'
+    + '<div style="font-size:44px;margin-bottom:14px">🌱</div>'
+    + '<div style="font-size:18px;font-weight:800;color:#1a1a2e;margin-bottom:10px;line-height:1.5">'
+    + (STU && STU.name ? STU.name + ' 학생, ' : '') + '지금은 수업이 멈춰 있어요</div>'
+    + '<div style="font-size:14px;color:#5a6076;line-height:1.75">다시 등록하면 '
+    + '<b style="color:#1C66A5">바로 이어서</b> 쓸 수 있어요.<br>그동안 공부한 기록은 그대로 남아 있습니다.</div>'
+    + '<div style="margin-top:12px;padding:12px 14px;background:#eef2ff;border-radius:12px;font-size:13px;'
+    + 'color:#3552d4;font-weight:700;line-height:1.6">다시 시작하고 싶으면<br>원장님께 연락해 주세요</div>'
+    + '<div style="font-size:11.5px;color:#a0a8c0;margin-top:14px;line-height:1.6">링크가 잘못됐을 수도 있어요</div>'
+    + '<div style="font-size:11.5px;color:#a0a8c0;margin-top:6px">마플영어</div>'
+    + '</div></div>';
+  document.title = '마플영어';
+}
+
+// 학원 서버에 "이 학생 지금 다니고 있나요"를 물어본다.
+// true를 돌려주면 차단된 것 — 부르는 쪽에서 바로 멈춰야 한다.
+async function checkWithdrawnAndBlock(){
+  if (!STU || !STU.api || !STU.id) return false;        // 학생 모드가 아니면(원장 개인 사용 등) 검사 안 함
+  if (STU.master) return false;                          // 원장 전용 단어장은 검사에서 뺀다
+  // 인터넷이 느릴 때 앱이 붙잡히지 않게 6초까지만 기다린다. 넘으면 오프라인으로 보고 그냥 연다.
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 6000);
+  try {
+    const r = await fetch(progUrl(), { headers: progHeaders(), cache: 'no-store', signal: ac.signal });
+    if (r.status === 403 || r.status === 404){
+      try { localStorage.removeItem(KEY); } catch(e){}   // 이 기기에 남은 진도도 지운다
+      if (window.storage){ try { await window.storage.delete(KEY); } catch(e){} }
+      showWithdrawnScreen();
+      return true;
+    }
+  } catch(e){ /* 인터넷 끊김·시간 초과 — 예전처럼 그냥 쓰게 둔다 */ }
+  finally { clearTimeout(timer); }
+  return false;
+}
+
 /* ───────── 채점 ───────── */
 const ENDINGS = ['하다','되다','스러운','스럽다','적인','있는','시키다','하게','히','한','된','함','됨'];
 function norm(s){
@@ -2101,6 +2145,8 @@ $('#brandBtn').onclick = goShelf;
 
 /* ───────── 시작 ───────── */
 (async () => {
+  // [08-08] 그만둔 학생이면 여기서 멈춘다 — 책장을 그리기도 전에 막아야 단어가 안 보인다.
+  if (await checkWithdrawnAndBlock()) return;
   await cfgLoad();
   const saved = await store.load();
   const m = migrateRoot(saved);                 // 옛 단일 형식이면 books.vocabible 로 자동 이전
