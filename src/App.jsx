@@ -2459,7 +2459,7 @@ function MockAnswerScreen({ studentId, round, exam, onBack, onSubmitted }) {
 
   const submit = async () => {
     if (busy) return;
-    if (!window.confirm("제출하면 정답이 보이고 다시 못 고칩니다.\n제출할까요?")) return;
+    if (!window.confirm("원장님께 제출하면 정답이 보이고 다시 못 고칩니다.\n제출할까요?")) return;
     setBusy(true); setSendErr("");
     try {
       const resp = await fetchWithTimeout(`${WORKER_ORIGIN}/mock/grade`, {
@@ -2509,9 +2509,9 @@ function MockAnswerScreen({ studentId, round, exam, onBack, onSubmitted }) {
           <div style={{ fontSize: 12.5, color: "#999", marginTop: 4 }}>모두 {total - missAll.length} / {total}문항</div>
           {sendErr && <div style={{ fontSize: 13, color: "#ff4757", marginTop: 12, lineHeight: 1.6 }}>{sendErr}</div>}
           <button onClick={submit} disabled={busy || missAll.length > 0} style={{ width: "100%", marginTop: 14, padding: "14px 0", borderRadius: 12, border: "none", background: (busy || missAll.length > 0) ? "#c8cdd6" : "#1C66A5", color: "#fff", fontSize: 15, fontWeight: 800, cursor: (busy || missAll.length > 0) ? "default" : "pointer" }}>
-            {busy ? "제출하는 중…" : "제출하기"}
+            {busy ? "원장님께 보내는 중…" : "원장님께 제출"}
           </button>
-          <div style={{ fontSize: 12, color: "#bbb", textAlign: "center", marginTop: 8 }}>제출하면 다시 못 고칩니다</div>
+          <div style={{ fontSize: 12, color: "#bbb", textAlign: "center", marginTop: 8 }}>원장님께 제출하면 다시 못 고칩니다</div>
         </div>
       </div>
     );
@@ -2884,7 +2884,7 @@ function MockExamTab({ studentId }) {
         );
       })}
       <div style={{ fontSize: 12, color: "#bbb", textAlign: "center", marginTop: 6, lineHeight: 1.6 }}>
-        문제지는 학원에서 종이로 받아요 · 점수는 제출하면 바로 나와요
+        문제지는 학원에서 종이로 받아요 · 제출하면 점수가 바로 나와요
       </div>
     </div>
   );
