@@ -2126,6 +2126,770 @@ function StudentSurveyCard({ survey, myResponse, student, onSubmitted }) {
   );
 }
 
+// ─── [모의고사 4차수 2·3·4단계] 모의고사 탭 — 회차 목록 → 회차 메뉴 → 듣기·시계 → 답 입력 → 결과 ───
+// 회차는 워커 POST /mock/rounds 가 내려준다: 원장님이 잠갔고 + 정답 45개가 다 찬 + 이 학생 학년의 회차만.
+// 정답·3점 정보는 이 화면까지 절대 내려오지 않는다 (제출한 뒤 결과 응답에만 들어옴).
+// 시험 시계 규칙(원장 확정): 듣기 재생 = 70분 / 듣기 없이 시작 = 50분(듣기 제외) /
+//   남은 시간이 아니라 "시작 시각"을 폰에 저장해서 앱을 껐다 켜도 시간이 계속 흐른다 /
+//   시험이 도는 동안 답 입력은 잠긴다 / [시험 끝내기]로 일찍 끝낼 수 있다 /
+//   답 입력(4단계)은 시계 없이도 들어갈 수 있다 — 종이로 이미 푼 학생용.
+const MOCK_NOTE_COLORS = { "모평": { bg: "#f3e8ff", fg: "#7c3aed" }, "수능": { bg: "#fdf2f8", fg: "#e84393" } };
+
+const fmtMockAttemptDate = (iso) => {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+};
+
+// ── [모의고사 시계 순수부 시작] 시계 계산 — 시험(검증)도 이 구간을 그대로 떼어 돌린다 ──
+const MOCK_EXAM_MIN = { timed70: 70, timed50: 50 }; // 듣기 포함 70분 / 듣기 없이 50분
+
+const mockExamDurationMin = (mode) => MOCK_EXAM_MIN[mode] || 0;
+
+// 남은 시간(밀리초). 시작 시각 기준으로 계산하므로 앱을 껐다 켜도 이어진다. 0 밑으로 안 내려감.
+const mockExamRemainingMs = (startedAt, mode, now) => {
+  const total = mockExamDurationMin(mode) * 60 * 1000;
+  const left = (Number(startedAt) || 0) + total - (Number(now) || 0);
+  return Math.max(0, Math.min(total, left));
+};
+
+// 70:00 / 9:05 / 0:00 모양 시계 표시
+const fmtMockClock = (ms) => {
+  const sec = Math.max(0, Math.ceil((Number(ms) || 0) / 1000));
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+};
+
+// 재생 속도: 0.5~2.0 사이, 0.1 단위 (소수점 오차 방지 반올림)
+const mockClampSpeed = (v) => Math.min(2, Math.max(0.5, Math.round((Number(v) || 1) * 10) / 10));
+// ── [모의고사 시계 순수부 끝] ──
+
+// 진행 중인 시험은 폰(localStorage)에 시작 시각째로 저장한다 — 학생당 한 번에 한 시험.
+const mockExamStateKey = (studentId) => `maple_mock_active_${studentId}`;
+const loadMockExamState = (studentId) => {
+  try {
+    const r = JSON.parse(localStorage.getItem(mockExamStateKey(studentId)) || "null");
+    if (r && r.v === 1 && r.roundId && r.startedAt && (r.phase === "running" || r.phase === "done")) return r;
+  } catch (e) { /* 망가진 저장값은 없는 셈 친다 */ }
+  return null;
+};
+const saveMockExamState = (studentId, st) => {
+  try {
+    if (st) localStorage.setItem(mockExamStateKey(studentId), JSON.stringify(st));
+    else localStorage.removeItem(mockExamStateKey(studentId));
+  } catch (e) { /* 저장 실패해도 시험 진행은 막지 않는다 */ }
+};
+
+const mockSpeedKey = (studentId) => `maple_mock_speed_${studentId}`;
+const loadMockSpeed = (studentId) => {
+  try { return mockClampSpeed(Number(localStorage.getItem(mockSpeedKey(studentId))) || 1); } catch (e) { return 1; }
+};
+
+const mockRoundTitle = (r) => `${r.year}년 ${r.month}월 · 고${r.grade}`;
+
+// ─── 듣기 + 시험 시계 화면 (mode: timed70=듣기 포함 / timed50=듣기 없이) ───
+function MockTimerScreen({ studentId, round, mode, exam, onExamChange, onBack }) {
+  const withAudio = mode === "timed70";
+  const durMs = mockExamDurationMin(mode) * 60 * 1000;
+  const isMine = exam && exam.roundId === round.id && exam.mode === mode;
+  const running = !!(isMine && exam.phase === "running");
+  const done = !!(isMine && exam.phase === "done");
+
+  const [now, setNow] = useState(Date.now());
+  const [speed, setSpeed] = useState(() => loadMockSpeed(studentId));
+  const [playing, setPlaying] = useState(false);
+  const [posSec, setPosSec] = useState(0);
+  const [durSec, setDurSec] = useState(0);
+  const [audioErr, setAudioErr] = useState("");
+  const audioRef = useRef(null);
+
+  // 시계는 0.5초마다 다시 계산 — 값을 저장하지 않고 시작 시각에서 계산만 한다
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(t);
+  }, []);
+
+  const remainMs = running ? mockExamRemainingMs(exam.startedAt, exam.mode, now) : (done ? 0 : durMs);
+
+  // 시간이 다 되면 자동으로 "끝" 상태로 넘긴다 (앱을 껐다 켠 사이 끝난 경우도 여기서 잡힘)
+  useEffect(() => {
+    if (running && remainMs <= 0) {
+      try { if (audioRef.current) audioRef.current.pause(); } catch (e) { /* 무시 */ }
+      onExamChange({ ...exam, phase: "done", endedAt: (Number(exam.startedAt) || 0) + durMs });
+    }
+  }, [running, remainMs <= 0]);
+
+  // 속도는 오디오에 즉시 반영 + 폰에 기억
+  useEffect(() => {
+    if (audioRef.current) { try { audioRef.current.playbackRate = speed; } catch (e) { /* 무시 */ } }
+    try { localStorage.setItem(mockSpeedKey(studentId), String(speed)); } catch (e) { /* 무시 */ }
+  }, [speed]);
+
+  const startExam = () => {
+    onExamChange({
+      v: 1, roundId: round.id, mode, noListening: mode === "timed50",
+      phase: "running", startedAt: Date.now(),
+      snapshot: { id: round.id, year: round.year, month: round.month, grade: round.grade, note: round.note || "", host: round.host || "", hasAudio: !!round.hasAudio, audioPath: round.audioPath || "" },
+    });
+  };
+
+  const finishEarly = () => {
+    if (!running) return;
+    if (!window.confirm("정말 시험을 끝낼까요?\n끝내면 시계가 멈추고 답 입력이 열려요.")) return;
+    try { if (audioRef.current) audioRef.current.pause(); } catch (e) { /* 무시 */ }
+    onExamChange({ ...exam, phase: "done", endedAt: Date.now() });
+  };
+
+  const togglePlay = async () => {
+    const a = audioRef.current;
+    if (!a) return;
+    setAudioErr("");
+    if (a.paused) {
+      try {
+        a.playbackRate = speed;
+        await a.play();
+        if (!running && !done) startExam(); // 첫 재생 = 70분 시작 (원장 확정)
+      } catch (e) {
+        setAudioErr("재생을 시작하지 못했어요. 인터넷을 확인하고 다시 눌러 주세요.");
+      }
+    } else {
+      a.pause(); // 재생을 멈춰도 시험 시계는 계속 흐른다 (실전과 같게)
+    }
+  };
+
+  const seekBy = (d) => {
+    const a = audioRef.current;
+    if (!a || !isFinite(a.duration)) return;
+    a.currentTime = Math.max(0, Math.min(a.duration, a.currentTime + d));
+  };
+
+  const fmtPos = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  const card = { background: "#fff", borderRadius: 14, border: "1px solid #eee", padding: 18 };
+  const lowTime = running && remainMs <= 5 * 60 * 1000;
+
+  return (
+    <div>
+      <button onClick={onBack} style={{ border: "none", background: "transparent", color: "#1C66A5", fontSize: 14, fontWeight: 700, cursor: "pointer", padding: "2px 0", marginBottom: 10 }}>← 회차 메뉴</button>
+      <div style={{ ...card, textAlign: "center" }}>
+        <div style={{ fontSize: 15, fontWeight: 800 }}>{mockRoundTitle(round)}{round.note ? ` · ${round.note}` : ""}</div>
+        <div style={{ fontSize: 12.5, color: "#999", marginTop: 3 }}>{withAudio ? "듣기 시험 (70분)" : "듣기 없이 풀기 (50분 · 듣기 제외)"}</div>
+
+        <div style={{ fontSize: 13, color: "#999", marginTop: 18 }}>남은 시간</div>
+        <div style={{ fontSize: 52, fontWeight: 800, letterSpacing: 1, fontVariantNumeric: "tabular-nums", color: done ? "#00b894" : (lowTime ? "#ff4757" : "#2A2A28"), lineHeight: 1.15 }}>
+          {fmtMockClock(remainMs)}
+        </div>
+        {!running && !done && (
+          <div style={{ fontSize: 13, color: "#999", marginTop: 6 }}>
+            {withAudio ? "▶︎ 재생을 누르면 시험이 시작돼요" : "아래 버튼을 누르면 시험이 시작돼요"}
+          </div>
+        )}
+        {done && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 20, fontWeight: 800, color: "#00b894" }}>시험 끝났습니다! 🎉</div>
+            <div style={{ fontSize: 13, color: "#999", marginTop: 6, lineHeight: 1.6 }}>
+              수고했어요. 이제 답 입력이 열렸어요.<br />회차 메뉴에서 [답 입력]을 눌러 주세요.
+            </div>
+            <button onClick={onBack} style={{ marginTop: 14, padding: "11px 26px", borderRadius: 10, border: "none", background: "#1C66A5", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>회차 메뉴로</button>
+          </div>
+        )}
+
+        {withAudio && !done && (
+          <div style={{ marginTop: 20, borderTop: "1px solid #f0f0f0", paddingTop: 16 }}>
+            <audio
+              ref={audioRef}
+              src={`${WORKER_ORIGIN}${round.audioPath || `/files/mock-audio/${round.id}.mp3`}`}
+              preload="metadata"
+              onPlay={() => setPlaying(true)}
+              onPause={() => setPlaying(false)}
+              onTimeUpdate={(e) => setPosSec(e.target.currentTime || 0)}
+              onLoadedMetadata={(e) => { setDurSec(e.target.duration || 0); try { e.target.playbackRate = speed; } catch (err) { /* 무시 */ } }}
+              onError={() => setAudioErr("듣기 파일을 불러오지 못했어요. 인터넷을 확인해 주세요.")}
+            />
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 18 }}>
+              <button onClick={() => seekBy(-10)} style={{ border: "1px solid #e5e5e5", background: "#fff", borderRadius: 999, width: 46, height: 46, fontSize: 12, fontWeight: 700, color: "#555", cursor: "pointer" }}>-10초</button>
+              <button onClick={togglePlay} style={{ border: "none", background: "#1C66A5", color: "#fff", borderRadius: "50%", width: 62, height: 62, fontSize: 24, cursor: "pointer" }}>{playing ? "⏸" : "▶︎"}</button>
+              <button onClick={() => seekBy(10)} style={{ border: "1px solid #e5e5e5", background: "#fff", borderRadius: 999, width: 46, height: 46, fontSize: 12, fontWeight: 700, color: "#555", cursor: "pointer" }}>+10초</button>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <input
+                type="range" min={0} max={Math.max(1, Math.floor(durSec))} step={1}
+                value={Math.min(Math.floor(posSec), Math.max(1, Math.floor(durSec)))}
+                onChange={(e) => { const a = audioRef.current; if (a && isFinite(a.duration)) a.currentTime = Number(e.target.value) || 0; }}
+                style={{ width: "100%" }}
+              />
+              <div style={{ fontSize: 12, color: "#999", marginTop: 2 }}>{fmtPos(posSec)} / {durSec ? fmtPos(durSec) : "--:--"}</div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginTop: 12 }}>
+              <span style={{ fontSize: 13, color: "#999" }}>속도</span>
+              <button onClick={() => setSpeed(s => mockClampSpeed(s - 0.1))} style={{ border: "1px solid #e5e5e5", background: "#fff", borderRadius: 8, width: 32, height: 32, fontSize: 16, cursor: "pointer", color: "#555" }}>−</button>
+              <span style={{ fontSize: 15, fontWeight: 800, minWidth: 44, fontVariantNumeric: "tabular-nums" }}>{speed.toFixed(1)}배</span>
+              <button onClick={() => setSpeed(s => mockClampSpeed(s + 0.1))} style={{ border: "1px solid #e5e5e5", background: "#fff", borderRadius: 8, width: 32, height: 32, fontSize: 16, cursor: "pointer", color: "#555" }}>+</button>
+            </div>
+            {audioErr && <div style={{ fontSize: 12.5, color: "#ff4757", marginTop: 10 }}>{audioErr}</div>}
+          </div>
+        )}
+
+        {!withAudio && !running && !done && (
+          <button onClick={startExam} style={{ marginTop: 18, padding: "13px 30px", borderRadius: 12, border: "none", background: "#1C66A5", color: "#fff", fontSize: 15, fontWeight: 800, cursor: "pointer" }}>⏱ 50분 시작</button>
+        )}
+
+        {running && (
+          <div style={{ marginTop: 18, borderTop: "1px solid #f0f0f0", paddingTop: 14 }}>
+            <div style={{ fontSize: 12.5, color: "#999", marginBottom: 10 }}>시험이 끝날 때까지 답 입력은 잠겨 있어요</div>
+            <button onClick={finishEarly} style={{ border: "1.5px solid #ff4757", background: "#fff", color: "#ff4757", borderRadius: 10, padding: "10px 22px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>시험 끝내기</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+// ── [모의고사 답입력 순수부 시작] 쪽 나눔·검산 계산 — 시험(검증)도 이 구간을 그대로 떼어 돌린다 ──
+// 쪽 나눔은 원장앱 정답 등록(C안)과 완전히 같다: 1~12 / 13~20 / 21~24 / 25~28 / 29~32 / 33~36 / 37~40 / 41~45
+const MOCK_PAGES = [[1, 12], [13, 20], [21, 24], [25, 28], [29, 32], [33, 36], [37, 40], [41, 45]];
+
+// 듣기 제외면 18번부터: 1쪽(1~12)은 통째로 빠지고 2쪽은 18~20만 남아 총 7쪽이 된다
+const mockPagesFor = (noListening) => {
+  if (!noListening) return MOCK_PAGES;
+  return MOCK_PAGES.map(([a, b]) => [Math.max(a, 18), b]).filter(([a, b]) => a <= b);
+};
+
+const isMockPick = (v) => Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 5;
+
+// 이 쪽에서 아직 안 찍은 번호들
+const mockPageMissing = (answers, page) => {
+  const miss = [];
+  for (let n = page[0]; n <= page[1]; n++) if (!isMockPick((answers || [])[n - 1])) miss.push(n);
+  return miss;
+};
+
+// 입력해야 하는 전체 범위에서 안 찍은 번호들
+const mockAllMissing = (answers, noListening) => {
+  const miss = [];
+  for (let n = noListening ? 18 : 1; n <= 45; n++) if (!isMockPick((answers || [])[n - 1])) miss.push(n);
+  return miss;
+};
+
+// 번호별 개수: ①8개 ②9개… — 밀려 찍으면 한쪽으로 쏠려서 학생이 스스로 알아챈다
+const mockCountByChoice = (answers, noListening) => {
+  const c = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  for (let n = noListening ? 18 : 1; n <= 45; n++) {
+    const v = Number((answers || [])[n - 1]);
+    if (c[v] != null) c[v]++;
+  }
+  return c;
+};
+
+// 끝난 시험 기록에서 걸린 시간(초) — 자유 입력이면 0
+const mockDurationSecFromExam = (exam) => {
+  if (!exam || exam.phase !== "done") return 0;
+  const ms = (Number(exam.endedAt) || 0) - (Number(exam.startedAt) || 0);
+  return Math.max(0, Math.round(ms / 1000));
+};
+// ── [모의고사 답입력 순수부 끝] ──
+
+// 찍다 만 답은 폰에 임시 저장 — 전화가 와서 앱이 꺼져도 이어서 찍는다. 제출하면 지운다.
+const mockDraftKey = (studentId) => `maple_mock_draft_${studentId}`;
+const loadMockDraft = (studentId, roundId, noListening) => {
+  try {
+    const r = JSON.parse(localStorage.getItem(mockDraftKey(studentId)) || "null");
+    if (r && r.v === 1 && r.roundId === roundId && !!r.noListening === !!noListening && Array.isArray(r.answers)) return r;
+  } catch (e) { /* 망가진 저장값은 없는 셈 친다 */ }
+  return null;
+};
+const saveMockDraft = (studentId, draft) => {
+  try {
+    if (draft) localStorage.setItem(mockDraftKey(studentId), JSON.stringify(draft));
+    else localStorage.removeItem(mockDraftKey(studentId));
+  } catch (e) { /* 무시 */ }
+};
+
+const MOCK_CIRCLED = { 1: "①", 2: "②", 3: "③", 4: "④", 5: "⑤" };
+
+// ─── 답 입력 화면: 한 쪽씩 넘기며 손가락으로 찍기 ───
+function MockAnswerScreen({ studentId, round, exam, onBack, onSubmitted }) {
+  const mineDone = exam && exam.phase === "done" && exam.roundId === round.id ? exam : null;
+  // 모드: 끝난 시험 기록이 있으면 그 기록대로(물어보지 않음), 없으면 학생이 고른다
+  const [noListening, setNoListening] = useState(mineDone ? !!mineDone.noListening : null);
+  const [answers, setAnswers] = useState(() => {
+    const d = mineDone ? loadMockDraft(studentId, round.id, !!mineDone.noListening) : null;
+    return d ? d.answers.slice(0, 45) : Array(45).fill(null);
+  });
+  const [pageIdx, setPageIdx] = useState(0);
+  const [summary, setSummary] = useState(false); // 마지막 쪽 다음의 번호별 개수 화면
+  const [busy, setBusy] = useState(false);
+  const [sendErr, setSendErr] = useState("");
+
+  const pages = noListening === null ? [] : mockPagesFor(noListening);
+
+  // 모드가 정해지면 임시 저장 복원 + 이후 찍을 때마다 저장
+  useEffect(() => {
+    if (noListening === null) return;
+    const d = loadMockDraft(studentId, round.id, noListening);
+    if (d) { setAnswers(d.answers.slice(0, 45)); setPageIdx(Math.max(0, Math.min(pages.length - 1, Number(d.page) || 0))); }
+  }, [noListening]);
+  useEffect(() => {
+    if (noListening === null) return;
+    saveMockDraft(studentId, { v: 1, roundId: round.id, noListening, answers, page: pageIdx });
+  }, [answers, pageIdx, noListening]);
+
+  const card = { background: "#fff", borderRadius: 14, border: "1px solid #eee", padding: 16 };
+
+  // ── 모드 고르기 (자유 입력일 때만) ──
+  if (noListening === null) {
+    return (
+      <div>
+        <button onClick={onBack} style={{ border: "none", background: "transparent", color: "#1C66A5", fontSize: 14, fontWeight: 700, cursor: "pointer", padding: "2px 0", marginBottom: 10 }}>← 회차 메뉴</button>
+        <div style={card}>
+          <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>{mockRoundTitle(round)} 답 입력</div>
+          <div style={{ fontSize: 13, color: "#999", marginBottom: 16 }}>어디까지 풀었는지 골라 주세요</div>
+          <button onClick={() => setNoListening(false)} style={{ width: "100%", textAlign: "left", padding: "15px 16px", marginBottom: 10, borderRadius: 12, border: "1.5px solid #d8dfe8", background: "#fff", cursor: "pointer" }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#2A2A28" }}>듣기까지 다 풀었어요</div>
+            <div style={{ fontSize: 12, color: "#999", marginTop: 2 }}>1~45번 · 45문항 입력</div>
+          </button>
+          <button onClick={() => setNoListening(true)} style={{ width: "100%", textAlign: "left", padding: "15px 16px", borderRadius: 12, border: "1.5px solid #d8dfe8", background: "#fff", cursor: "pointer" }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#2A2A28" }}>듣기는 안 풀었어요</div>
+            <div style={{ fontSize: 12, color: "#999", marginTop: 2 }}>18~45번 · 28문항 입력 · 듣기 37점은 만점 처리 (듣기 제외 표시)</div>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const submit = async () => {
+    if (busy) return;
+    if (!window.confirm("제출하면 정답이 보이고 다시 못 고칩니다.\n제출할까요?")) return;
+    setBusy(true); setSendErr("");
+    try {
+      const resp = await fetchWithTimeout(`${WORKER_ORIGIN}/mock/grade`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentId, t: getSelfAccessToken(),
+          roundId: round.id,
+          answers,
+          noListening,
+          mode: mineDone ? mineDone.mode : "free",
+          durationSec: mockDurationSecFromExam(mineDone),
+        }),
+      }, 20000);
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || !data.success || !data.result) throw new Error(data.error || `서버 오류 (${resp.status})`);
+      saveMockDraft(studentId, null); // 임시 저장 지우기
+      onSubmitted(data.result, noListening);
+    } catch (e) {
+      setSendErr((e?.message || "제출하지 못했어요") + " — 답은 그대로 있으니 다시 눌러 주세요");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // ── 번호별 개수(검산) + 제출 화면 ──
+  if (summary) {
+    const counts = mockCountByChoice(answers, noListening);
+    const total = noListening ? 28 : 45;
+    const maxCnt = Math.max(1, ...Object.values(counts));
+    const missAll = mockAllMissing(answers, noListening);
+    return (
+      <div>
+        <button onClick={() => setSummary(false)} style={{ border: "none", background: "transparent", color: "#1C66A5", fontSize: 14, fontWeight: 700, cursor: "pointer", padding: "2px 0", marginBottom: 10 }}>← 답 다시 보기</button>
+        <div style={card}>
+          <div style={{ fontSize: 16, fontWeight: 800 }}>번호별로 몇 개 찍었나</div>
+          <div style={{ fontSize: 12.5, color: "#999", marginTop: 3, marginBottom: 14 }}>한 번호에 몰려 있으면 밀려 찍은 것일 수 있어요</div>
+          {[1, 2, 3, 4, 5].map(k => (
+            <div key={k} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+              <span style={{ fontSize: 15, width: 22 }}>{MOCK_CIRCLED[k]}</span>
+              <div style={{ flex: 1, background: "#f0f2f5", borderRadius: 4, height: 16, overflow: "hidden" }}>
+                <div style={{ width: `${(counts[k] / maxCnt) * 100}%`, height: "100%", background: "#1C66A5", borderRadius: 4 }} />
+              </div>
+              <span style={{ fontSize: 13, color: "#555", width: 34, textAlign: "right" }}>{counts[k]}개</span>
+            </div>
+          ))}
+          <div style={{ fontSize: 12.5, color: "#999", marginTop: 4 }}>모두 {total - missAll.length} / {total}문항</div>
+          {sendErr && <div style={{ fontSize: 13, color: "#ff4757", marginTop: 12, lineHeight: 1.6 }}>{sendErr}</div>}
+          <button onClick={submit} disabled={busy || missAll.length > 0} style={{ width: "100%", marginTop: 14, padding: "14px 0", borderRadius: 12, border: "none", background: (busy || missAll.length > 0) ? "#c8cdd6" : "#1C66A5", color: "#fff", fontSize: 15, fontWeight: 800, cursor: (busy || missAll.length > 0) ? "default" : "pointer" }}>
+            {busy ? "제출하는 중…" : "제출하기"}
+          </button>
+          <div style={{ fontSize: 12, color: "#bbb", textAlign: "center", marginTop: 8 }}>제출하면 다시 못 고칩니다</div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── 한 쪽씩 찍기 ──
+  const page = pages[pageIdx];
+  const miss = mockPageMissing(answers, page);
+  const lastPage = pageIdx === pages.length - 1;
+  const nums = [];
+  for (let n = page[0]; n <= page[1]; n++) nums.push(n);
+
+  return (
+    <div>
+      <button onClick={onBack} style={{ border: "none", background: "transparent", color: "#1C66A5", fontSize: 14, fontWeight: 700, cursor: "pointer", padding: "2px 0", marginBottom: 10 }}>← 회차 메뉴</button>
+      <div style={card}>
+        <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 10 }}>
+          {pages.map((p, i) => (
+            <span key={i} onClick={() => { if (i < pageIdx) setPageIdx(i); }} style={{ width: 8, height: 8, borderRadius: "50%", background: i === pageIdx ? "#1C66A5" : (mockPageMissing(answers, p).length === 0 ? "#9fc3e0" : "#e3e6ec"), cursor: i < pageIdx ? "pointer" : "default" }} />
+          ))}
+        </div>
+        <div style={{ textAlign: "center", fontSize: 15, fontWeight: 800, marginBottom: 2 }}>{pageIdx + 1}쪽 · {page[0]}~{page[1]}번</div>
+        <div style={{ textAlign: "center", fontSize: 12, color: "#bbb", marginBottom: 12 }}>{mockRoundTitle(round)}{noListening ? " · 듣기 제외" : ""}</div>
+
+        {nums.map(n => (
+          <div key={n} style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 7 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, width: 24, textAlign: "right", color: "#555" }}>{n}</span>
+            {[1, 2, 3, 4, 5].map(v => {
+              const on = Number(answers[n - 1]) === v;
+              return (
+                <button key={v} onClick={() => setAnswers(arr => { const a = [...arr]; a[n - 1] = v; return a; })}
+                  style={{ flex: 1, height: 38, borderRadius: 19, border: on ? "none" : "1px solid #dfe3ea", background: on ? "#1C66A5" : "#fff", color: on ? "#fff" : "#8a90a0", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+                  {MOCK_CIRCLED[v]}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+
+        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+          {pageIdx > 0 && (
+            <button onClick={() => setPageIdx(i => i - 1)} style={{ flex: 1, padding: "13px 0", borderRadius: 12, border: "1px solid #dfe3ea", background: "#fff", color: "#555", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>← 앞 쪽</button>
+          )}
+          <button
+            onClick={() => { if (miss.length) return; lastPage ? setSummary(true) : setPageIdx(i => i + 1); }}
+            disabled={miss.length > 0}
+            style={{ flex: 2, padding: "13px 0", borderRadius: 12, border: "none", background: miss.length ? "#c8cdd6" : "#1C66A5", color: "#fff", fontSize: 14, fontWeight: 800, cursor: miss.length ? "default" : "pointer" }}>
+            {miss.length ? `${miss.join(" · ")}번이 비었어요` : (lastPage ? "다 찍었어요 → 확인하기" : "다음 쪽 →")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── 결과 화면: 점수·등급·듣기/독해·틀린 문항 (제출한 뒤에만 정답이 보인다) ───
+function MockResultScreen({ round, result, onDone }) {
+  const [showAll, setShowAll] = useState(false);
+  const card = { background: "#fff", borderRadius: 14, border: "1px solid #eee", padding: 18 };
+  const wrong = Array.isArray(result.wrong) ? result.wrong : [];
+  const ca = Array.isArray(result.correctAnswers) ? result.correctAnswers : [];
+  const myMap = {};
+  wrong.forEach(w => { myMap[w.n] = w; });
+  const startN = result.noListening ? 18 : 1;
+  return (
+    <div>
+      <div style={{ ...card, textAlign: "center" }}>
+        <div style={{ fontSize: 13, color: "#999" }}>{mockRoundTitle(round)}{result.noListening ? " · 듣기 제외" : ""}</div>
+        <div style={{ fontSize: 54, fontWeight: 800, lineHeight: 1.2, marginTop: 4 }}>{result.score}<span style={{ fontSize: 22 }}>점</span></div>
+        <span style={{ display: "inline-block", marginTop: 4, fontSize: 14, fontWeight: 800, background: "#e8f8f5", color: "#0b7a5c", padding: "4px 14px", borderRadius: 999 }}>{result.band}등급</span>
+        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+          <div style={{ flex: 1, background: "#f7f8fa", borderRadius: 10, padding: 12 }}>
+            <div style={{ fontSize: 11.5, color: "#999" }}>듣기{result.noListening ? " (만점 처리)" : ""}</div>
+            <div style={{ fontSize: 18, fontWeight: 800, marginTop: 2 }}>{result.listenScore} / 37</div>
+          </div>
+          <div style={{ flex: 1, background: "#f7f8fa", borderRadius: 10, padding: 12 }}>
+            <div style={{ fontSize: 11.5, color: "#999" }}>독해</div>
+            <div style={{ fontSize: 18, fontWeight: 800, marginTop: 2 }}>{result.readScore} / 63</div>
+          </div>
+        </div>
+        <div style={{ textAlign: "left", borderTop: "1px solid #f0f0f0", marginTop: 16, paddingTop: 14 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 8 }}>{wrong.length ? `틀린 문항 ${wrong.length}개` : "다 맞았어요! 🎉"}</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {wrong.map(w => (
+              <span key={w.n} style={{ fontSize: 12.5, fontWeight: 700, background: "#ffecec", color: "#c0392b", padding: "4px 10px", borderRadius: 999 }}>{w.n}번 {w.type}{w.pts === 3 ? " · 3점" : ""}</span>
+            ))}
+          </div>
+        </div>
+        <button onClick={() => setShowAll(s => !s)} style={{ marginTop: 14, border: "1px solid #e5e5e5", background: "#fff", color: "#666", fontSize: 13, fontWeight: 700, borderRadius: 999, padding: "8px 16px", cursor: "pointer" }}>
+          {showAll ? "정답 접기" : "정답 전체 보기"}
+        </button>
+        {showAll && (
+          <div style={{ textAlign: "left", marginTop: 12, borderTop: "1px solid #f0f0f0", paddingTop: 10 }}>
+            {Array.from({ length: 45 - startN + 1 }, (_, i) => startN + i).map(n => {
+              const w = myMap[n];
+              const mine = w ? (w.my == null ? "—" : MOCK_CIRCLED[w.my]) : MOCK_CIRCLED[ca[n - 1]];
+              return (
+                <div key={n} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, padding: "3px 0", color: w ? "#c0392b" : "#555" }}>
+                  <span style={{ width: 26, textAlign: "right", fontWeight: 700 }}>{n}</span>
+                  <span style={{ width: 60 }}>내 답 {mine}</span>
+                  <span style={{ width: 60 }}>정답 {MOCK_CIRCLED[ca[n - 1]] || "?"}</span>
+                  <span style={{ fontWeight: 800 }}>{w ? "✗" : "○"}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <button onClick={onDone} style={{ width: "100%", marginTop: 16, padding: "13px 0", borderRadius: 12, border: "none", background: "#1C66A5", color: "#fff", fontSize: 15, fontWeight: 800, cursor: "pointer" }}>확인</button>
+      </div>
+    </div>
+  );
+}
+
+function MockExamTab({ studentId }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [rounds, setRounds] = useState([]);
+  const [notice, setNotice] = useState("");
+  const [sel, setSel] = useState(null);            // 고른 회차 — null이면 목록
+  const [view, setView] = useState("menu");        // sel이 있을 때: "menu" | "exam70" | "exam50" | "answer" | "result"
+  const [result, setResult] = useState(null);      // 방금 제출한 결과 (결과 화면용)
+  const [exam, setExamState] = useState(() => loadMockExamState(studentId)); // 진행/완료된 시험 (폰 저장과 동기화)
+
+  const setExam = (st) => { setExamState(st); saveMockExamState(studentId, st); };
+
+  const load = async () => {
+    setLoading(true); setError("");
+    try {
+      if (!WORKER_ORIGIN) throw new Error("서버 주소가 설정되지 않았어요");
+      const resp = await fetchWithTimeout(`${WORKER_ORIGIN}/mock/rounds`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId, t: getSelfAccessToken() }),
+      }, 20000);
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || !data.success) throw new Error(data.error || `서버 오류 (${resp.status})`);
+      const list = Array.isArray(data.rounds) ? data.rounds : [];
+      setRounds(list);
+      setNotice(String(data.notice || ""));
+      setSel(prev => {
+        if (!prev) return prev;
+        const fresh = list.find(r => r.id === prev.id);
+        return fresh || prev; // 새 정보가 오면 갈아끼우고, 목록에서 빠졌어도 시험 중이면 유지
+      });
+    } catch (e) {
+      setError(e?.message || "회차를 불러오지 못했어요");
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { load(); }, [studentId]);
+
+  // 앱을 껐다 켰을 때: 시험이 돌고 있으면 곧장 그 시계 화면으로 복귀 (폰 저장의 스냅샷으로 즉시 그림)
+  useEffect(() => {
+    const st = loadMockExamState(studentId);
+    if (st && st.phase === "running" && st.snapshot) {
+      setSel(prev => prev || st.snapshot);
+      setView(st.mode === "timed50" ? "exam50" : "exam70");
+    }
+  }, [studentId]);
+
+  const card = { background: "#fff", borderRadius: 14, border: "1px solid #eee", padding: 16 };
+  const badge = (text, bg, fg) => (
+    <span style={{ fontSize: 11.5, fontWeight: 700, background: bg, color: fg, padding: "3px 9px", borderRadius: 999 }}>{text}</span>
+  );
+  const nowMs = Date.now();
+  const runningExam = exam && exam.phase === "running" && mockExamRemainingMs(exam.startedAt, exam.mode, nowMs) > 0 ? exam : null;
+  const doneExam = exam && exam.phase === "done" ? exam : null;
+
+  if (loading && !sel) return <div style={{ ...card, textAlign: "center", color: "#999", padding: 36 }}>회차를 불러오는 중…</div>;
+
+  if (error && !sel) return (
+    <div style={{ ...card, textAlign: "center", padding: 28 }}>
+      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>회차를 불러오지 못했어요</div>
+      <div style={{ fontSize: 13, color: "#999", marginBottom: 16 }}>{error}</div>
+      <button onClick={load} style={{ padding: "10px 22px", borderRadius: 10, border: "none", background: "#1C66A5", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>다시 시도</button>
+    </div>
+  );
+
+  // ── 답 입력 화면 ──
+  if (sel && view === "answer") {
+    return (
+      <MockAnswerScreen
+        studentId={studentId}
+        round={sel}
+        exam={exam}
+        onBack={() => setView("menu")}
+        onSubmitted={(res, noL) => {
+          setExam(null);            // 끝난 시험 기록 청소 (제출 완료)
+          setResult({ ...res, noListening: res.noListening != null ? res.noListening : noL });
+          setView("result");
+          load();                   // 지난 기록 배지 갱신
+        }}
+      />
+    );
+  }
+
+  // ── 결과 화면 ──
+  if (sel && view === "result" && result) {
+    return <MockResultScreen round={sel} result={result} onDone={() => { setResult(null); setView("menu"); }} />;
+  }
+
+  // ── 시계 화면 ──
+  if (sel && (view === "exam70" || view === "exam50")) {
+    return (
+      <MockTimerScreen
+        studentId={studentId}
+        round={sel}
+        mode={view === "exam50" ? "timed50" : "timed70"}
+        exam={exam}
+        onExamChange={setExam}
+        onBack={() => setView("menu")}
+      />
+    );
+  }
+
+  // ── 회차 메뉴 화면 ──
+  if (sel) {
+    const r = sel;
+    const otherRunning = runningExam && runningExam.roundId !== r.id;      // 다른 회차 시험이 도는 중
+    const mineRunning = runningExam && runningExam.roundId === r.id ? runningExam : null;
+    const mineDone = doneExam && doneExam.roundId === r.id ? doneExam : null;
+    const remainTxt = runningExam ? fmtMockClock(mockExamRemainingMs(runningExam.startedAt, runningExam.mode, nowMs)) : "";
+
+    const menuBtn = (enabled) => ({
+      width: "100%", display: "flex", alignItems: "center", gap: 12, textAlign: "left",
+      padding: "15px 16px", marginBottom: 10, borderRadius: 12, cursor: enabled ? "pointer" : "default",
+      border: enabled ? "1.5px solid #d8dfe8" : "1px solid #eee",
+      background: enabled ? "#fff" : "#fafafa", opacity: enabled ? 1 : 0.6,
+    });
+
+    // 이미 끝난 시험 기록이 남아 있는데(답 입력 전) 새로 시작하려는 경우 확인
+    const guardRestart = (go) => {
+      if (mineDone) {
+        if (!window.confirm("끝낸 시험의 답을 아직 입력하지 않았어요.\n새로 시작하면 시계가 처음부터 다시 갑니다. 새로 시작할까요?")) return;
+        setExam(null);
+      }
+      go();
+    };
+
+    const attempts = Array.isArray(r.myAttempts) ? r.myAttempts : [];
+    return (
+      <div>
+        <button onClick={() => { setSel(null); setView("menu"); }} style={{ border: "none", background: "transparent", color: "#1C66A5", fontSize: 14, fontWeight: 700, cursor: "pointer", padding: "2px 0", marginBottom: 10 }}>← 회차 목록</button>
+        <div style={card}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 18, fontWeight: 800 }}>{mockRoundTitle(r)}</div>
+            {r.note && MOCK_NOTE_COLORS[r.note] && badge(r.note, MOCK_NOTE_COLORS[r.note].bg, MOCK_NOTE_COLORS[r.note].fg)}
+          </div>
+          <div style={{ fontSize: 13, color: "#999", marginTop: 4, marginBottom: 16 }}>
+            {r.host ? `${r.host} · ` : ""}45문항 · 100점 (듣기 37 + 독해 63)
+          </div>
+
+          {otherRunning && (
+            <div style={{ background: "#fff8f0", border: "1px solid #ffd9ad", borderRadius: 10, padding: "10px 12px", marginBottom: 12, fontSize: 13, color: "#b3641b", lineHeight: 1.6 }}>
+              지금 <b>{runningExam.snapshot ? mockRoundTitle(runningExam.snapshot) : "다른 회차"}</b> 시험이 진행 중이에요 (남은 {remainTxt})<br />
+              <button onClick={() => { setSel(runningExam.snapshot || r); setView(runningExam.mode === "timed50" ? "exam50" : "exam70"); }} style={{ marginTop: 6, border: "none", background: "#e67e22", color: "#fff", borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>이어서 하기</button>
+            </div>
+          )}
+          {mineDone && (
+            <div style={{ background: "#e8f8f5", border: "1px solid #b7ecdf", borderRadius: 10, padding: "10px 12px", marginBottom: 12, fontSize: 13, color: "#0b7a5c", lineHeight: 1.6 }}>
+              시험이 끝났어요{mineDone.noListening ? " (듣기 제외)" : ""}. 이제 [답 입력]에서 답을 옮겨 찍으면 돼요.
+            </div>
+          )}
+
+          <button style={menuBtn(r.hasAudio && !otherRunning)} onClick={() => {
+            if (!r.hasAudio || otherRunning) return;
+            if (mineRunning && mineRunning.mode === "timed50") { alert("듣기 없이 50분 시험이 진행 중이에요.\n먼저 [시험 끝내기]를 해야 듣기를 시작할 수 있어요."); return; }
+            guardRestart(() => setView("exam70"));
+          }}>
+            <span style={{ fontSize: 24 }}>🎧</span>
+            <span>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#2A2A28" }}>{mineRunning && mineRunning.mode === "timed70" ? "듣기로 돌아가기" : "듣기"}</div>
+              <div style={{ fontSize: 12, color: "#999", marginTop: 2 }}>
+                {!r.hasAudio ? "듣기 파일이 아직 없어요"
+                  : mineRunning && mineRunning.mode === "timed70" ? `시험 진행 중 · 남은 ${remainTxt}`
+                  : "재생하면 70분 시험이 시작돼요"}
+              </div>
+            </span>
+          </button>
+
+          <button style={menuBtn(!otherRunning)} onClick={() => {
+            if (otherRunning) return;
+            if (mineRunning && mineRunning.mode === "timed70") { alert("듣기 70분 시험이 진행 중이에요.\n먼저 [시험 끝내기]를 해야 해요."); return; }
+            guardRestart(() => setView("exam50"));
+          }}>
+            <span style={{ fontSize: 24 }}>⏱</span>
+            <span>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#2A2A28" }}>{mineRunning && mineRunning.mode === "timed50" ? "시계로 돌아가기" : "듣기 없이 풀기 (50분)"}</div>
+              <div style={{ fontSize: 12, color: "#999", marginTop: 2 }}>
+                {mineRunning && mineRunning.mode === "timed50" ? `시험 진행 중 · 남은 ${remainTxt}` : "독해만 풀 때 · 듣기 37점은 만점으로 쳐요"}
+              </div>
+            </span>
+          </button>
+
+          <button style={menuBtn(!otherRunning && !mineRunning)} onClick={() => {
+            if (otherRunning) return;
+            if (mineRunning) { alert(`시험이 진행 중이에요!\n시험이 끝나면 답 입력이 열려요. (남은 ${remainTxt})`); return; }
+            setView("answer");
+          }}>
+            <span style={{ fontSize: 24 }}>✍️</span>
+            <span>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#2A2A28" }}>답 입력</div>
+              <div style={{ fontSize: 12, color: "#999", marginTop: 2 }}>
+                {mineRunning ? `시험이 끝나면 열려요 · 남은 ${remainTxt}`
+                  : mineDone ? `방금 끝낸 시험${mineDone.noListening ? " (듣기 제외)" : ""} 답을 옮겨 찍어요`
+                  : "다 풀고 나서 손가락으로 옮겨 찍어요 (시계 없이도 돼요)"}
+              </div>
+            </span>
+          </button>
+
+          <button style={menuBtn(false)}>
+            <span style={{ fontSize: 24 }}>📷</span>
+            <span>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#2A2A28" }}>OMR 카드 사진</div>
+              <div style={{ fontSize: 12, color: "#999", marginTop: 2 }}>준비 중이에요</div>
+            </span>
+          </button>
+
+          {attempts.length > 0 && (
+            <div style={{ marginTop: 14, borderTop: "1px solid #f0f0f0", paddingTop: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#2A2A28", marginBottom: 8 }}>지난 기록</div>
+              {attempts.slice().reverse().map((a, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#555", padding: "4px 0" }}>
+                  <span style={{ color: "#999", minWidth: 34 }}>{fmtMockAttemptDate(a.at)}</span>
+                  <span style={{ fontWeight: 800 }}>{a.score}점</span>
+                  {a.band ? <span style={{ color: "#1C66A5", fontWeight: 700 }}>{a.band}등급</span> : null}
+                  {a.noListening && badge("듣기 제외", "#fff4e6", "#e67e22")}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── 회차 목록 화면 ──
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <div style={{ fontSize: 15, fontWeight: 800 }}>✏️ 모의고사</div>
+        <button onClick={load} style={{ border: "1px solid #e5e5e5", background: "#fff", color: "#666", fontSize: 12.5, fontWeight: 700, borderRadius: 999, padding: "6px 13px", cursor: "pointer" }}>새로고침</button>
+      </div>
+      {runningExam && (
+        <button onClick={() => { setSel(runningExam.snapshot); setView(runningExam.mode === "timed50" ? "exam50" : "exam70"); }} style={{ ...card, width: "100%", textAlign: "left", display: "block", marginBottom: 10, cursor: "pointer", padding: 14, borderColor: "#ffd9ad", background: "#fff8f0" }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: "#b3641b" }}>⏱ 시험 진행 중 — {runningExam.snapshot ? mockRoundTitle(runningExam.snapshot) : ""}</div>
+          <div style={{ fontSize: 12.5, color: "#b3641b", marginTop: 3 }}>남은 {fmtMockClock(mockExamRemainingMs(runningExam.startedAt, runningExam.mode, nowMs))} · 누르면 이어서 해요</div>
+        </button>
+      )}
+      {rounds.length === 0 ? (
+        <div style={{ ...card, textAlign: "center", color: "#999", padding: 32, fontSize: 14, lineHeight: 1.7 }}>
+          {notice || <>아직 열린 회차가 없어요.<br />선생님이 회차를 열면 여기에 나타나요.</>}
+        </div>
+      ) : rounds.map((r) => {
+        const attempts = Array.isArray(r.myAttempts) ? r.myAttempts : [];
+        const last = attempts.length ? attempts[attempts.length - 1] : null;
+        return (
+          <button key={r.id} onClick={() => { setSel(r); setView("menu"); }} style={{ ...card, width: "100%", textAlign: "left", display: "block", marginBottom: 10, cursor: "pointer", padding: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 15.5, fontWeight: 800, color: "#2A2A28" }}>{mockRoundTitle(r)}</span>
+              {r.note && MOCK_NOTE_COLORS[r.note] && badge(r.note, MOCK_NOTE_COLORS[r.note].bg, MOCK_NOTE_COLORS[r.note].fg)}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 7 }}>
+              {r.host && <span style={{ fontSize: 12, color: "#999", marginRight: 2 }}>{r.host}</span>}
+              {r.hasAudio ? badge("🎧 듣기 있음", "#e8f8f5", "#00926f") : badge("듣기 없음", "#f4f4f4", "#999")}
+              {last && badge(`지난 기록 ${last.score}점${attempts.length > 1 ? ` · ${attempts.length}회` : ""}`, "#eef1ff", "#1C66A5")}
+            </div>
+          </button>
+        );
+      })}
+      <div style={{ fontSize: 12, color: "#bbb", textAlign: "center", marginTop: 6, lineHeight: 1.6 }}>
+        문제지는 학원에서 종이로 받아요 · 점수는 제출하면 바로 나와요
+      </div>
+    </div>
+  );
+}
+
 // ─── 일정 달력 탭 ───
 // 등원 요일(시간표) · 학원 휴원일 · 내 학교 시험 · 지난 출석 · 보강을 월 달력 한 장에서 확인한다.
 function StudentCalendarTab({ student, makeups, customHolidays, exams, attLog, attStatus }) {
@@ -3484,6 +4248,7 @@ export default function App() {
         {[
           { key: "tasks", label: "📋 숙제/과제" },
           { key: "cal", label: "일정" },
+          ...(getStudentLevelForDday(student) === "high" ? [{ key: "mock", label: "✏️ 모의고사" }] : []),
           ...(VOCA_TAB_ENABLED ? [{ key: "voca", label: "📚 단어장" }] : []),
           ...(studentVideos.length > 0 ? [{ key: "videos", label: "🎬 강의 영상" }] : []),
           ...(hasVocabWrong ? [{ key: "vocabWrong", label: "📝 오답 단어" }] : []),
@@ -3570,6 +4335,10 @@ export default function App() {
         )}
         {tab === "cal" && (
           <StudentCalendarTab student={student} makeups={makeups} customHolidays={customHolidays} exams={exams} attLog={attLog} attStatus={attStatus} />
+        )}
+
+        {tab === "mock" && (
+          <MockExamTab studentId={studentId} />
         )}
 
         {VOCA_TAB_ENABLED && tab === "voca" && (() => {
