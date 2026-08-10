@@ -456,7 +456,8 @@ const normalizeVocabWrongWordsForStudent = (source = {}, studentId) => {
 const loadStudentBundleFromWorker = async (studentId) => {
   const url = resolveStudentSyncUrl(studentId);
   if (!url) throw new Error("STUDENT_SYNC_API_URL 미설정");
-  const resp = await fetchWithTimeout(url, { method: "GET", cache: "no-store" }, 10000);
+  // [08-10] 기다리는 시간 10초 → 20초. 자료가 커져 서버가 느린 날, 폰 인터넷이 느린 학생도 끊기지 않게.
+  const resp = await fetchWithTimeout(url, { method: "GET", cache: "no-store" }, 20000);
   if (!resp.ok) {
     // [08-07] "서버가 거절한 것"과 "서버가 아픈 것"을 가른다.
     //  401·403·404 = 토큰이 죽었거나 그런 학생이 없다는 뜻 → 폰 저장본으로 우회하면 안 된다.
@@ -522,6 +523,48 @@ const loadStudentBundle = async (studentId) => {
 
 const getStudentBundleStorageKey = (studentId) => `maple_student_bundle_${studentId}`;
 
+// ─── [08-10] "그만둔 학생" 판정 유예 (3진 아웃) ───
+// 서버가 잠깐 잘못 답하는 순간(빈 명단, 순간적인 403·404)에도 예전 코드는
+// 곧바로 차단 화면을 띄우고 폰 백업까지 지웠다. 지운 백업은 되돌릴 수 없다.
+// 이제는 "같은 답이 10분 안에 3번 연속" 왔을 때만 진짜 그만둔 학생으로 보고 차단한다.
+// 정말 그만둔 학생도 자동 새로고침(30초) 덕분에 1분 정도면 3번이 채워져 차단 화면을 본다.
+const WITHDRAWN_STRIKE_LIMIT = 3;
+const WITHDRAWN_STRIKE_WINDOW_MS = 10 * 60 * 1000; // 10분 넘게 지난 기록은 "연속"으로 안 친다
+const getWithdrawnStrikeKey = (studentId) => `maple_withdrawn_strikes_${studentId}`;
+const addWithdrawnStrike = (studentId) => {
+  try {
+    const key = getWithdrawnStrikeKey(studentId);
+    let rec = null;
+    try { rec = JSON.parse(localStorage.getItem(key) || "null"); } catch (e) { rec = null; }
+    const now = Date.now();
+    const fresh = rec && Number(rec.n) > 0 && (now - (Number(rec.at) || 0) < WITHDRAWN_STRIKE_WINDOW_MS);
+    const n = (fresh ? Number(rec.n) : 0) + 1;
+    localStorage.setItem(key, JSON.stringify({ n, at: now }));
+    return n;
+  } catch (e) {
+    // 폰 저장이 아예 안 되는 환경이면 세는 것 자체가 불가능 — 예전처럼 즉시 판정한다.
+    return WITHDRAWN_STRIKE_LIMIT;
+  }
+};
+const clearWithdrawnStrikes = (studentId) => {
+  try { localStorage.removeItem(getWithdrawnStrikeKey(studentId)); } catch (e) { /* ignore */ }
+};
+
+// ─── [08-10] 연결 오류 화면용 짧은 오류 코드 ───
+// 학생이 "E500 떠요"라고만 알려줘도 원장이 원인을 바로 좁힐 수 있게 한다.
+//  E500·E429 등 숫자 = 서버가 그 번호로 거절함 / E-시간초과 = 20초 안에 답이 안 옴
+//  E-네트워크 = 인터넷 끊김 / E-설정없음 = 앱 빌드에 서버 주소가 빠짐 / E-빈응답 = 서버 답에 알맹이가 없음
+const makeLoadErrorCode = (e) => {
+  const msg = String(e?.message || "");
+  const m = msg.match(/API (?:오류|거절): (\d+)/);
+  if (m) return "E" + m[1];
+  if (/응답 지연/.test(msg)) return "E-시간초과";
+  if (/미설정|주소가 없습니다/.test(msg)) return "E-설정없음";
+  if (/찾을 수 없습니다|목록에 없는/.test(msg)) return "E-빈응답";
+  if (e && e.name === "TypeError") return "E-네트워크";
+  return "E-알수없음";
+};
+
 // [08-08] 학원 서버에 기록을 저장할 때 "본인 확인 값"으로 함께 보내는 링크의 t 값.
 // 주소가 없거나 값이 없으면 빈 문자열 — 워커는 값이 없으면 예전처럼 받아준다.
 const getSelfAccessToken = () => {
@@ -536,8 +579,9 @@ const restoreStudentBundleFromLocal = (studentId) => {
     if (!parsed?.bundle || !parsed.bundle.student) return null;
     // [08-07] 예전 판(정지를 안 보던 때)이 저장해 둔 자료로 그만둔 학생이 열리는 것을 막는다.
     if (isWithdrawnStudent(parsed.bundle.student)) return null;
-    // 오래된 백업을 그대로 보여주면 혼란이 크므로 24시간 이내 자료만 사용한다.
-    if (Date.now() - (parsed.savedAt || 0) > 24 * 60 * 60 * 1000) return null;
+    // [08-10] 백업 유효기간 24시간 → 7일. 학생은 보통 이틀에 한 번 오므로 24시간이면 안전망이 거의 못 쓰였다.
+    //         서버가 아픈 날에도 최근 일주일 안에 한 번이라도 열었던 학생은 화면이 뜬다.
+    if (Date.now() - (parsed.savedAt || 0) > 7 * 24 * 60 * 60 * 1000) return null;
     return { ...parsed.bundle, source: "local-backup" };
   } catch (e) {
     return null;
@@ -2443,6 +2487,7 @@ export default function App() {
   }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [loadErrorCode, setLoadErrorCode] = useState(""); // [08-10] 연결 오류 화면에 표시할 짧은 오류 코드
   const [withdrawnName, setWithdrawnName] = useState(""); // [08-07] 그만둔 학생 안내에 이름을 넣기 위해
   const [masterWithdrawn, setMasterWithdrawn] = useState(false); // [08-07] 마스터가 그만둔 학생 화면을 볼 때 띄우는 띠
   const [student, setStudent] = useState(null);
@@ -2596,20 +2641,30 @@ export default function App() {
       applyBundle(bundle);
       saveStudentBundleToLocal(studentId, bundle);
       withdrawnRef.current = false; // 다시 등록되면 여기로 들어와 잠금이 풀린다
+      clearWithdrawnStrikes(studentId); // [08-10] 정상 응답이 오면 3진 아웃 카운트를 0으로 되돌린다
       setError(null);
+      setLoadErrorCode(""); // [08-10]
     } catch (e) {
       console.error("Load error:", e);
-      // [08-07] 그만둔(삭제·정지) 학생은 폰에 남아 있던 자료로도 열리면 안 된다 — 저장본을 지우고 안내만 띄운다.
+      // [08-07→08-10] 그만둔(삭제·정지) 학생 차단 — 단, 한 번에 판정하지 않는다.
+      // 서버가 잠깐 잘못 답하는 순간(빈 명단·순간 403/404)에 멀쩡한 학생의 백업을 지우면 되돌릴 수 없기 때문.
+      // 10분 안에 같은 답이 3번 연속 왔을 때만 차단 + 백업 삭제를 실행한다.
       if (e && e.code === "withdrawn") {
-        try { localStorage.removeItem(getStudentBundleStorageKey(studentId)); } catch (err) { /* ignore */ }
-        withdrawnRef.current = true;
-        setWithdrawnName(String(e.studentName || ""));
-        setError("withdrawn");
-        return;
+        const strikes = addWithdrawnStrike(studentId);
+        if (strikes >= WITHDRAWN_STRIKE_LIMIT) {
+          try { localStorage.removeItem(getStudentBundleStorageKey(studentId)); } catch (err) { /* ignore */ }
+          withdrawnRef.current = true;
+          setWithdrawnName(String(e.studentName || ""));
+          setError("withdrawn");
+          return;
+        }
+        // 아직 판정 전(1·2번째): 차단하지 않고 아래로 내려가 폰 백업으로 화면을 지킨다.
+        // 백업이 없으면 연결 오류 화면이 뜨고, 30초 자동 새로고침이 3번째 확인을 대신해 준다.
       }
       // [08-07] 차단 화면에서 [다시 확인]을 눌렀는데 인터넷이 안 되는 경우.
       //         "연결 오류" 화면으로 넘기지 말고 차단 화면을 그대로 둔다.
       if (withdrawnRef.current) return;
+      setLoadErrorCode(makeLoadErrorCode(e)); // [08-10] 어떤 이유로 실패했는지 짧은 코드로 기억해 둔다
       const localBundle = restoreStudentBundleFromLocal(studentId);
       if (localBundle) {
         applyBundle(localBundle);
@@ -3132,6 +3187,8 @@ export default function App() {
           <div style={{ fontSize: 18, fontWeight: 700, color: "#333", marginBottom: 8 }}>연결 오류</div>
           <div style={{ fontSize: 14, color: "#999", marginBottom: 20 }}>잠시 후 다시 시도해주세요</div>
           <button onClick={() => window.location.reload()} style={{ padding: "10px 24px", borderRadius: 10, border: "none", background: "#1C66A5", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>다시 시도</button>
+          {/* [08-10] 학생이 이 코드만 알려줘도 원장이 원인을 바로 좁힐 수 있다 (E500=서버 오류, E-시간초과=20초 무응답, E-네트워크=인터넷 끊김 등) */}
+          <div style={{ fontSize: 11.5, color: "#c3c9d8", marginTop: 16 }}>오류 코드: {loadErrorCode || "E-알수없음"}</div>
         </div>
       </div>
     );
