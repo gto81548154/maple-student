@@ -6,9 +6,9 @@
 <title>마플보카 — 보카바이블 A·B</title>
 <style>
 :root{
-  --paper:#F7F6F2; --card:#FFFFFF; --ink:#1E2B3C; --ink-soft:#5A6B80;
-  --line:#E3E1DA; --crimson:#B3362B; --crimson-soft:#F6E4E1;
-  --teal:#1E7F6E; --teal-soft:#E0F0EC; --gold:#B8860B; --gold-soft:#F7EFDC;
+  --paper:#F7F5EF; --card:#FFFFFF; --ink:#182848; --ink-soft:#75726B;
+  --line:#E5E2D8; --crimson:#C0392B; --crimson-soft:#F6E4E1;
+  --teal:#1C66A5; --teal-soft:#E3EDF6; --gold:#E8890C; --gold-soft:#FBF1DE;
   --focus:#2456A6; --on-fill:#fff;
 }
 /* [08-06] 블랙홀 모드 — 색 변수만 갈아끼워 화면 전체를 어둡게 한다.
@@ -16,7 +16,7 @@
 html.bh{
   --paper:#12181F; --card:#1A222C; --ink:#E8EDF3; --ink-soft:#93A3B5;
   --line:#2C3A4A; --crimson:#F0999B; --crimson-soft:#3A2226;
-  --teal:#5DCAA5; --teal-soft:#173028; --gold:#E0B95C; --gold-soft:#332B18;
+  --teal:#7FB0F0; --teal-soft:#1B2A3E; --gold:#E0B95C; --gold-soft:#332B18;
   --focus:#7FB0F0; --on-fill:#12181F;
 }
 html.bh .toggle::after{background:#E8EDF3}
@@ -184,8 +184,8 @@ header{position:sticky; top:0; z-index:10; background:var(--paper);
 .aicard{border:1.5px solid var(--line); border-radius:11px; padding:10px 12px; margin-top:8px; text-align:left; background:var(--card)}
 .aicard .w{font-weight:800}
 .aicard .vd{font-size:12px; font-weight:800; float:right}
-.aicard .vd.ok{color:#1a7f4e}
-.aicard .vd.no{color:#b3402a}
+.aicard .vd.ok{color:var(--teal)}
+.aicard .vd.no{color:var(--crimson)}
 .aicard .d{font-size:12.5px; color:var(--ink-soft); margin-top:4px; line-height:1.5}
 .sumcard{background:var(--card); border:1px solid var(--line); border-radius:16px;
   padding:26px 20px; text-align:center}
