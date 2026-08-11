@@ -178,7 +178,7 @@ const setupStudentPwa = () => {
     const fav = head.querySelector('link[rel="icon"], link[rel="shortcut icon"]') || (() => { const l = document.createElement("link"); l.rel = "icon"; head.appendChild(l); return l; })();
     fav.type = "image/png";
     fav.href = `${PWA_ICON_BASE}/icon-192.png`;
-    ensure('meta[name="theme-color"]', () => { const m = document.createElement("meta"); m.name = "theme-color"; m.content = "#16213e"; return m; });
+    ensure('meta[name="theme-color"]', () => { const m = document.createElement("meta"); m.name = "theme-color"; m.content = "#182848"; return m; });
     ensure('meta[name="apple-mobile-web-app-capable"]', () => { const m = document.createElement("meta"); m.name = "apple-mobile-web-app-capable"; m.content = "yes"; return m; });
     ensure('meta[name="apple-mobile-web-app-title"]', () => { const m = document.createElement("meta"); m.name = "apple-mobile-web-app-title"; m.content = "마플영어"; return m; });
   } catch (e) { console.warn("PWA 셋업 실패:", e?.message || e); }
@@ -3131,15 +3131,15 @@ function MasterHome({ mk }) {
           scrollbarWidth: "none",
         }}>
           {[
-            { key: "voca", label: "📚 단어장" },
-            { key: "videos", label: "🎬 강의 영상" },
+            { key: "voca", label: "단어장" },
+            { key: "videos", label: "강의 영상" },
             { key: "students", label: "👥 학생" },
           ].map((t) => (
             <button key={t.key} onClick={() => setTab(t.key)} style={{
               flex: "1 0 auto", whiteSpace: "nowrap", padding: "14px 12px", border: "none", cursor: "pointer", background: "transparent",
               fontSize: 14, fontWeight: tab === t.key ? 700 : 500,
-              color: tab === t.key ? "#2A2A28" : "#999",
-              borderBottom: tab === t.key ? "2.5px solid #2A2A28" : "2.5px solid transparent",
+              color: tab === t.key ? "#182848" : "#9aa0ab",
+              borderBottom: tab === t.key ? "2.5px solid #182848" : "2.5px solid transparent",
               fontFamily: "inherit",
             }}>{t.label}</button>
           ))}
@@ -4076,7 +4076,7 @@ export default function App() {
           </div>
         </div>
       )}
-      <div style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)", padding: "20px 24px 24px", color: "#fff" }}>
+      <div style={{ background: "#182848", padding: "20px 24px 24px", color: "#fff" }}>
         <div style={{ maxWidth: MAX_W, margin: "0 auto" }}>
         {/* 브랜드 로고 락업 */}
         <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 16 }}>
@@ -4143,7 +4143,7 @@ export default function App() {
         {pinnedMessages.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {pinnedMessages.map(([dateKey, rec]) => (
-              <div key={dateKey} style={{ background: "rgba(255,255,255,0.08)", borderRadius: 12, padding: "12px 14px", borderLeft: "3px solid #ffd43b" }}>
+              <div key={dateKey} style={{ background: "rgba(255,255,255,0.09)", borderRadius: 10, padding: "12px 14px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                   <span style={{ fontSize: 12 }}>📌</span>
                   <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)" }}>
@@ -4246,19 +4246,19 @@ export default function App() {
           scrollbarWidth: "none",
         }}>
         {[
-          { key: "tasks", label: "📋 숙제/과제" },
+          { key: "tasks", label: "숙제/과제" },
           { key: "cal", label: "일정" },
-          ...(getStudentLevelForDday(student) === "high" ? [{ key: "mock", label: "✏️ 모의고사" }] : []),
-          ...(VOCA_TAB_ENABLED ? [{ key: "voca", label: "📚 단어장" }] : []),
-          ...(studentVideos.length > 0 ? [{ key: "videos", label: "🎬 강의 영상" }] : []),
-          ...(hasVocabWrong ? [{ key: "vocabWrong", label: "📝 오답 단어" }] : []),
-          ...((progressTree?.lanes || []).length ? [{ key: "progress", label: "🌳 진도" }] : []),
+          ...(getStudentLevelForDday(student) === "high" ? [{ key: "mock", label: "모의고사" }] : []),
+          ...(VOCA_TAB_ENABLED ? [{ key: "voca", label: "단어장" }] : []),
+          ...(studentVideos.length > 0 ? [{ key: "videos", label: "강의 영상" }] : []),
+          ...(hasVocabWrong ? [{ key: "vocabWrong", label: "오답 단어" }] : []),
+          ...((progressTree?.lanes || []).length ? [{ key: "progress", label: "진도" }] : []),
         ].map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
             flex: "1 0 auto", whiteSpace: "nowrap", padding: "14px 12px", border: "none", cursor: "pointer",
             background: "transparent", fontSize: 14, fontWeight: tab === t.key ? 700 : 500,
-            color: tab === t.key ? "#2A2A28" : "#999",
-            borderBottom: tab === t.key ? "2.5px solid #2A2A28" : "2.5px solid transparent",
+            color: tab === t.key ? "#182848" : "#9aa0ab",
+            borderBottom: tab === t.key ? "2.5px solid #182848" : "2.5px solid transparent",
           }}>{t.label}</button>
         ))}
         </div>
@@ -4272,11 +4272,10 @@ export default function App() {
               <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 12, WebkitOverflowScrolling: "touch" }}>
                 {allDates.map((d) => (
                   <button key={d} onClick={() => setSelectedDate(d)} style={{
-                    flexShrink: 0, padding: "8px 16px", borderRadius: 20, border: "none",
+                    flexShrink: 0, padding: "9px 17px", borderRadius: 10, border: d === activeDate ? "1px solid #182848" : "1px solid #e5e7ec",
                     cursor: "pointer", fontSize: 13, fontWeight: 600,
-                    background: d === activeDate ? "#2A2A28" : "#fff",
-                    color: d === activeDate ? "#fff" : "#666",
-                    boxShadow: d === activeDate ? "0 2px 8px rgba(26,26,46,0.25)" : "0 1px 3px rgba(0,0,0,0.06)",
+                    background: d === activeDate ? "#182848" : "#fff",
+                    color: d === activeDate ? "#fff" : "#6b7280",
                     whiteSpace: "nowrap",
                   }}>{isToday(d) ? "오늘" : fmtDateShort(d)}</button>
                 ))}
@@ -4285,13 +4284,12 @@ export default function App() {
             {allDates.length > 0 && (
               <div style={{ fontSize: 16, fontWeight: 700, color: "#2A2A28", margin: "12px 0 6px" }}>
                 {fmtDateKR(activeDate)}
-                {isToday(activeDate) && <span style={{ fontSize: 12, color: "#1C66A5", marginLeft: 8, fontWeight: 600 }}>TODAY</span>}
+                {isToday(activeDate) && <span style={{ fontSize: 12, color: "#2A6FDB", marginLeft: 8, fontWeight: 800 }}>오늘</span>}
               </div>
             )}
             {/* [추가 07-30] 학생은 체크할 수 없다. 눌러도 반응이 없어 고장으로 오해하던 것을 안내 한 줄로 막는다. */}
             {allDates.length > 0 && (
               <div style={{ display: "flex", alignItems: "center", gap: 6, margin: totalTasks > 0 ? "0 0 10px" : "0 0 16px", fontSize: 12, color: "#999", lineHeight: 1.5 }}>
-                <span style={{ fontSize: 13, flexShrink: 0 }}>ℹ️</span>
                 <span>체크와 통과 도장은 조교 선생님이 찍어줘요</span>
               </div>
             )}
@@ -4299,7 +4297,7 @@ export default function App() {
             {allDates.length > 0 && totalTasks > 0 && (
               <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 16px" }}>
                 <div style={{ flex: 1, height: 7, borderRadius: 4, background: "#e9ecf2", overflow: "hidden" }}>
-                  <div style={{ width: `${pct}%`, height: "100%", borderRadius: 4, background: pct === 100 ? "#00b894" : "#1C66A5", transition: "width .3s" }} />
+                  <div style={{ width: `${pct}%`, height: "100%", borderRadius: 4, background: pct === 100 ? "#00b894" : "#2A6FDB", transition: "width .3s" }} />
                 </div>
                 <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 800, color: pct === 100 ? "#00b894" : "#666" }}>
                   {doneTasks}/{totalTasks}
@@ -4397,7 +4395,7 @@ export default function App() {
                   return (
                     <button key={bn} onClick={() => setSelectedVideoBook(bn)} style={{
                       flexShrink: 0, padding: "8px 14px", borderRadius: 20,
-                      border: isActive ? "1.5px solid #1C66A5" : "1px solid #e0e0e0",
+                      border: isActive ? "1.5px solid #2A6FDB" : "1px solid #e0e0e0",
                       background: isActive ? "#1C66A5" : "#fff",
                       color: isActive ? "#fff" : "#555",
                       fontSize: 13, fontWeight: 700, cursor: "pointer",
@@ -5284,17 +5282,17 @@ function HomeworkItem({ item, stampDate, isLast, isCheckedFn, isFailedFn, getFai
   const INDENT_LEFT = 50;
 
   return (
-    <div style={{ borderBottom: !isLast ? "1px solid #f5f5f5" : "none", background: done ? "#f0fdf4" : fail ? "#fef2f2" : "#fff" }}>
+    <div style={{ borderBottom: !isLast ? "1px solid #f2f3f6" : "none", background: "#fff" }}>
       {/* 항목 행 (체크박스 + 텍스트만). 영상 ▶ 버튼이 같이 있으면 다음 줄에 자리를 비워줘야 하므로 paddingBottom을 줄인다. */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: showVideoButtons ? "14px 16px 8px" : "14px 16px" }}>
         <div style={{
-          width: 22, height: 22, borderRadius: 7, flexShrink: 0,
-          border: done || fail ? "none" : "2px solid #e0e0e0",
-          background: done ? "linear-gradient(135deg, #00b894, #00cec9)" : fail ? "linear-gradient(135deg, #ef4444, #f87171)" : "#f9f9f9",
+          width: 22, height: 22, borderRadius: 8, flexShrink: 0,
+          border: done ? "none" : fail ? "2px solid #E24B4A" : "2px solid #d4d7de",
+          background: done ? "#182848" : fail ? "#fdf0ef" : "#fff",
           display: "flex", alignItems: "center", justifyContent: "center",
         }}>
           {done && <span style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>✓</span>}
-          {fail && <span style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>✕</span>}
+          {fail && <span style={{ color: "#E24B4A", fontSize: 13, fontWeight: 700 }}>✕</span>}
         </div>
         {(() => {
           // "->" 또는 "→" 화살표 뒤의 부분을 보라색 뱃지로 분리 (예: "...준비 -> 수업-랜덤 해석 test")
@@ -5304,13 +5302,13 @@ function HomeworkItem({ item, stampDate, isLast, isCheckedFn, isFailedFn, getFai
             const badgeText = arrowSplit.slice(1).join(' → ').trim();
             return (
               <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0 }}>
-                <span style={{ fontSize: 14, lineHeight: 1.5, color: done ? "#999" : "#333", textDecoration: done ? "line-through" : "none" }}>{mainText}</span>
-                <span style={{ background: "#f3e8ff", color: "#7c3aed", fontSize: 11, padding: "3px 9px", borderRadius: 10, fontWeight: 600, whiteSpace: "nowrap" }}>{badgeText}</span>
+                <span style={{ fontSize: 15, lineHeight: 1.5, color: done ? "#9aa0ab" : "#23252B", textDecoration: done ? "line-through" : "none" }}>{mainText}</span>
+                <span style={{ background: "#eef3fc", color: "#2A6FDB", fontSize: 11, padding: "3px 9px", borderRadius: 8, fontWeight: 700, whiteSpace: "nowrap" }}>{badgeText}</span>
               </div>
             );
           }
           return (
-            <span style={{ flex: 1, fontSize: 14, lineHeight: 1.5, color: done ? "#999" : "#333", textDecoration: done ? "line-through" : "none", minWidth: 0 }}>{item.text}</span>
+            <span style={{ flex: 1, fontSize: 15, lineHeight: 1.5, color: done ? "#9aa0ab" : "#23252B", textDecoration: done ? "line-through" : "none", minWidth: 0 }}>{item.text}</span>
           );
         })()}
         {/* [도장] 조교가 원장앱에서 체크 완료한 항목 = "통과" 도장 마크 (학생은 직접 체크 불가 — 도장은 조교 서명) */}
@@ -5327,7 +5325,7 @@ function HomeworkItem({ item, stampDate, isLast, isCheckedFn, isFailedFn, getFai
         )}
         {/* [도장] 미완료(재시) — 애니메이션 없이 뱃지만 (확정안) */}
         {fail && (
-          <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: "#A32D2D", background: "#F7C1C1", padding: "3px 9px", borderRadius: 999, whiteSpace: "nowrap" }}>재시</span>
+          <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: "#E24B4A", background: "#fdf0ef", padding: "4px 9px", borderRadius: 7, whiteSpace: "nowrap" }}>재시</span>
         )}
       </div>
 
@@ -5339,9 +5337,9 @@ function HomeworkItem({ item, stampDate, isLast, isCheckedFn, isFailedFn, getFai
             return (
               <button key={v.id} onClick={(e) => { e.stopPropagation(); toggleVideo(v); }} style={{
                 padding: "5px 11px", borderRadius: 7,
-                border: isOpen ? "1.5px solid #1C66A5" : "1px solid #d0d4e0",
-                background: isOpen ? "#eef1ff" : "#fff",
-                color: isOpen ? "#1C66A5" : "#555",
+                border: isOpen ? "1.5px solid #2A6FDB" : "1px solid #d0d4e0",
+                background: isOpen ? "#eef3fc" : "#fff",
+                color: isOpen ? "#2A6FDB" : "#555",
                 fontSize: 12, fontWeight: 700, cursor: "pointer",
                 display: "inline-flex", alignItems: "center", gap: 4, transition: "all 0.15s", whiteSpace: "nowrap",
               }}>
@@ -5354,8 +5352,8 @@ function HomeworkItem({ item, stampDate, isLast, isCheckedFn, isFailedFn, getFai
 
       {/* 미완료 사유 표시 (fail이고 사유가 있을 때만) — 텍스트와 정렬되도록 padding-left 50 (체크박스 22 + gap 12 + padding 16) */}
       {fail && failReason && (
-        <div style={{ padding: `0 16px 12px ${INDENT_LEFT}px`, fontSize: 12, color: "#dc2626", lineHeight: 1.4 }}>
-          💬 {failReason}
+        <div style={{ padding: `0 16px 12px ${INDENT_LEFT}px`, fontSize: 12.5, color: "#b3564c", lineHeight: 1.4 }}>
+          {failReason}
         </div>
       )}
 
@@ -5366,7 +5364,7 @@ function HomeworkItem({ item, stampDate, isLast, isCheckedFn, isFailedFn, getFai
             border: "none", background: "transparent", color: "#9ca3af",
             fontSize: 11, padding: 0, cursor: "pointer", fontWeight: 600,
           }}>
-            📚 다른 강의 보기 {showAll ? "▴" : "▾"}
+            다른 강의 보기 {showAll ? "▴" : "▾"}
           </button>
         </div>
       ) : (
@@ -5378,7 +5376,7 @@ function HomeworkItem({ item, stampDate, isLast, isCheckedFn, isFailedFn, getFai
             border: "1px solid #e0e0e0", background: "#f9fafb", color: "#374151",
             fontSize: 12, padding: "6px 12px", borderRadius: 7, cursor: "pointer", fontWeight: 600,
           }}>
-            📚 {bookSubject} 전체 강의 {showAll ? "닫기 ▴" : `보기 ▾ (${bookCandidates.length})`}
+            {bookSubject} 전체 강의 {showAll ? "닫기 ▴" : `보기 ▾ (${bookCandidates.length})`}
           </button>
         </div>
       ))}
@@ -5392,9 +5390,9 @@ function HomeworkItem({ item, stampDate, isLast, isCheckedFn, isFailedFn, getFai
             return (
               <button key={v.id} onClick={(e) => { e.stopPropagation(); toggleVideo(v); }} style={{
                 padding: "4px 9px", borderRadius: 6,
-                border: isOpen ? "1.5px solid #1C66A5" : (isMatched ? "1px solid #fde047" : "1px solid #e0e0e0"),
-                background: isOpen ? "#eef1ff" : (isMatched ? "#fef9c3" : "#fff"),
-                color: isOpen ? "#1C66A5" : (isMatched ? "#854d0e" : "#666"),
+                border: isOpen ? "1.5px solid #2A6FDB" : (isMatched ? "1px solid #fde047" : "1px solid #e0e0e0"),
+                background: isOpen ? "#eef3fc" : (isMatched ? "#fef9c3" : "#fff"),
+                color: isOpen ? "#2A6FDB" : (isMatched ? "#854d0e" : "#666"),
                 fontSize: 11, fontWeight: 600, cursor: "pointer",
                 display: "inline-flex", alignItems: "center", gap: 3, transition: "all 0.15s", whiteSpace: "nowrap",
               }}>
@@ -5437,8 +5435,8 @@ function StepSection({ step, displayNum, stampDate, isChecked, isFailed, getFail
     <div style={{ marginBottom: 20 }}>
       {/* 헤더: 라벨 탭 + 배지 (한 줄) */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color, padding: "6px 12px", background: bg, borderRadius: "10px 10px 0 0", letterSpacing: 0.5 }}>
-          {displayNum}. {label}
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: "#6b7280", padding: "0 2px 8px", letterSpacing: 0.5 }}>
+          {displayNum} · {label}
         </div>
         {badges.map(b => {
           const bs = BADGE_STYLES[b] || { bg: "#eee", fg: "#666" };
@@ -5451,10 +5449,10 @@ function StepSection({ step, displayNum, stampDate, isChecked, isFailed, getFail
       </div>
 
       {/* 본문 카드 */}
-      <div style={{ background: "#fff", borderRadius: "0 12px 12px 12px", boxShadow: "0 1px 4px rgba(0,0,0,0.04)", overflow: "hidden" }}>
+      <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #eceef2", overflow: "hidden" }}>
         {notice && (
           <div style={{ fontSize: 12, color: "#a16207", background: "#fffbeb", padding: "8px 14px", borderBottom: "1px solid #f5f5f5", lineHeight: 1.5 }}>
-            💡 {notice}
+            {notice}
           </div>
         )}
         {items.length === 0 ? (
