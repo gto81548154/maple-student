@@ -27,7 +27,7 @@ const VOCA_TAB_ENABLED = true;
 // 내부 스크롤을 없앤다. 반대로 여기서는 "지금 보이는 영역"(maplVis)을 계속 알려줘
 // 마플보카의 모달·토스트가 화면 안에 뜨게 하고, 화면 전환(maplVocaScroll) 때는 맨 위로 스크롤한다.
 // 옛 voca.html(높이를 안 보내는 판)과 섞이면 아래가 잘리므로 두 파일은 반드시 한 커밋으로 배포.
-function VocaFrame({ title, src, topOffset = 60, openLast = false, onOpenLastDone }) {
+function VocaFrame({ title, src, topOffset = 60, openLast = false, onOpenLastDone, openTask = null, onOpenTaskDone }) {
   const ref = useRef(null);
   const [h, setH] = useState(560);
   // [0812] 홈 카드 "단어장"으로 들어온 경우: voca가 살아있다는 첫 신호(높이)가 오면
@@ -36,6 +36,11 @@ function VocaFrame({ title, src, topOffset = 60, openLast = false, onOpenLastDon
   const openLastDoneRef = useRef(onOpenLastDone);
   openLastDoneRef.current = onOpenLastDone;
   useEffect(() => { if (openLast) openLastArmedRef.current = true; }, [openLast]);
+  // [0813] 홈 "수업 단어 공부" 카드: {book, lecs}를 담아 "이 책을 이 단원 체크한 채 열어줘"를 딱 한 번 보낸다
+  const openTaskRef = useRef(null);
+  const openTaskDoneRef = useRef(onOpenTaskDone);
+  openTaskDoneRef.current = onOpenTaskDone;
+  useEffect(() => { if (openTask) openTaskRef.current = openTask; }, [openTask]);
   useEffect(() => {
     let raf = 0;
     const sendVis = () => {
@@ -55,7 +60,11 @@ function VocaFrame({ title, src, topOffset = 60, openLast = false, onOpenLastDon
       if (!d || typeof d !== "object") return;
       if (d.type === "maplVocaHeight" && Number.isFinite(d.h)) {
         setH(Math.max(360, Math.ceil(d.h))); queueVis();
-        if (openLastArmedRef.current) {
+        if (openTaskRef.current) {
+          const req = openTaskRef.current; openTaskRef.current = null;   // 두 번 보내지 않기
+          try { el.contentWindow.postMessage({ type: "maplVocaOpenTask", book: req.book, lecs: req.lecs }, "*"); } catch (e) {}
+          if (openTaskDoneRef.current) openTaskDoneRef.current();
+        } else if (openLastArmedRef.current) {
           openLastArmedRef.current = false;   // 두 번 보내지 않기 (높이 신호는 계속 오므로)
           try { el.contentWindow.postMessage({ type: "maplVocaOpenLast" }, "*"); } catch (e) {}
           if (openLastDoneRef.current) openLastDoneRef.current();
@@ -94,7 +103,31 @@ const VOCA_BOOK_MATCHERS = [
   { id: "wm_hi",    re: /하이스트/ },
   { id: "ve_ess",   re: /어휘끝[^\n]*필수/ },
   { id: "ve_adv",   re: /어휘끝[^\n]*고난도/ },
+  { id: "ve_ety",   re: /어원편/ },
 ];
+// ─── [0813] 홈 "수업 단어 공부" 카드: 오늘 숙제에서 단어장 범위 읽기 ───
+const VOCA_SHORT_LABELS = { wm_sn: "워마 수능", wm_basic: "워마 Basic", wm_hi: "하이스트", ve_ess: "어휘끝 필수", ve_adv: "어휘끝 고난도", ve_ety: "어원편" };
+const VOCA_UNIT_WORDS = { wm_sn: "DAY", wm_basic: "DAY", wm_hi: "DAY", ve_ess: "UNIT", ve_adv: "UNIT", ve_ety: "DAY" };
+// 숙제 항목에서 "단어-워마 수능 25 26 27 28" 같은 줄을 찾아 { book, lecs }로 돌려준다.
+// 책 이름이 잡히고 1~60 사이 숫자가 있는 첫 줄을 쓴다. 없으면 null. (2000 같은 큰 숫자는 걸러짐)
+function findTaskVocaRange(taskItems) {
+  for (const item of (taskItems || [])) {
+    const text = String(item?.text || "");
+    const m = VOCA_BOOK_MATCHERS.find(mm => mm.re.test(text));
+    if (!m) continue;
+    const lecs = [...new Set(extractTaskNumbers(text).filter(n => n >= 1 && n <= 60))].sort((a, b) => a - b);
+    if (!lecs.length) continue;
+    return { book: m.id, lecs };
+  }
+  return null;
+}
+// 단원 묶음을 짧은 글로 — 이어지면 "25~28", 띄엄띄엄이면 "25·27·30"
+function fmtLecRange(lecs) {
+  if (!lecs || !lecs.length) return "";
+  const contiguous = lecs.every((n, i) => i === 0 || n === lecs[i - 1] + 1);
+  if (contiguous && lecs.length > 1) return `${lecs[0]}~${lecs[lecs.length - 1]}`;
+  return lecs.join("·");
+}
 const guessVocaBooks = (progressTree, videos) => {
   const texts = [];
   (progressTree?.lanes || []).forEach((l) => {
@@ -3323,6 +3356,8 @@ export default function App() {
   const [tab, setTab] = useState("home"); // [0812 대시보드] 첫 화면 = 홈 카드판
   const [vocaOpenLast, setVocaOpenLast] = useState(false); // [0812] 홈 단어장 카드로 들어왔는지 — 단어장 탭이 열릴 때 한 번 소비
   const [videoPicker, setVideoPicker] = useState(false); // [0813] 홈 강의영상 카드의 "강의 고르기" 창 열림 여부
+  const [pickerMore, setPickerMore] = useState(false); // [0813] 고르기 창에서 "추가 강의" 펼침 여부
+  const [vocaOpenTask, setVocaOpenTask] = useState(null); // [0813] 홈 "수업 단어 공부" 카드 → 마플보카에 보낼 {book, lecs}. 보내면 비운다
   const [showAttQr, setShowAttQr] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
   const [viewingVideo, setViewingVideo] = useState(null);
@@ -4097,6 +4132,9 @@ export default function App() {
   // 주간 오답 복습 경고 (지난주 틀린 단어 이번 주 마감 / 기한 초과)
   const vocabWarn = computeVocabReviewWarning(vocabWrongWords);
 
+  // [0813] 오늘 숙제에 적힌 단어장 범위 — 홈 "수업 단어 공부" 카드와 단어장 탭 books 목록에 쓴다
+  const taskVoca = findTaskVocaRange(stepGroups.flatMap(s => s.items));
+
   // 다가올 등원일 텍스트 (헤더 표시용)
   const upcomingAtt = computeUpcomingAttendance(student, makeups, customHolidays);
   const upcomingAttText = upcomingAtt
@@ -4349,9 +4387,9 @@ export default function App() {
           });
           const wrongCount = Object.values(vocabWrongWords || {}).reduce((n, m) =>
             n + Object.values(m?.words || {}).filter(w => (w.status || "active") === "active" && Array.isArray(w.correctAnswers) && w.correctAnswers.length > 0).length, 0);
-          // [0813] 강의 고르기 창 버튼 목록 = 이어보기 + 오늘 숙제 "수강" 강의(숙제 탭과 같은 짝짓기)
+          // [0813] 강의 고르기 창 = 시작 강의 하나(숙제 "수강" 중 가장 앞 번호, 없으면 보던 강의) + 추가 강의
           const allTaskItems = stepGroups.flatMap(s => s.items);
-          const pickerButtons = buildVideoPickerButtons(lastVideo, allTaskItems, studentVideos);
+          const picker = buildVideoPickerV2(lastVideo, allTaskItems, studentVideos);
           // 고른 강의 카드가 화면에 그려진 다음 그 위치로 내려간다. 위 탭 줄이 붙박이(sticky)라 70px 여유를 둔다.
           // 혹시 실패해도 화면이 안 움직일 뿐, 오류는 나지 않는다. 두 번 시도(늦게 그려지는 폰 대비).
           const scrollToVideoCard = (vid) => {
@@ -4371,8 +4409,8 @@ export default function App() {
             scrollToVideoCard(v.id);
           };
           const openVideosFromCard = () => {
-            // [0813] 버튼으로 보여줄 강의가 있으면 고르기 창부터. 하나도 없으면 예전처럼 목록으로.
-            if (pickerButtons.length > 0) { setVideoPicker(true); return; }
+            // [0813] 시작 강의가 있으면 고르기 창부터(추가 강의는 접힌 상태로). 하나도 없으면 예전처럼 목록으로.
+            if (picker.main) { setPickerMore(false); setVideoPicker(true); return; }
             setSelectedVideoBook(null);
             setTab("videos");
           };
@@ -4425,10 +4463,16 @@ export default function App() {
               </button>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <button onClick={() => { setVocaOpenLast(true); setTab("voca"); }} style={cardBox}>
-                  <div style={cardLabel}>📚 2. 단어장</div>
-                  <div style={cardMain}>{vocaTitle}</div>
-                  <div style={cardSub}>{vocaLastName ? "이어서 공부하기" : "공부하러 가기"}</div>
+                <button onClick={() => {
+                  // [0813] 숙제에 단어장 범위가 있으면 그 책·단원을 미리 체크해 열고, 없으면 예전처럼 마지막 책
+                  if (taskVoca) { setVocaOpenTask(taskVoca); setTab("voca"); return; }
+                  setVocaOpenLast(true); setTab("voca");
+                }} style={cardBox}>
+                  <div style={cardLabel}>📚 2. 수업 단어 공부</div>
+                  <div style={cardMain}>{taskVoca
+                    ? `${VOCA_SHORT_LABELS[taskVoca.book] || "단어장"} ${VOCA_UNIT_WORDS[taskVoca.book] || "DAY"} ${fmtLecRange(taskVoca.lecs)}`
+                    : vocaTitle}</div>
+                  <div style={cardSub}>{taskVoca ? "오늘 숙제 범위로 바로 시작" : vocaLastName ? "이어서 공부하기" : "공부하러 가기"}</div>
                 </button>
                 {studentVideos.length > 0 && (
                   <button onClick={openVideosFromCard} style={cardBox}>
@@ -4452,20 +4496,24 @@ export default function App() {
                   <div style={cardSub}>열린 회차 보기</div>
                 </button>
               </div>
-              {/* [0813] 강의 고르기 창 — 바깥 어두운 부분을 누르면 닫힌다 */}
-              {videoPicker && (
+              {/* [0813] 강의 고르기 창 — 시작 강의 하나 크게, 앞뒤 강의는 "추가 강의"를 눌러야 펼쳐짐. 바깥을 누르면 닫힌다 */}
+              {videoPicker && picker.main && (
                 <div onClick={() => setVideoPicker(false)} style={{ position: "fixed", inset: 0, background: "rgba(20,25,40,0.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
                   <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 340, padding: "16px 15px", boxSizing: "border-box" }}>
                     <div style={{ fontSize: 15, fontWeight: 800, color: "#1a1a2e" }}>어떤 강의를 볼까요?</div>
                     <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-                      {pickerButtons.map(({ video: v, kind }) => (
-                        <button key={v.id} onClick={() => playFromPicker(v)} style={{
-                          textAlign: "left", fontFamily: "inherit", cursor: "pointer", borderRadius: 12, padding: "11px 13px",
-                          border: kind === "resume" ? "1px solid #c5dcf6" : "1px solid #e8eaef",
-                          background: kind === "resume" ? "#eef5fd" : "#fff",
-                        }}>
-                          <div style={{ fontSize: 13.5, fontWeight: 800, color: kind === "resume" ? "#0c447c" : "#2A2A28", lineHeight: 1.35 }}>▶ {v.title || v.subject || "강의"}</div>
-                          <div style={{ fontSize: 11, fontWeight: 600, color: kind === "resume" ? "#3a72b0" : "#9aa0ab", marginTop: 3 }}>{kind === "resume" ? "보던 강의 이어보기" : "오늘 숙제 · 수강"}</div>
+                      <button onClick={() => playFromPicker(picker.main.video)} style={{ textAlign: "left", fontFamily: "inherit", cursor: "pointer", borderRadius: 12, padding: "12px 13px", border: "1px solid #c5dcf6", background: "#eef5fd" }}>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: "#0c447c", lineHeight: 1.35 }}>▶ {picker.main.video.title || picker.main.video.subject || "강의"}</div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "#3a72b0", marginTop: 3 }}>{picker.main.kind === "task" ? "오늘 숙제 · 여기서 시작" : "보던 강의 이어보기"}</div>
+                      </button>
+                      {picker.extras.length > 0 && !pickerMore && (
+                        <button onClick={() => setPickerMore(true)} style={{ fontFamily: "inherit", cursor: "pointer", borderRadius: 10, padding: "9px 0", border: "1px solid #e8eaef", background: "#fff", fontSize: 12.5, fontWeight: 700, color: "#5c6470" }}>추가 강의 ▾</button>
+                      )}
+                      {pickerMore && picker.extras.map(({ video: v, isTask, isResume }) => (
+                        <button key={v.id} onClick={() => playFromPicker(v)} style={{ textAlign: "left", fontFamily: "inherit", cursor: "pointer", borderRadius: 10, padding: "9px 12px", border: "1px solid #e8eaef", background: "#fff", display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontSize: 12.5, fontWeight: 700, color: "#2A2A28" }}>▶ {getVideoShortLabel(v)}</span>
+                          {isTask && <span style={{ fontSize: 10.5, fontWeight: 700, color: "#8a5a00", background: "#fff4d6", borderRadius: 6, padding: "2px 6px" }}>오늘 숙제</span>}
+                          {isResume && <span style={{ fontSize: 10.5, fontWeight: 700, color: "#3a72b0", background: "#eef5fd", borderRadius: 6, padding: "2px 6px" }}>보던 강의</span>}
                         </button>
                       ))}
                       <button onClick={() => { setVideoPicker(false); setSelectedVideoBook(null); setTab("videos"); }} style={{ border: "none", background: "none", fontFamily: "inherit", cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: "#8a8f9c", padding: "8px 0 2px" }}>전체 강의 목록 보기 ›</button>
@@ -4555,6 +4603,8 @@ export default function App() {
           // books= 는 진도/영상 교재명에서 추정한 이 학생의 단어장 목록 (없으면 전체 표시).
           const sp = new URLSearchParams(window.location.search);
           const books = guessVocaBooks(progressTree, studentVideos);
+          // [0813] 숙제에 적힌 단어장이 추정 목록에 없으면 책장에 같이 보여준다(범위 열기가 막히지 않게)
+          if (taskVoca && !books.includes(taskVoca.book)) books.push(taskVoca.book);
           const q = new URLSearchParams();
           q.set("id", String(studentId || sp.get("id") || ""));
           if (sp.get("t")) q.set("t", sp.get("t"));
@@ -4564,7 +4614,8 @@ export default function App() {
           const src = `${VOCA_APP_URL}?${q.toString()}`;
           return (
             <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden", border: "1px solid #eceef2" }}>
-              <VocaFrame title="단어장" src={src} openLast={vocaOpenLast} onOpenLastDone={() => setVocaOpenLast(false)} />
+              <VocaFrame title="단어장" src={src} openLast={vocaOpenLast} onOpenLastDone={() => setVocaOpenLast(false)}
+                openTask={vocaOpenTask} onOpenTaskDone={() => setVocaOpenTask(null)} />
             </div>
           );
         })()}
@@ -5443,23 +5494,36 @@ function matchVideosForTask(taskText, studentVideos) {
   return { hasKeyword: true, matched: [], bookCandidates: [] };
 }
 
-// ─── [0813] 홈 강의 고르기 창: 버튼 목록 계산 ───
-// ① 보던 강의(이어보기) ② 오늘 숙제에 "수강"이라고 적힌 항목과 짝지어진 강의(숙제 탭과 같은 규칙).
-// 이어보기와 겹치는 강의는 한 번만, 숙제 강의는 최대 4개.
-function buildVideoPickerButtons(lastVideo, taskItems, studentVideos) {
-  const out = [];
+// ─── [0813] 홈 강의 고르기 창: 시작 강의 하나 + 추가 강의(앞뒤 2개씩) ───
+// main = 오늘 숙제 "수강" 강의 중 가장 앞 번호(없으면 마지막 본 강의).
+// extras = 시작 강의와 같은 책에서 앞뒤 2개씩 + 나머지 숙제 강의 + 보던 강의, 번호순, 최대 6개.
+function videoNumberOf(v) {
+  const nums = extractTaskNumbers(String(v?.title || ""));
+  return nums.length ? nums[nums.length - 1] : null;
+}
+function buildVideoPickerV2(lastVideo, taskItems, studentVideos) {
+  const taskMatched = [];
   const seen = new Set();
-  if (lastVideo) { out.push({ video: lastVideo, kind: "resume" }); seen.add(lastVideo.id); }
   (taskItems || []).forEach(item => {
-    const { matched } = matchVideosForTask(item.text || "", studentVideos);
-    matched.forEach(v => {
-      if (seen.has(v.id)) return;
-      if (out.filter(b => b.kind === "task").length >= 4) return;
-      seen.add(v.id);
-      out.push({ video: v, kind: "task" });
-    });
+    const { matched } = matchVideosForTask(item?.text || "", studentVideos);
+    matched.forEach(v => { if (!seen.has(v.id)) { seen.add(v.id); taskMatched.push(v); } });
   });
-  return out;
+  taskMatched.sort((a, b) => (videoNumberOf(a) ?? 1e9) - (videoNumberOf(b) ?? 1e9));
+  const main = taskMatched[0] ? { video: taskMatched[0], kind: "task" }
+    : (lastVideo ? { video: lastVideo, kind: "resume" } : null);
+  if (!main) return { main: null, extras: [] };
+  const taskIds = new Set(taskMatched.map(v => v.id));
+  const subj = main.video.subject || "";
+  const sameBook = (studentVideos || [])
+    .filter(v => (v.subject || "") === subj && videoNumberOf(v) !== null)
+    .sort((a, b) => videoNumberOf(a) - videoNumberOf(b));
+  const mi = sameBook.findIndex(v => v.id === main.video.id);
+  const pool = mi >= 0 ? sameBook.slice(Math.max(0, mi - 2), mi + 3).filter(v => v.id !== main.video.id) : [];
+  taskMatched.forEach(v => { if (v.id !== main.video.id && !pool.some(p => p.id === v.id)) pool.push(v); });
+  if (lastVideo && lastVideo.id !== main.video.id && !pool.some(p => p.id === lastVideo.id)) pool.push(lastVideo);
+  pool.sort((a, b) => (videoNumberOf(a) ?? 1e9) - (videoNumberOf(b) ?? 1e9));
+  const extras = pool.slice(0, 6).map(v => ({ video: v, isTask: taskIds.has(v.id), isResume: !!(lastVideo && v.id === lastVideo.id) }));
+  return { main, extras };
 }
 
 // 영상 제목에서 짧은 라벨 추출 (버튼에 표시할 용도)
