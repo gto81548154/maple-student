@@ -39,87 +39,82 @@ input{font:inherit}
 
 /* ── 헤더 ── */
 header{position:sticky; top:0; z-index:10; background:var(--paper);
-  border-bottom:1px solid var(--line); padding:10px 0 8px; margin-bottom:14px}
+  border-bottom:1px solid var(--line); padding:12px 0 10px; margin-bottom:16px}
 .hrow{display:flex; align-items:center; justify-content:space-between; gap:10px}
-.brand{font-weight:800; letter-spacing:-.02em; font-size:17px}
+.brand{font-weight:800; letter-spacing:-.02em; font-size:19px}
 .brand small{font-weight:500; color:var(--ink-soft); font-size:12px; margin-left:6px}
 .hbtns{display:flex; gap:6px}
-.hbtn{font-size:13px; padding:5px 10px; border:1px solid var(--line); border-radius:8px; background:var(--card)}
+.hbtn{font-size:14.5px; font-weight:800; padding:11px 14px; border:1.5px solid var(--ink); border-radius:11px; background:var(--card); white-space:nowrap}
+#btnSet{background:var(--ink); color:var(--on-fill); border-color:var(--ink)}
 
 /* 회독 도장 */
 .stamp{
   display:inline-flex; align-items:center; justify-content:center;
-  width:52px; height:52px; border-radius:50%;
+  width:56px; height:56px; border-radius:50%;
   border:2.5px solid var(--crimson); color:var(--crimson);
   font-weight:800; font-size:14px; line-height:1.05; text-align:center;
   transform:rotate(-7deg); background:transparent; flex-direction:column;
   letter-spacing:-.03em; user-select:none;
 }
-.stamp b{font-size:19px}
+.stamp b{font-size:20px}
 .stamp-sm{width:40px;height:40px;border-width:2px;font-size:11px}
 .stamp-sm b{font-size:15px}
 
 /* ── 홈 ── */
 .stat{display:flex; gap:14px; align-items:center; background:var(--card);
-  border:1px solid var(--line); border-radius:14px; padding:14px 16px; margin-bottom:14px}
+  border:1px solid var(--line); border-radius:14px; padding:18px 16px; margin-bottom:14px}
 .stat .nums{flex:1}
-.stat .big{font-size:22px; font-weight:800; letter-spacing:-.02em}
-.stat .sub{font-size:12.5px; color:var(--ink-soft)}
+.stat .big{font-size:26px; font-weight:800; letter-spacing:-.02em}
+.stat .sub{font-size:14px; color:var(--ink-soft); margin-top:2px}
 .bhbtn{flex:none; border:1.5px solid var(--line); background:var(--paper); color:var(--ink-soft);
-  font-size:12px; font-weight:800; border-radius:15px; padding:8px 12px; white-space:nowrap; line-height:1.2}
+  font-size:13px; font-weight:800; border-radius:16px; padding:10px 14px; white-space:nowrap; line-height:1.2}
 .bhbtn.on{border-color:var(--ink); background:var(--ink); color:var(--on-fill)}
-.bar{height:7px; background:var(--line); border-radius:4px; overflow:hidden; margin-top:7px}
+.bar{height:9px; background:var(--line); border-radius:5px; overflow:hidden; margin-top:8px}
 .bar i{display:block; height:100%; background:var(--teal); border-radius:4px}
 
 .modes{display:grid; grid-template-columns:repeat(4,1fr); gap:7px; margin-bottom:14px}
-.mode{padding:9px 4px; border:1.5px solid var(--line); border-radius:10px;
-  background:var(--card); font-size:13.5px; font-weight:600; text-align:center; color:var(--ink-soft)}
+.mode{padding:14px 2px; border:1.5px solid var(--line); border-radius:12px;
+  background:var(--card); font-size:15px; font-weight:700; text-align:center; color:var(--ink-soft)}
 .mode.on{border-color:var(--ink); color:var(--ink); background:var(--card)}
-.mode .cnt{display:block; font-size:11px; font-weight:500; margin-top:1px}
+.mode .cnt{display:block; font-size:12.5px; font-weight:500; margin-top:2px}
 
-.allbtn{width:100%; padding:9px; margin-bottom:14px; border-radius:11px;
-  border:1px solid var(--line); background:var(--paper); color:var(--ink-soft); font-weight:700; font-size:13px}
+.allbtn{width:100%; padding:16px; margin-bottom:8px; border-radius:12px;
+  border:none; background:var(--ink); color:var(--on-fill); font-weight:800; font-size:16px}
 .allbtn:disabled{opacity:.35; cursor:default}
 
-.lecgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(100px,1fr)); gap:8px}
-.lec{border:1px solid var(--line); background:var(--card); border-radius:11px;
-  padding:9px 10px 8px; text-align:left; position:relative}
+.lecgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:9px}
+.lec{border:1px solid var(--line); background:var(--card); border-radius:12px;
+  padding:13px 46px 12px 14px; text-align:left; position:relative}
 .lec:disabled{opacity:.4; cursor:default}
-.lec .t{font-weight:700; font-size:13.5px}
-.lec .n{font-size:11px; color:var(--ink-soft); margin-bottom:6px}
-.lec .bar{margin-top:0; height:5px}
+.lec .t{font-weight:800; font-size:16px}
+.lec .n{font-size:13px; color:var(--ink-soft); margin-bottom:8px}
+.lec .bar{margin-top:0; height:6px}
 .lec .bar .w{background:var(--crimson)}
 .lec .bar{display:flex}
 .lec .bar i{border-radius:0}
 .lec.done .t::after{content:"✓"; color:var(--teal); margin-left:4px}
 .lec.disabled{opacity:.4; pointer-events:none}
-.leccheck{position:absolute; top:5px; right:5px; width:26px; height:26px; border-radius:7px;
+.leccheck{position:absolute; top:9px; right:9px; width:30px; height:30px; border-radius:9px;
   border:1.5px solid var(--line); background:var(--paper); cursor:pointer; z-index:2;
   display:flex; align-items:center; justify-content:center; transition:border-color .12s, background .12s}
 .leccheck:hover{border-color:var(--teal)}
 .leccheck.on{border-color:var(--teal); background:var(--teal)}
-.leccheck.on::after{content:"✓"; color:var(--on-fill); font-size:15px; font-weight:800; line-height:1}
+.leccheck.on::after{content:"✓"; color:var(--on-fill); font-size:16px; font-weight:800; line-height:1}
 .lec.disabled .leccheck{display:none}
 
 /* ── 범위 학습 ── */
-.rangerow{display:flex; align-items:center; gap:7px; margin-bottom:10px; flex-wrap:wrap;
-  border:1px solid var(--line); border-radius:12px; padding:10px 12px; background:var(--card)}
-.rangerow .rlabel{font-size:13px; font-weight:800; color:var(--ink)}
-.rangerow select{font:inherit; font-size:13.5px; padding:7px 9px; border:1px solid var(--line);
-  border-radius:9px; background:var(--card); color:inherit}
-.rangerow .rtil{color:var(--ink-soft)}
-.rangerow .rangebtn{margin-left:auto; padding:8px 15px; border:1px solid var(--teal);
-  border-radius:9px; background:var(--teal); color:var(--on-fill); font-weight:700; font-size:13px}
-.rangerow .rangebtn:disabled{opacity:.4; cursor:default; border-color:var(--line); background:var(--paper); color:var(--ink)}
+.rangeinfo{font-size:13px; color:var(--ink-soft); margin:-6px 2px 12px}
+.sechead{font-size:13px; font-weight:800; color:var(--ink-soft); margin:0 2px 8px}
 
 /* ── 학습 ── */
 .top{display:flex; align-items:center; justify-content:space-between; margin:4px 0 12px}
 .top .prog{display:flex; flex-direction:column; gap:1px; min-width:0; flex:1; margin-right:8px}
-.top .prog-unit{font-size:11.5px; font-weight:700; color:var(--ink); line-height:1.3;
+.top .prog-unit{font-size:13px; font-weight:800; color:var(--ink); line-height:1.3;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%}
 .top .prog-unit:empty{display:none}
-.top .prog-num{font-size:13.5px; color:var(--ink-soft); font-variant-numeric:tabular-nums}
-.top .quit{font-size:13.5px; color:var(--ink-soft); text-decoration:underline}
+.top .prog-num{font-size:15px; color:var(--ink-soft); font-variant-numeric:tabular-nums}
+.top .quit{font-size:14.5px; font-weight:700; color:var(--ink-soft); padding:10px 15px;
+  border:1px solid var(--line); border-radius:10px; background:var(--card); white-space:nowrap}
 
 .card{background:var(--card); border:1px solid var(--line); border-radius:16px;
   padding:26px 20px 20px; position:relative}
@@ -131,11 +126,11 @@ header{position:sticky; top:0; z-index:10; background:var(--paper);
 .sdot.used{border-color:#C9C5BA; background:repeating-linear-gradient(45deg,#C9C5BA,#C9C5BA 1.5px,transparent 1.5px,transparent 3px)}
 .senseinfo span{font-size:11px; color:var(--ink-soft); margin-left:2px}
 
-.word{font-family:Charter,Georgia,"Times New Roman",serif; font-size:clamp(34px,9vw,46px);
+.word{font-family:Charter,Georgia,"Times New Roman",serif; font-size:clamp(36px,9.5vw,50px);
   font-weight:700; text-align:center; letter-spacing:.01em; margin-top:14px;
   cursor:pointer; -webkit-tap-highlight-color:transparent}
 .word .spk{font-size:.45em; vertical-align:middle; margin-left:8px; opacity:.45}
-.pron{text-align:center; color:var(--ink-soft); font-size:16px; margin-top:2px; min-height:24px}
+.pron{text-align:center; color:var(--ink-soft); font-size:17px; margin-top:2px; min-height:24px}
 .pron b{color:var(--crimson); font-weight:700}
 
 .hintbtn{display:block; margin:14px auto 0; font-size:13px; color:var(--ink-soft);
@@ -164,16 +159,16 @@ header{position:sticky; top:0; z-index:10; background:var(--paper);
 .fb.ok .head{color:var(--teal)} .fb.no .head{color:var(--crimson)}
 .fb .msg{font-size:13.5px; color:var(--ink-soft); margin-bottom:10px}
 .senselist{display:flex; flex-direction:column; gap:7px}
-.sense{font-size:14px; background:var(--card); border:1px solid var(--line); border-radius:9px; padding:8px 11px}
+.sense{font-size:16px; line-height:1.6; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px}
 .sense.hit{border-color:var(--teal); box-shadow:0 0 0 1px var(--teal) inset}
 .sense.gone{opacity:.55}
 .sense.gone .m{text-decoration:line-through}
 .sense .pos{font-family:Charter,Georgia,serif; font-style:italic; color:var(--crimson);
-  font-size:13px; margin-right:6px}
+  font-size:14px; margin-right:6px}
 .sense .tag{float:right; font-size:11px; color:var(--ink-soft); border:1px solid var(--line);
   border-radius:5px; padding:0 5px; margin-left:6px}
 .sense .tag.now{color:var(--teal); border-color:var(--teal)}
-.sense .syn{display:block; font-size:12px; color:var(--ink-soft); margin-top:3px;
+.sense .syn{display:block; font-size:13.5px; color:var(--ink-soft); margin-top:3px;
   font-family:Charter,Georgia,serif}
 .nextbtn{width:100%; margin-top:14px; padding:12px; border-radius:11px;
   background:var(--ink); color:var(--on-fill); font-weight:700; font-size:15px}
@@ -232,10 +227,10 @@ header{position:sticky; top:0; z-index:10; background:var(--paper);
 .book{position:relative; background:var(--card); border:1px solid var(--line); border-radius:14px;
   padding:14px 13px; cursor:pointer; transition:border-color .12s, transform .12s}
 .book:hover{border-color:var(--teal); transform:translateY(-1px)}
-.book .bt{font-weight:800; font-size:14.5px; line-height:1.35; padding-right:4px}
+.book .bt{font-weight:800; font-size:14.5px; line-height:1.35; padding-right:64px}
 .book .bs{font-size:12px; color:var(--ink-soft); margin-top:5px}
 .book .bc{font-size:13px; letter-spacing:1.5px; margin-top:7px; min-height:15px}
-.book .bpriv{position:absolute; top:9px; right:10px; font-size:10.5px; font-weight:700; color:var(--crimson);
+.book .bpriv{position:absolute; top:9px; right:10px; font-size:10.5px; font-weight:700; color:var(--crimson); white-space:nowrap;
   border:1px solid #E9C6C1; border-radius:6px; padding:2px 5px; background:var(--paper)}
 .book.soon{opacity:.45; cursor:default}
 .shelfempty{grid-column:1/-1; text-align:center; color:var(--ink-soft); font-size:14px;
@@ -246,7 +241,7 @@ header{position:sticky; top:0; z-index:10; background:var(--paper);
 .book .lkicon{font-size:19px}
 .book .lkq{font-weight:800; font-size:15px; color:#8A887F; letter-spacing:2px; margin-top:2px}
 .book .lkd{font-size:11.5px; color:#8A887F; margin-top:5px; line-height:1.5}
-.book .bhid{position:absolute; top:9px; right:10px; font-size:10.5px; font-weight:700; color:#6B5210;
+.book .bhid{position:absolute; top:9px; right:10px; font-size:10.5px; font-weight:700; color:#6B5210; white-space:nowrap;
   border:1px solid #E4D5AC; border-radius:6px; padding:2px 5px; background:var(--gold-soft)}
 .shelfnote{margin-top:14px; font-size:12px; color:var(--ink-soft)}
 .toggle{width:44px; height:25px; border-radius:13px; background:var(--line); position:relative; transition:.15s}
@@ -294,14 +289,18 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
 .bkcard{text-align:center; padding-bottom:24px}
 .bkmeans{margin-top:16px; visibility:hidden; text-align:left}
 .bkmeans.show{visibility:visible}
-.bkbar{height:5px; border-radius:3px; background:var(--line); margin-top:16px; overflow:hidden}
+.bkbar{height:7px; border-radius:4px; background:var(--line); margin-top:16px; overflow:hidden}
 .bkbar i{display:block; height:100%; width:0; background:var(--teal)}
-.bkctl{display:flex; gap:8px; margin-top:14px}
-.bkctl .bkspeed{flex:1; padding:10px 4px; border:1.5px solid var(--line); border-radius:10px;
-  background:var(--card); font-size:13px; font-weight:600; color:var(--ink-soft)}
-.bkctl .bkspeed.on{border-color:var(--ink); color:var(--ink); background:var(--card)}
-.bkctl .bkpause{flex:1.2; padding:10px 4px; border-radius:10px; background:var(--ink); color:var(--on-fill);
-  font-size:13px; font-weight:700}
+.bkctl{margin-top:14px; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px}
+.bkctl .bkbar{margin:0 0 12px}
+.bkrow{display:flex; align-items:center; gap:9px}
+.bklabel{font-size:13px; font-weight:800; color:var(--ink-soft); flex:none}
+.bkseg{display:flex; flex:1; background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:4px; gap:4px}
+.bkseg .bkspeed{flex:1; padding:12px 2px; border:none; border-radius:9px; background:none;
+  font-size:14.5px; font-weight:700; color:var(--ink-soft); white-space:nowrap}
+.bkseg .bkspeed.on{background:var(--ink); color:var(--on-fill); font-weight:800}
+.bkctl .bkpause{display:block; width:100%; margin-top:10px; padding:17px; border-radius:12px;
+  background:var(--ink); color:var(--on-fill); font-size:16px; font-weight:800}
 
 /* ── 객관식 ── */
 .mcops{display:flex; flex-direction:column; gap:8px; margin-top:20px}
@@ -323,9 +322,9 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
 
 /* ── 아는 단어 제외 (카드·블링크 전용) ── */
 .exchip{position:absolute; top:12px; left:12px; border:1.5px solid var(--line); background:var(--paper);
-  color:var(--ink-soft); font-size:12px; font-weight:700; border-radius:14px; padding:4px 11px}
+  color:var(--ink-soft); font-size:13.5px; font-weight:700; border-radius:16px; padding:9px 15px; white-space:nowrap}
 .exchip.on{border-color:var(--ink); background:var(--ink); color:var(--on-fill)}
-.exlink{margin:-6px 0 14px; font-size:12.5px; color:var(--ink-soft); text-decoration:underline; cursor:pointer}
+.exlink{margin:-6px 0 14px; font-size:13.5px; padding:4px 2px; color:var(--ink-soft); text-decoration:underline; cursor:pointer}
 .exhead{display:flex; align-items:center; justify-content:space-between; margin-bottom:6px}
 .exhead h2{margin:0}
 .exviews{display:flex; gap:5px}
@@ -378,6 +377,7 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
 
   <!-- 홈 -->
   <section class="screen" id="scrHome">
+    <div class="sechead">내 진도</div>
     <div class="stat">
       <div class="stampwrap">
         <div class="stamp" id="stampHome"><b>1</b>회독</div>
@@ -390,6 +390,7 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
       </div>
       <button class="bhbtn" id="btnBH" type="button" aria-pressed="false" style="display:none">블랙홀</button>
     </div>
+    <div class="sechead">학습 범위 고르기</div>
     <div class="modes" id="modes">
       <button class="mode on" data-m="all">전체<span class="cnt"></span></button>
       <button class="mode" data-m="new">미학습<span class="cnt"></span></button>
@@ -397,12 +398,9 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
       <button class="mode" data-m="star">별표<span class="cnt"></span></button>
     </div>
     <div class="exlink" id="exLink" style="display:none">🚫 제외한 단어 <b id="exCount">0</b>개 보기</div>
-    <div class="rangerow" id="rangeRow">
-      <span class="rlabel">범위 선택 시험</span>
-      <span class="rtil" id="rangePick">아래 단원 목록에서 체크하세요</span>
-      <button class="rangebtn" id="btnRange" disabled>범위 시험</button>
-    </div>
-    <button class="allbtn" id="btnAll">전체 범위에서 학습 시작</button>
+    <button class="allbtn" id="btnAll" disabled>선택 범위에서 학습 시작</button>
+    <div class="rangeinfo" id="rangePick">아래 단원 목록에서 체크하세요</div>
+    <div class="sechead">단원 목록 — 체크하면 범위에 담겨요</div>
     <div class="lecgrid" id="lecGrid"></div>
   </section>
 
@@ -502,13 +500,18 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
       <div class="word" id="bkWord" title="발음 듣기">abandon<span class="spk">🔊</span></div>
       <div class="pron" id="bkPron"></div>
       <div class="bkmeans senselist" id="bkMeans"></div>
-      <div class="bkbar"><i id="bkBar"></i></div>
     </div>
     <div class="bkctl">
-      <button class="bkspeed" data-s="slow">느리게</button>
-      <button class="bkspeed on" data-s="mid">보통</button>
-      <button class="bkspeed" data-s="fast">빠르게</button>
-      <button class="bkpause" id="bkPause">일시정지</button>
+      <div class="bkbar"><i id="bkBar"></i></div>
+      <div class="bkrow">
+        <span class="bklabel">속도</span>
+        <div class="bkseg">
+          <button class="bkspeed" data-s="slow">느리게</button>
+          <button class="bkspeed on" data-s="mid">보통</button>
+          <button class="bkspeed" data-s="fast">빠르게</button>
+        </div>
+      </div>
+      <button class="bkpause" id="bkPause">⏸ 일시정지</button>
     </div>
   </section>
 
@@ -1194,8 +1197,6 @@ function renderHome(){
     b.querySelector('.cnt').textContent = cnt(b.dataset.m) + '개';
   });
   const totalSel = filterWords(DATA).length;
-  $('#btnAll').disabled = !totalSel;
-  $('#btnAll').textContent = totalSel ? `전체 범위에서 학습 시작 (${totalSel}개)` : '해당하는 단어가 없습니다';
 
   const g = $('#lecGrid'); g.innerHTML = '';
   for (const lec of Object.keys(byLec).map(Number).sort((a,b)=>a-b)){
@@ -1220,7 +1221,7 @@ function renderHome(){
 }
 document.querySelectorAll('.mode').forEach(b =>
   b.onclick = () => { mode = b.dataset.m; renderHome(); });
-$('#btnAll').onclick = () => openModePicker(filterWords(DATA), '전체 범위');
+$('#btnAll').onclick = () => { const l = rangeList(); if (l.length) openModePicker(l, '선택 범위'); };
 $('#btnBH').onclick = () => {
   if (!BOOK || !hasBH()) return;
   setLayer(LAYER === 'bh' ? 'main' : 'bh');
@@ -1243,11 +1244,10 @@ function updateRangeBtn(){
   const picks = [...selLecs].sort((a, b) => a - b);
   const n = rangeList().length;
   const uw = BOOK ? (BOOK.unit === '강' ? '강' : BOOK.unit) : '강';
-  $('#rangePick').textContent = picks.length ? `${uw} ${picks.length}개 · 단어 ${n}개` : '아래 단원 목록에서 체크하세요';
-  $('#btnRange').textContent = picks.length ? `범위 시험 (${n}개)` : '범위 시험';
-  $('#btnRange').disabled = !n;
+  $('#rangePick').textContent = picks.length ? `${uw} ${picks.length}개 · 단어 ${n}개 담겼어요` : '아래 단원 목록에서 체크하세요';
+  $('#btnAll').textContent = n ? `선택 범위에서 학습 시작 (${n}개)` : '선택 범위에서 학습 시작';
+  $('#btnAll').disabled = !n;
 }
-$('#btnRange').onclick = () => { const l = rangeList(); if (l.length) openModePicker(l, '범위 시험'); };
 
 /* ───────── 학습 세션 ───────── */
 /* [08-06] 랜덤: 카드·블링크·객관식·시험 네 방식 모두에 적용된다.
@@ -1622,7 +1622,7 @@ const BLINK_SPEED = { slow:{ w:2000, m:3000 }, mid:{ w:1500, m:1500 }, fast:{ w:
 let bkSpeed = 'mid', bkTick = null, bkElapsed = 0, bkPhase = 0, bkPaused = false;
 function startBlink(){
   bkPaused = false;
-  $('#bkPause').textContent = '일시정지';
+  $('#bkPause').textContent = '⏸ 일시정지';
   bkShowWord();
   if (!bkTick) bkTick = setInterval(bkStep, 100);
 }
@@ -1662,7 +1662,7 @@ function stopBlink(){
 }
 function bkTogglePause(){
   bkPaused = !bkPaused;
-  $('#bkPause').textContent = bkPaused ? '재생 ▶' : '일시정지';
+  $('#bkPause').textContent = bkPaused ? '▶ 재생' : '⏸ 일시정지';
   if (bkPaused){ try{ if ('speechSynthesis' in window) speechSynthesis.cancel(); }catch(e){} }
 }
 $('#bkPause').onclick = bkTogglePause;
