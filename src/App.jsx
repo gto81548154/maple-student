@@ -744,6 +744,44 @@ const computeUpcomingAttendance = (student, makeups, customHolidays) => {
   return result;
 };
 
+// ─── [0813] 홈 등원 안내: 오늘 등원 + 다음 수업 ───
+// 하루치 등원 판정. 규칙은 위 computeUpcomingAttendance의 collect와 동일하게 유지할 것
+// (공휴일 제외 → 등원 취소(isHidden) 제외 → 보충·시간변경 우선 → 방학>특별기간>정규 시간표).
+const attEntryForDay = (student, mks, allHol, d) => {
+  const ds = fmtYMD(d);
+  if (allHol[ds]) return null; // 공휴일
+  const dayKey = DAYS_EN[d.getDay() === 0 ? 6 : d.getDay() - 1];
+  const visibleMk = mks.find(m => m.date === ds && !m.isHidden); // 보충 또는 시간변경
+  if (visibleMk) {
+    return { date: ds, dateObj: new Date(d), time: visibleMk.time, isMakeup: visibleMk.isOverride !== true, isVacation: false };
+  }
+  if (mks.some(m => m.date === ds && m.isHidden)) return null; // 등원 취소된 날
+  const eff = getEffectiveSchedule(student, ds);
+  const t = eff.schedule[dayKey];
+  if (!t) return null;
+  return { date: ds, dateObj: new Date(d), time: t, isMakeup: false, isVacation: !!eff.isVacation };
+};
+// 오늘이 등원일이면 today에, 오늘 이후 가장 가까운 등원일(4주 안)이 next에 담긴다.
+const computeAttNotice = (student, makeups, customHolidays) => {
+  if (!student) return { today: null, next: null };
+  const allHol = { ...HOLIDAYS, ...(customHolidays || {}) };
+  const mks = (makeups || []).filter(m => String(m.studentId) === String(student.id));
+  const base = new Date();
+  base.setHours(0, 0, 0, 0);
+  const todayEntry = attEntryForDay(student, mks, allHol, base);
+  let nextEntry = null;
+  for (let i = 1; i <= 28 && !nextEntry; i++) {
+    const d = new Date(base);
+    d.setDate(d.getDate() + i);
+    nextEntry = attEntryForDay(student, mks, allHol, d);
+  }
+  return { today: todayEntry, next: nextEntry };
+};
+// 날짜 → "8월 19일 (수)"
+const fmtAttDayParen = (d) => `${d.getMonth() + 1}월 ${d.getDate()}일 (${DK[d.getDay()]})`;
+// 등원 항목 꼬리표 — 보충이면 " (보충)", 방학 시간표면 " (방학)"
+const attTag = (a) => (a && a.isMakeup ? " (보충)" : a && a.isVacation ? " (방학)" : "");
+
 
 // ─── 학생앱 시험 D-Day: 스케줄러(exam3) 연동 ───
 // 중학생: 내신만 / 고등학생: 내신 + 모의고사
@@ -4289,9 +4327,17 @@ export default function App() {
             데이터는 전부 이미 계산된 것 재사용(stepGroups·guessVocaBooks·videoWatch·vocabWarn). 서버 추가 요청 없음. */}
         {tab === "home" && (() => {
           const step1Items = (stepGroups.find(s => s.key === "step1")?.items) || [];
-          const VOCA_CARD_LABELS = { wm_sn: "워드마스터 수능 2000", wm_basic: "워드마스터 베이직", wm_hi: "워드마스터 하이스트", ve_ess: "어휘끝 필수", ve_adv: "어휘끝 고난도" };
+          // [0813] 등원 안내 — 이미 있는 등원일 계산 규칙 재사용. 서버 추가 요청 없음
+          const attNotice = computeAttNotice(student, makeups, customHolidays);
+          // [0813] 책 이름표 — voca.html의 BOOKS 제목과 같게 유지(어원편·보카바이블 포함)
+          const VOCA_CARD_LABELS = { wm_sn: "워드마스터 수능 2000", wm_basic: "워드마스터 고등 Basic", wm_hi: "워드마스터 하이스트", ve_ess: "어휘끝 중학 필수", ve_adv: "어휘끝 중학 고난도", ve_ety: "어휘끝 어원편", vocabible: "보카바이블 A·B" };
           const vocaIds = guessVocaBooks(progressTree, videos);
-          const vocaTitle = vocaIds.length ? (VOCA_CARD_LABELS[vocaIds[0]] || "내 단어장") : "내 단어장";
+          // [0813] 카드 제목 = 이 폰에서 마지막으로 연 책(누르면 실제로 열리는 책과 이름이 같게).
+          //        기록이 없으면 배정 첫 책 이름, 그것도 없으면 "내 단어장".
+          let vocaLastId = "";
+          try { vocaLastId = localStorage.getItem("maplevoca_lastbook") || ""; } catch (e) { vocaLastId = ""; }
+          const vocaLastName = VOCA_CARD_LABELS[vocaLastId] || "";
+          const vocaTitle = vocaLastName || (vocaIds.length ? (VOCA_CARD_LABELS[vocaIds[0]] || "내 단어장") : "내 단어장");
           // 마지막에 보던 강의 = 시청 기록(lastAt)이 가장 최근인 영상
           const watchBySid = videoWatch[String(studentId)] || videoWatch[Number(studentId)] || {};
           let lastVideo = null; let lastVideoAt = 0;
@@ -4313,6 +4359,23 @@ export default function App() {
           const cardSub = { fontSize: 11.5, color: "#9aa0ab", marginTop: 4, fontWeight: 600 };
           return (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {/* [0813] 등원 안내 — 오늘 등원일이면 파란 띠 + 다음 수업 줄, 아니면 다음 수업 한 줄. 등원일이 없으면 안 보임 */}
+              {attNotice.today ? (
+                <div style={{ background: "#e8f1fd", border: "1px solid #c5dcf6", borderRadius: 14, padding: "12px 15px" }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: "#0c447c", lineHeight: 1.4 }}>
+                    🏫 오늘은 {fmtTime(attNotice.today.time)}까지 등원입니다!{attTag(attNotice.today)}
+                  </div>
+                  {attNotice.next && (
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: "#3a72b0", marginTop: 4 }}>
+                      다음 수업 · {fmtAttDayParen(attNotice.next.dateObj)} {fmtTime(attNotice.next.time)}{attTag(attNotice.next)}
+                    </div>
+                  )}
+                </div>
+              ) : attNotice.next ? (
+                <div style={{ background: "#fff", border: "1px solid #e8eaef", borderRadius: 14, padding: "11px 15px", fontSize: 12.5, fontWeight: 700, color: "#5c6470", lineHeight: 1.4 }}>
+                  📅 다음 수업은 {fmtAttDayParen(attNotice.next.dateObj)} {fmtTime(attNotice.next.time)}입니다{attTag(attNotice.next)}
+                </div>
+              ) : null}
               <button onClick={() => setTab("tasks")} style={{ ...cardBox, padding: "14px 16px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 12, fontWeight: 800, color: "#e84393" }}>1. 오늘 숙제</span>
@@ -4342,7 +4405,7 @@ export default function App() {
                 <button onClick={() => { setVocaOpenLast(true); setTab("voca"); }} style={cardBox}>
                   <div style={cardLabel}>📚 2. 단어장</div>
                   <div style={cardMain}>{vocaTitle}</div>
-                  <div style={cardSub}>이어서 공부하기</div>
+                  <div style={cardSub}>{vocaLastName ? "이어서 공부하기" : "공부하러 가기"}</div>
                 </button>
                 {studentVideos.length > 0 && (
                   <button onClick={openVideosFromCard} style={cardBox}>
