@@ -1998,10 +1998,34 @@ function tryOpenLastBook(){
   if (STU && !STU.master && !bookReady(b)) return;    // 자료 준비 중인 책도 안 연다
   openBook(id);
 }
+/* [0813] 학생앱 홈 카드 "수업 단어 공부" → 오늘 숙제 책을 열고 숙제 단원을 미리 체크.
+ * 부모가 maplVocaOpenTask{book, lecs}를 보내면, 부팅이 끝난 뒤 그 책을 열고
+ * lecs에 적힌 단원을 시험 범위로 체크해 둔다 — 학생은 시작 버튼만 누르면 된다.
+ * 잠긴 책·목록에 없는 책·자료 준비 중인 책이면 아무 일 없이 책장에 머문다(바로 열기와 같은 규칙). */
+let OPEN_TASK_PENDING = null;
+async function tryOpenTaskBook(){
+  if (!OPEN_TASK_PENDING || !SHELF_READY) return;
+  const req = OPEN_TASK_PENDING; OPEN_TASK_PENDING = null;
+  if (BOOK) return;                                   // 이미 책이 열려 있으면 건드리지 않음
+  const id = String(req.book || '');
+  const b = BOOKS.find(x => x.id === id);
+  if (!b) return;
+  if (shelfStates()[id] !== 'normal') return;
+  if (STU && !STU.master && !bookReady(b)) return;
+  await openBook(id);
+  if (!BOOK || BOOK.id !== id) return;                // 데이터를 못 불러와 안 열렸으면 여기서 끝
+  const lecs = Array.isArray(req.lecs)
+    ? [...new Set(req.lecs.map(Number).filter(n => Number.isFinite(n) && byLec[n] && byLec[n].length))]
+    : [];
+  if (!lecs.length) return;                           // 이 책에 없는 단원뿐이면 책만 열어둔다
+  selLecs = new Set(lecs);
+  renderHome();                                       // 체크 표시 + "선택 범위에서 학습 시작" 버튼 갱신
+}
 window.addEventListener('message', (e) => {
   const d = e.data;
   if (!d || typeof d !== 'object') return;
   if (d.type === 'maplVocaOpenLast'){ OPEN_LAST_PENDING = true; tryOpenLastBook(); return; }
+  if (d.type === 'maplVocaOpenTask'){ OPEN_TASK_PENDING = { book: d.book, lecs: d.lecs }; tryOpenTaskBook(); return; }
   if (d.type !== 'maplVis') return;
   EMB = true;
   VIS = { top: Math.max(0, d.top | 0), h: Math.max(200, d.h | 0) };
@@ -2176,7 +2200,7 @@ $('#brandBtn').onclick = goShelf;
   applyStudentMode();
   await loadBookIndex();                        // 완성된 책만 책장에 올리기
   renderShelf(); show('shelf');
-  SHELF_READY = true; tryOpenLastBook();        // [0812] 홈 카드 "바로 열기" 신호가 먼저 와 있었으면 지금 연다
+  SHELF_READY = true; tryOpenLastBook(); tryOpenTaskBook();        // [0812] 홈 카드 "바로 열기" 신호가 먼저 와 있었으면 지금 연다
   if (syncOn()){
     const r = await pullServer();
     if (r && !r.err && r.data){
