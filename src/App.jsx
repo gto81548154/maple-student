@@ -3269,7 +3269,7 @@ export default function App() {
   const [attStatus, setAttStatus] = useState({}); // [출결] 결석/지각(att3) — 읽기 전용
   const [surveys, setSurveys] = useState([]); // [설문] 진행 중 설문(svy3) — 본인 대상만
   const [surveyResponses, setSurveyResponses] = useState({}); // [설문] 본인 응답(svyr3)
-  const [tab, setTab] = useState("tasks");
+  const [tab, setTab] = useState("home"); // [0812 대시보드] 첫 화면 = 홈 카드판
   const [showAttQr, setShowAttQr] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
   const [viewingVideo, setViewingVideo] = useState(null);
@@ -4110,9 +4110,12 @@ export default function App() {
                 {student.school || ""} {student.grade || ""}
               </span>
             </div>
+            {/* [0812 대시보드] 다가올 등원일 표시는 원장 결정으로 머리글에서 뺌 — 등원일은 일정 탭 달력에 그대로 있음 */}
+            {false && (
             <div style={{ marginTop: 3, color: "rgba(255,255,255,0.65)" }}>
               <FitText text={upcomingAttText || "예정된 등원일이 없어요"} maxFont={13} minFont={9} />
             </div>
+            )}
           </div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
             <button
@@ -4246,9 +4249,11 @@ export default function App() {
           scrollbarWidth: "none",
         }}>
         {[
+          { key: "home", label: "홈" },
           { key: "tasks", label: "숙제/과제" },
           { key: "cal", label: "일정" },
-          ...(getStudentLevelForDday(student) === "high" ? [{ key: "mock", label: "모의고사" }] : []),
+          // [0812 대시보드] 모의고사 탭은 중학생에게도 보여준다(원장 결정). 회차가 없으면 빈 안내만 뜬다.
+          { key: "mock", label: "모의고사" },
           ...(VOCA_TAB_ENABLED ? [{ key: "voca", label: "단어장" }] : []),
           ...(studentVideos.length > 0 ? [{ key: "videos", label: "강의 영상" }] : []),
           ...(hasVocabWrong ? [{ key: "vocabWrong", label: "오답 단어" }] : []),
@@ -4266,6 +4271,90 @@ export default function App() {
 
       <div style={{ padding: "16px 16px 100px" }}>
         <div style={{ maxWidth: MAX_W, margin: "0 auto" }}>
+        {/* [0812 대시보드] 홈 — 오늘 숙제(1단계 내용)·단어장·강의영상·오답숙제·모의고사 카드.
+            데이터는 전부 이미 계산된 것 재사용(stepGroups·guessVocaBooks·videoWatch·vocabWarn). 서버 추가 요청 없음. */}
+        {tab === "home" && (() => {
+          const step1Items = (stepGroups.find(s => s.key === "step1")?.items) || [];
+          const VOCA_CARD_LABELS = { wm_sn: "워드마스터 수능 2000", wm_basic: "워드마스터 베이직", wm_hi: "워드마스터 하이스트", ve_ess: "어휘끝 필수", ve_adv: "어휘끝 고난도" };
+          const vocaIds = guessVocaBooks(progressTree, videos);
+          const vocaTitle = vocaIds.length ? (VOCA_CARD_LABELS[vocaIds[0]] || "내 단어장") : "내 단어장";
+          // 마지막에 보던 강의 = 시청 기록(lastAt)이 가장 최근인 영상
+          const watchBySid = videoWatch[String(studentId)] || videoWatch[Number(studentId)] || {};
+          let lastVideo = null; let lastVideoAt = 0;
+          studentVideos.forEach(v => {
+            const rec = watchBySid[v.id];
+            const t = rec && rec.lastAt ? new Date(rec.lastAt).getTime() : 0;
+            if (t > lastVideoAt) { lastVideoAt = t; lastVideo = v; }
+          });
+          const wrongCount = Object.values(vocabWrongWords || {}).reduce((n, m) =>
+            n + Object.values(m?.words || {}).filter(w => (w.status || "active") === "active" && Array.isArray(w.correctAnswers) && w.correctAnswers.length > 0).length, 0);
+          const openVideosFromCard = () => {
+            // 카드에서 열면 = 그 영상 줄을 직접 누른 것과 동일(toggleVideo가 추적 초기화까지 처리)
+            if (lastVideo && viewingVideo?.id !== lastVideo.id) { setSelectedVideoBook(null); toggleVideo(lastVideo); }
+            setTab("videos");
+          };
+          const cardBox = { background: "#fff", border: "1px solid #e8eaef", borderRadius: 14, padding: "13px 14px", cursor: "pointer", textAlign: "left", fontFamily: "inherit", display: "block", width: "100%" };
+          const cardLabel = { fontSize: 12, fontWeight: 800, color: "#7f8fa6" };
+          const cardMain = { fontSize: 14.5, fontWeight: 800, color: "#1a1a2e", marginTop: 6, lineHeight: 1.35 };
+          const cardSub = { fontSize: 11.5, color: "#9aa0ab", marginTop: 4, fontWeight: 600 };
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <button onClick={() => setTab("tasks")} style={{ ...cardBox, padding: "14px 16px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: "#e84393" }}>1. 오늘 숙제</span>
+                  <span style={{ marginLeft: "auto", fontSize: 11.5, color: "#9aa0ab", fontWeight: 600 }}>
+                    {fmtDateKR(activeDate)}{isToday(activeDate) ? " · 오늘" : ""}
+                  </span>
+                </div>
+                {step1Items.length === 0 ? (
+                  <div style={{ marginTop: 10, fontSize: 13, color: "#9aa0ab" }}>이 날짜에 등록된 숙제가 없어요</div>
+                ) : (
+                  <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 7 }}>
+                    {step1Items.map((item, i) => {
+                      const done = isChecked(item); const fail = isFailed(item);
+                      return (
+                        <div key={item.key || i} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                          <span style={{ flexShrink: 0, width: 17, height: 17, marginTop: 1, borderRadius: 5, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, border: done ? "1px solid #1B8A5A" : fail ? "1px solid #e74c3c" : "1.5px solid #d4d7de", background: done ? "#1B8A5A" : fail ? "#fdecea" : "#fff", color: done ? "#fff" : fail ? "#e74c3c" : "transparent" }}>{done ? "✓" : fail ? "✗" : "·"}</span>
+                          <span style={{ fontSize: 13.5, color: fail ? "#b03a2e" : "#2A2A28", lineHeight: 1.45, textDecoration: done ? "line-through" : "none", opacity: done ? 0.55 : 1 }}>{stripBox(item.text || "")}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <div style={{ marginTop: 10, fontSize: 11.5, color: "#9aa0ab" }}>누르면 숙제 탭 — 단어 TEST·수업 준비 등 나머지 단계도 보여요</div>
+              </button>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <button onClick={() => setTab("voca")} style={cardBox}>
+                  <div style={cardLabel}>📚 2. 단어장</div>
+                  <div style={cardMain}>{vocaTitle}</div>
+                  <div style={cardSub}>이어서 공부하기</div>
+                </button>
+                {studentVideos.length > 0 && (
+                  <button onClick={openVideosFromCard} style={cardBox}>
+                    <div style={cardLabel}>🎬 3. 강의 영상</div>
+                    <div style={cardMain}>{lastVideo ? (lastVideo.title || lastVideo.subject || "강의") : `강의 ${studentVideos.length}개`}</div>
+                    <div style={cardSub}>{lastVideo ? "이어보기" : "보러 가기"}</div>
+                  </button>
+                )}
+                {hasVocabWrong && (
+                  <button onClick={() => setTab("vocabWrong")} style={{ ...cardBox, background: vocabWarn.overdue > 0 ? "#fdecea" : "#fff8e1", border: vocabWarn.overdue > 0 ? "1px solid #f5c2bd" : "1px solid #ffe49c" }}>
+                    <div style={{ ...cardLabel, color: vocabWarn.overdue > 0 ? "#b03a2e" : "#8a5a00" }}>📝 4. 오답 숙제</div>
+                    <div style={{ ...cardMain, color: vocabWarn.overdue > 0 ? "#b03a2e" : "#6b4a00" }}>남은 단어 {wrongCount}개</div>
+                    <div style={{ ...cardSub, color: vocabWarn.overdue > 0 ? "#c0655c" : "#a3822f", fontWeight: 700 }}>
+                      {vocabWarn.overdue > 0 ? `기한 지난 단어 ${vocabWarn.overdue}개` : vocabWarn.dueThisWeek > 0 ? `${vocabWarn.sundayLabel}까지` : "틀린 단어 다시 풀기"}
+                    </div>
+                  </button>
+                )}
+                <button onClick={() => setTab("mock")} style={cardBox}>
+                  <div style={cardLabel}>✏️ 5. 모의고사</div>
+                  <div style={cardMain}>응시 · 점수 기록</div>
+                  <div style={cardSub}>열린 회차 보기</div>
+                </button>
+              </div>
+            </div>
+          );
+        })()}
         {tab === "tasks" && (
           <>
             {allDates.length > 0 && (
