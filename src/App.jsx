@@ -69,7 +69,7 @@ function VocaFrame({ title, src, topOffset = 60 }) {
   }, [topOffset]);
   return (
     <iframe ref={ref} title={title} src={src} scrolling="no"
-      style={{ width: "100%", height: h, border: "none", display: "block", background: "#FBF7EF", overflow: "hidden" }} />
+      style={{ width: "100%", height: h, border: "none", display: "block", background: "#F7F8FA", overflow: "hidden" }} />
   );
 }
 const WORKER_ORIGIN = (() => { try { return new URL(STUDENT_SYNC_API_URL).origin; } catch (e) { return ""; } })();
@@ -3150,7 +3150,7 @@ function MasterHome({ mk }) {
         {err && <div style={{ marginBottom: 12, padding: "9px 12px", borderRadius: 10, background: "#fff7ed", border: "1px solid #fed7aa", color: "#c2410c", fontSize: 12, fontWeight: 700 }}>⚠️ {err}</div>}
 
         {tab === "voca" && (
-          <div style={{ background: "#fff", borderRadius: 14, overflow: "hidden", border: "1px solid #eee" }}>
+          <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden", border: "1px solid #eceef2" }}>
             <VocaFrame title="원장 단어장" src={vocaSrc} />
           </div>
         )}
@@ -4353,7 +4353,7 @@ export default function App() {
           if (books.length) q.set("books", books.join(","));
           const src = `${VOCA_APP_URL}?${q.toString()}`;
           return (
-            <div style={{ background: "#fff", borderRadius: 14, overflow: "hidden", border: "1px solid #eee" }}>
+            <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden", border: "1px solid #eceef2" }}>
               <VocaFrame title="단어장" src={src} />
             </div>
           );
@@ -4874,17 +4874,17 @@ function VocabWrongTab({ vocabWrongWords = {}, studentId }) {
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {months.map((m) => (
-              <div key={m.monthKey} style={{ background: "#fff", border: "1px solid #eee", borderRadius: 14, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+              <div key={m.monthKey} style={{ background: "#fff", border: "1px solid #eceef2", borderRadius: 12, padding: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 16, fontWeight: 800, color: "#2A2A28" }}>{monthLabel(m.monthKey)}</div>
                     <div style={{ fontSize: 13, color: "#777", marginTop: 4 }}>
-                      테스트할 단어 <b style={{ color: "#1C66A5" }}>{m.count}</b>개
-                      {m.starredCount > 0 && <span style={{ color: "#d4537e", marginLeft: 8 }}>★ 어려운 단어 {m.starredCount}개</span>}
+                      테스트할 단어 <b style={{ color: "#2A6FDB" }}>{m.count}</b>개
+                      {m.starredCount > 0 && <span style={{ color: "#E8890C", marginLeft: 8 }}>★ 어려운 단어 {m.starredCount}개</span>}
                     </div>
                     {m.lastWrongAt && <div style={{ fontSize: 12, color: "#aaa", marginTop: 2 }}>최근 오답: {fmtWrongDate(m.lastWrongAt)}</div>}
                   </div>
-                  <button onClick={() => startTest(m)} disabled={m.count === 0} style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: m.count === 0 ? "#ccc" : "#1C66A5", color: "#fff", fontWeight: 800, fontSize: 13, cursor: m.count === 0 ? "default" : "pointer", flexShrink: 0 }}>
+                  <button onClick={() => startTest(m)} disabled={m.count === 0} style={{ padding: "11px 17px", borderRadius: 10, border: "none", background: m.count === 0 ? "#f2f3f6" : "#182848", color: m.count === 0 ? "#9aa0ab" : "#fff", fontWeight: 800, fontSize: 13, cursor: m.count === 0 ? "default" : "pointer", flexShrink: 0 }}>
                     {m.count === 0 ? "모두 통과" : "TEST 시작"}
                   </button>
                 </div>
@@ -4901,25 +4901,29 @@ function VocabWrongTab({ vocabWrongWords = {}, studentId }) {
     return (
       <div>
         <button onClick={backToList} style={{ border: "none", background: "transparent", color: "#777", fontSize: 14, cursor: "pointer", marginBottom: 12 }}>← 월별 목록</button>
-        <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 22, textAlign: "center", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
-          <div style={{ fontSize: 34, marginBottom: 10 }}>{pass ? "✅" : "⭐"}</div>
-          <div style={{ fontSize: 20, fontWeight: 900, color: pass ? "#047857" : "#c0392b", marginBottom: 6 }}>{pass ? "통과!" : "재시험 필요"}</div>
+        <div style={{ background: "#fff", border: "1px solid #eceef2", borderRadius: 14, padding: 24, textAlign: "center" }}>
+          {pass ? (
+            <div aria-hidden="true" style={{ width: 64, height: 64, margin: "0 auto 14px", borderRadius: "50%", border: "3px solid #E24B4A", color: "#E24B4A", display: "flex", alignItems: "center", justifyContent: "center", transform: "rotate(-10deg)", fontWeight: 900, fontSize: 15, letterSpacing: 1 }}>PASS</div>
+          ) : (
+            <div style={{ fontSize: 34, marginBottom: 10 }}>⭐</div>
+          )}
+          <div style={{ fontSize: 20, fontWeight: 900, color: pass ? "#0b7a5c" : "#c0392b", marginBottom: 6 }}>{pass ? "통과!" : "재시험 필요"}</div>
           <div style={{ fontSize: 13, color: "#777", marginBottom: 18 }}>{monthLabel(active?.monthKey)} 오답 단어 TEST 결과입니다.</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
-            <div style={{ padding: 12, borderRadius: 12, background: "#f6f7fb" }}><b>{summary.total}</b><br/><span style={{ fontSize: 12, color: "#777" }}>전체</span></div>
-            <div style={{ padding: 12, borderRadius: 12, background: "#e8f8ef", color: "#047857" }}><b>{summary.correct}</b><br/><span style={{ fontSize: 12 }}>정답</span></div>
-            <div style={{ padding: 12, borderRadius: 12, background: "#fde8e8", color: "#c0392b" }}><b>{summary.wrong}</b><br/><span style={{ fontSize: 12 }}>오답</span></div>
+            <div style={{ padding: 12, borderRadius: 12, background: "#f2f3f6" }}><b>{summary.total}</b><br/><span style={{ fontSize: 12, color: "#777" }}>전체</span></div>
+            <div style={{ padding: 12, borderRadius: 12, background: "#eefaf3", color: "#0b7a5c" }}><b>{summary.correct}</b><br/><span style={{ fontSize: 12 }}>정답</span></div>
+            <div style={{ padding: 12, borderRadius: 12, background: "#fdf0ef", color: "#E24B4A" }}><b>{summary.wrong}</b><br/><span style={{ fontSize: 12 }}>오답</span></div>
           </div>
-          <div style={{ fontSize: 14, color: pass ? "#047857" : "#c0392b", fontWeight: 800, marginBottom: 10 }}>정답률 {summary.accuracy}% · 기준 90%</div>
+          <div style={{ fontSize: 14, color: pass ? "#0b7a5c" : "#c0392b", fontWeight: 800, marginBottom: 10 }}>정답률 {summary.accuracy}% · 기준 90%</div>
           {!pass && summary.wrongLabels.length > 0 && (
             <div style={{ marginTop: 12, marginBottom: 16, textAlign: "left" }}>
               <div style={{ fontSize: 13, color: "#777", marginBottom: 6 }}>★ 별표된 어려운 단어</div>
-              {summary.wrongLabels.map(w => <span key={w} style={{ display: "inline-block", margin: "0 6px 6px 0", padding: "4px 10px", borderRadius: 8, background: "#fbeaf0", color: "#993556", fontSize: 13 }}>{w}</span>)}
+              {summary.wrongLabels.map(w => <span key={w} style={{ display: "inline-block", margin: "0 6px 6px 0", padding: "4px 10px", borderRadius: 8, background: "#fdf0ef", color: "#b3564c", fontSize: 13 }}>{w}</span>)}
             </div>
           )}
           {sendStatus && <div style={{ fontSize: 12, color: "#777", marginBottom: 12 }}>{sendStatus}</div>}
-          <button onClick={() => startTest(active)} style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: "#1C66A5", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", marginBottom: 8 }}>다시 풀기</button>
-          <button onClick={backToList} style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "1px solid #e0e0e0", background: "#fff", color: "#333", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>월별 목록으로</button>
+          <button onClick={() => startTest(active)} style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: "#182848", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", marginBottom: 8 }}>다시 풀기</button>
+          <button onClick={backToList} style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "1px solid #e5e7ec", background: "#fff", color: "#33373d", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>월별 목록으로</button>
         </div>
       </div>
     );
@@ -4979,7 +4983,7 @@ function VocabWrongTab({ vocabWrongWords = {}, studentId }) {
           <div style={{ fontSize: 14.5, fontWeight: 800, color: "#c0392b", marginBottom: 4 }}>지금 나가면 푼 게 사라져요</div>
           <div style={{ fontSize: 13, color: "#777", marginBottom: 12 }}>{idx + 1}번째까지 풀었어요. 그래도 나갈까요?</div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => setAskLeave(false)} style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "none", background: "#1C66A5", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>계속 풀기</button>
+            <button onClick={() => setAskLeave(false)} style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "none", background: "#182848", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>계속 풀기</button>
             <button onClick={() => { setAskLeave(false); backToList(); }} style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid #e0e0e0", background: "#fff", color: "#c0392b", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>나가기</button>
           </div>
         </div>
@@ -4987,11 +4991,11 @@ function VocabWrongTab({ vocabWrongWords = {}, studentId }) {
       {!current ? (
         <div style={{ padding: 24, textAlign: "center", color: "#999", background: "#fff", borderRadius: 14 }}>단어가 없습니다.</div>
       ) : (
-        <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
-          <div style={{ height: 6, background: "#f0f0f0", borderRadius: 3, overflow: "hidden", marginBottom: 28 }}>
-            <div style={{ height: "100%", width: `${((idx + 1) / Math.max(words.length, 1)) * 100}%`, background: "linear-gradient(90deg, #1C66A5, #1C66A5)", borderRadius: 3 }} />
+        <div style={{ background: "#fff", border: "1px solid #eceef2", borderRadius: 14, padding: 20 }}>
+          <div style={{ height: 6, background: "#e9ebf0", borderRadius: 3, overflow: "hidden", marginBottom: 28 }}>
+            <div style={{ height: "100%", width: `${((idx + 1) / Math.max(words.length, 1)) * 100}%`, background: "#2A6FDB", borderRadius: 3 }} />
           </div>
-          <div style={{ fontSize: 30, fontWeight: 900, textAlign: "center", color: "#2A2A28", marginBottom: 22 }}>{current.word}</div>
+          <div style={{ fontSize: 32, fontWeight: 900, textAlign: "center", color: "#23252B", marginBottom: 22 }}>{current.word}</div>
           <div style={{ fontSize: 13, color: "#777", marginBottom: 7 }}>이 단어의 뜻을 한국어로 적어주세요.</div>
           <input
             value={input}
@@ -4999,18 +5003,18 @@ function VocabWrongTab({ vocabWrongWords = {}, studentId }) {
             onKeyDown={(e) => { if (e.key === "Enter" && !revealed && input.trim()) check(); }}
             disabled={revealed}
             placeholder="정답을 입력하세요"
-            style={{ width: "100%", padding: "13px 14px", borderRadius: 10, border: "1px solid #ddd", fontSize: 16, boxSizing: "border-box" }}
+            style={{ width: "100%", padding: "13px 14px", borderRadius: 10, border: "1.5px solid #d4d7de", fontSize: 16, boxSizing: "border-box" }}
           />
           {!revealed ? (
-            <button onClick={check} disabled={!input.trim()} style={{ width: "100%", marginTop: 14, padding: "13px 0", borderRadius: 10, border: "none", background: input.trim() ? "#1C66A5" : "#ccc", color: "#fff", fontWeight: 800, fontSize: 15, cursor: input.trim() ? "pointer" : "default" }}>정답 확인</button>
+            <button onClick={check} disabled={!input.trim()} style={{ width: "100%", marginTop: 14, padding: "13px 0", borderRadius: 10, border: "none", background: input.trim() ? "#182848" : "#ccc", color: "#fff", fontWeight: 800, fontSize: 15, cursor: input.trim() ? "pointer" : "default" }}>정답 확인</button>
           ) : (
             <div style={{ marginTop: 14 }}>
-              <div style={{ padding: 13, borderRadius: 12, background: judged === "correct" ? "#e8f8ef" : "#fde8e8", border: judged === "correct" ? "1px solid #bbf7d0" : "1px solid #fecaca", marginBottom: 12 }}>
-                <div style={{ fontWeight: 900, color: judged === "correct" ? "#047857" : "#c0392b", marginBottom: 7 }}>{judged === "correct" ? "정답입니다!" : "오답이에요!"}</div>
+              <div style={{ padding: 13, borderRadius: 12, background: judged === "correct" ? "#eefaf3" : "#fdf0ef", border: judged === "correct" ? "1px solid #cdeeda" : "1px solid #f5cbc8", marginBottom: 12 }}>
+                <div style={{ fontWeight: 900, color: judged === "correct" ? "#0b7a5c" : "#c0392b", marginBottom: 7 }}>{judged === "correct" ? "정답입니다!" : "오답이에요!"}</div>
                 <div style={{ fontSize: 14, color: "#333", lineHeight: 1.7 }}>내 답: {currentAnswer.input?.trim() || input.trim() || "(빈칸)"}</div>
                 <div style={{ fontSize: 14, color: "#333", lineHeight: 1.7 }}>정답: <b>{answerDisplay}</b></div>
               </div>
-              <button onClick={next} style={{ width: "100%", padding: "13px 0", borderRadius: 10, border: "none", background: "#1C66A5", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{idx + 1 >= words.length ? "결과 보기" : "다음 단어"}</button>
+              <button onClick={next} style={{ width: "100%", padding: "13px 0", borderRadius: 10, border: "none", background: "#182848", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{idx + 1 >= words.length ? "결과 보기" : "다음 단어"}</button>
             </div>
           )}
         </div>
