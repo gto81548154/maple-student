@@ -984,6 +984,7 @@ async function openBook(id){
   try { list = await loadBookData(b); }
   catch(e){ toast('단어 데이터를 불러오지 못했어요 — 인터넷 연결과 주소를 확인하세요'); return; }
   BOOK = b;
+  try{ localStorage.setItem('maplevoca_lastbook', b.id); }catch(e){}   // [0812] 홈 카드 "바로 열기"용 — 이 기기에서 마지막으로 연 책
   BOOKST = (ROOT.books[b.id] ||= newBookState());
   ALL = list || [];
   setLayer('main');                                // 책을 열 때는 언제나 일반 모드로 시작
@@ -1978,9 +1979,30 @@ function applyVis(){
   const t = document.querySelector('#toast');
   if (t) t.style.top = (VIS.top + VIS.h - 88) + 'px';
 }
+/* [0812] 학생앱 홈 카드 "단어장" → 마지막에 공부하던 책 바로 열기.
+ * 부모(학생앱)가 maplVocaOpenLast 신호를 보내면, 이 기기에서 마지막으로 연 책을 찾아 연다.
+ * 아직 부팅(자료 목록 받기) 전이면 기다렸다가 부팅 끝에 연다.
+ * 잠긴 책·목록에 없는 책·자료 준비 중인 책이면 아무 일 없이 책장에 머문다. */
+let OPEN_LAST_PENDING = false;
+let SHELF_READY = false;
+function tryOpenLastBook(){
+  if (!OPEN_LAST_PENDING || !SHELF_READY) return;
+  OPEN_LAST_PENDING = false;
+  if (BOOK) return;                                   // 이미 책이 열려 있으면 건드리지 않음
+  let id = '';
+  try{ id = localStorage.getItem('maplevoca_lastbook') || ''; }catch(e){}
+  if (!id) return;
+  const b = BOOKS.find(x => x.id === id);
+  if (!b) return;
+  if (shelfStates()[id] !== 'normal') return;         // 잠김·숨김 책은 안 연다
+  if (STU && !STU.master && !bookReady(b)) return;    // 자료 준비 중인 책도 안 연다
+  openBook(id);
+}
 window.addEventListener('message', (e) => {
   const d = e.data;
-  if (!d || d.type !== 'maplVis') return;
+  if (!d || typeof d !== 'object') return;
+  if (d.type === 'maplVocaOpenLast'){ OPEN_LAST_PENDING = true; tryOpenLastBook(); return; }
+  if (d.type !== 'maplVis') return;
   EMB = true;
   VIS = { top: Math.max(0, d.top | 0), h: Math.max(200, d.h | 0) };
   applyVis();
@@ -2154,6 +2176,7 @@ $('#brandBtn').onclick = goShelf;
   applyStudentMode();
   await loadBookIndex();                        // 완성된 책만 책장에 올리기
   renderShelf(); show('shelf');
+  SHELF_READY = true; tryOpenLastBook();        // [0812] 홈 카드 "바로 열기" 신호가 먼저 와 있었으면 지금 연다
   if (syncOn()){
     const r = await pullServer();
     if (r && !r.err && r.data){
