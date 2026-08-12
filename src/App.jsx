@@ -27,9 +27,15 @@ const VOCA_TAB_ENABLED = true;
 // 내부 스크롤을 없앤다. 반대로 여기서는 "지금 보이는 영역"(maplVis)을 계속 알려줘
 // 마플보카의 모달·토스트가 화면 안에 뜨게 하고, 화면 전환(maplVocaScroll) 때는 맨 위로 스크롤한다.
 // 옛 voca.html(높이를 안 보내는 판)과 섞이면 아래가 잘리므로 두 파일은 반드시 한 커밋으로 배포.
-function VocaFrame({ title, src, topOffset = 60 }) {
+function VocaFrame({ title, src, topOffset = 60, openLast = false, onOpenLastDone }) {
   const ref = useRef(null);
   const [h, setH] = useState(560);
+  // [0812] 홈 카드 "단어장"으로 들어온 경우: voca가 살아있다는 첫 신호(높이)가 오면
+  // "마지막 책 열어줘"를 딱 한 번 보낸다. 탭을 직접 누른 경우(openLast=false)는 예전처럼 책장부터.
+  const openLastArmedRef = useRef(false);
+  const openLastDoneRef = useRef(onOpenLastDone);
+  openLastDoneRef.current = onOpenLastDone;
+  useEffect(() => { if (openLast) openLastArmedRef.current = true; }, [openLast]);
   useEffect(() => {
     let raf = 0;
     const sendVis = () => {
@@ -47,7 +53,14 @@ function VocaFrame({ title, src, topOffset = 60 }) {
       if (!el || e.source !== el.contentWindow) return;
       const d = e.data;
       if (!d || typeof d !== "object") return;
-      if (d.type === "maplVocaHeight" && Number.isFinite(d.h)) { setH(Math.max(360, Math.ceil(d.h))); queueVis(); }
+      if (d.type === "maplVocaHeight" && Number.isFinite(d.h)) {
+        setH(Math.max(360, Math.ceil(d.h))); queueVis();
+        if (openLastArmedRef.current) {
+          openLastArmedRef.current = false;   // 두 번 보내지 않기 (높이 신호는 계속 오므로)
+          try { el.contentWindow.postMessage({ type: "maplVocaOpenLast" }, "*"); } catch (e) {}
+          if (openLastDoneRef.current) openLastDoneRef.current();
+        }
+      }
       if (d.type === "maplVocaScroll") {
         const r = el.getBoundingClientRect();
         window.scrollTo({ top: Math.max(0, window.scrollY + r.top + (d.y || 0) - topOffset), behavior: "auto" });
@@ -3270,6 +3283,7 @@ export default function App() {
   const [surveys, setSurveys] = useState([]); // [설문] 진행 중 설문(svy3) — 본인 대상만
   const [surveyResponses, setSurveyResponses] = useState({}); // [설문] 본인 응답(svyr3)
   const [tab, setTab] = useState("home"); // [0812 대시보드] 첫 화면 = 홈 카드판
+  const [vocaOpenLast, setVocaOpenLast] = useState(false); // [0812] 홈 단어장 카드로 들어왔는지 — 단어장 탭이 열릴 때 한 번 소비
   const [showAttQr, setShowAttQr] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
   const [viewingVideo, setViewingVideo] = useState(null);
@@ -4325,7 +4339,7 @@ export default function App() {
               </button>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <button onClick={() => setTab("voca")} style={cardBox}>
+                <button onClick={() => { setVocaOpenLast(true); setTab("voca"); }} style={cardBox}>
                   <div style={cardLabel}>📚 2. 단어장</div>
                   <div style={cardMain}>{vocaTitle}</div>
                   <div style={cardSub}>이어서 공부하기</div>
@@ -4443,7 +4457,7 @@ export default function App() {
           const src = `${VOCA_APP_URL}?${q.toString()}`;
           return (
             <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden", border: "1px solid #eceef2" }}>
-              <VocaFrame title="단어장" src={src} />
+              <VocaFrame title="단어장" src={src} openLast={vocaOpenLast} onOpenLastDone={() => setVocaOpenLast(false)} />
             </div>
           );
         })()}
