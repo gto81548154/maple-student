@@ -3322,6 +3322,7 @@ export default function App() {
   const [surveyResponses, setSurveyResponses] = useState({}); // [설문] 본인 응답(svyr3)
   const [tab, setTab] = useState("home"); // [0812 대시보드] 첫 화면 = 홈 카드판
   const [vocaOpenLast, setVocaOpenLast] = useState(false); // [0812] 홈 단어장 카드로 들어왔는지 — 단어장 탭이 열릴 때 한 번 소비
+  const [videoPicker, setVideoPicker] = useState(false); // [0813] 홈 강의영상 카드의 "강의 고르기" 창 열림 여부
   const [showAttQr, setShowAttQr] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
   const [viewingVideo, setViewingVideo] = useState(null);
@@ -4348,9 +4349,31 @@ export default function App() {
           });
           const wrongCount = Object.values(vocabWrongWords || {}).reduce((n, m) =>
             n + Object.values(m?.words || {}).filter(w => (w.status || "active") === "active" && Array.isArray(w.correctAnswers) && w.correctAnswers.length > 0).length, 0);
+          // [0813] 강의 고르기 창 버튼 목록 = 이어보기 + 오늘 숙제 "수강" 강의(숙제 탭과 같은 짝짓기)
+          const allTaskItems = stepGroups.flatMap(s => s.items);
+          const pickerButtons = buildVideoPickerButtons(lastVideo, allTaskItems, studentVideos);
+          // 고른 강의 카드가 화면에 그려진 다음 그 위치로 내려간다. 위 탭 줄이 붙박이(sticky)라 70px 여유를 둔다.
+          // 혹시 실패해도 화면이 안 움직일 뿐, 오류는 나지 않는다. 두 번 시도(늦게 그려지는 폰 대비).
+          const scrollToVideoCard = (vid) => {
+            const go = () => {
+              try {
+                const el = document.getElementById("video-card-" + vid);
+                if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 70, behavior: "smooth" });
+              } catch (e) {}
+            };
+            setTimeout(go, 150); setTimeout(go, 600);
+          };
+          const playFromPicker = (v) => {
+            setVideoPicker(false);
+            setSelectedVideoBook(null);
+            if (viewingVideo?.id !== v.id) toggleVideo(v); // 이미 열려 있으면 다시 누르지 않는다(닫힘 방지)
+            setTab("videos");
+            scrollToVideoCard(v.id);
+          };
           const openVideosFromCard = () => {
-            // 카드에서 열면 = 그 영상 줄을 직접 누른 것과 동일(toggleVideo가 추적 초기화까지 처리)
-            if (lastVideo && viewingVideo?.id !== lastVideo.id) { setSelectedVideoBook(null); toggleVideo(lastVideo); }
+            // [0813] 버튼으로 보여줄 강의가 있으면 고르기 창부터. 하나도 없으면 예전처럼 목록으로.
+            if (pickerButtons.length > 0) { setVideoPicker(true); return; }
+            setSelectedVideoBook(null);
             setTab("videos");
           };
           const cardBox = { background: "#fff", border: "1px solid #e8eaef", borderRadius: 14, padding: "13px 14px", cursor: "pointer", textAlign: "left", fontFamily: "inherit", display: "block", width: "100%" };
@@ -4429,6 +4452,27 @@ export default function App() {
                   <div style={cardSub}>열린 회차 보기</div>
                 </button>
               </div>
+              {/* [0813] 강의 고르기 창 — 바깥 어두운 부분을 누르면 닫힌다 */}
+              {videoPicker && (
+                <div onClick={() => setVideoPicker(false)} style={{ position: "fixed", inset: 0, background: "rgba(20,25,40,0.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+                  <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 340, padding: "16px 15px", boxSizing: "border-box" }}>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: "#1a1a2e" }}>어떤 강의를 볼까요?</div>
+                    <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+                      {pickerButtons.map(({ video: v, kind }) => (
+                        <button key={v.id} onClick={() => playFromPicker(v)} style={{
+                          textAlign: "left", fontFamily: "inherit", cursor: "pointer", borderRadius: 12, padding: "11px 13px",
+                          border: kind === "resume" ? "1px solid #c5dcf6" : "1px solid #e8eaef",
+                          background: kind === "resume" ? "#eef5fd" : "#fff",
+                        }}>
+                          <div style={{ fontSize: 13.5, fontWeight: 800, color: kind === "resume" ? "#0c447c" : "#2A2A28", lineHeight: 1.35 }}>▶ {v.title || v.subject || "강의"}</div>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: kind === "resume" ? "#3a72b0" : "#9aa0ab", marginTop: 3 }}>{kind === "resume" ? "보던 강의 이어보기" : "오늘 숙제 · 수강"}</div>
+                        </button>
+                      ))}
+                      <button onClick={() => { setVideoPicker(false); setSelectedVideoBook(null); setTab("videos"); }} style={{ border: "none", background: "none", fontFamily: "inherit", cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: "#8a8f9c", padding: "8px 0 2px" }}>전체 강의 목록 보기 ›</button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })()}
@@ -4584,7 +4628,7 @@ export default function App() {
             {visibleVideos.map((v) => {
               const isOpen = viewingVideo?.id === v.id;
               return (
-                <div key={v.id} style={{
+                <div key={v.id} id={"video-card-" + v.id} style={{
                   background: "#fff", borderRadius: 14, marginBottom: 12,
                   boxShadow: isOpen ? "0 4px 16px rgba(74,108,247,0.15)" : "0 1px 4px rgba(0,0,0,0.04)",
                   border: isOpen ? "2px solid #1C66A5" : "2px solid transparent",
@@ -5397,6 +5441,25 @@ function matchVideosForTask(taskText, studentVideos) {
   }
 
   return { hasKeyword: true, matched: [], bookCandidates: [] };
+}
+
+// ─── [0813] 홈 강의 고르기 창: 버튼 목록 계산 ───
+// ① 보던 강의(이어보기) ② 오늘 숙제에 "수강"이라고 적힌 항목과 짝지어진 강의(숙제 탭과 같은 규칙).
+// 이어보기와 겹치는 강의는 한 번만, 숙제 강의는 최대 4개.
+function buildVideoPickerButtons(lastVideo, taskItems, studentVideos) {
+  const out = [];
+  const seen = new Set();
+  if (lastVideo) { out.push({ video: lastVideo, kind: "resume" }); seen.add(lastVideo.id); }
+  (taskItems || []).forEach(item => {
+    const { matched } = matchVideosForTask(item.text || "", studentVideos);
+    matched.forEach(v => {
+      if (seen.has(v.id)) return;
+      if (out.filter(b => b.kind === "task").length >= 4) return;
+      seen.add(v.id);
+      out.push({ video: v, kind: "task" });
+    });
+  });
+  return out;
 }
 
 // 영상 제목에서 짧은 라벨 추출 (버튼에 표시할 용도)
