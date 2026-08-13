@@ -4438,14 +4438,18 @@ export default function App() {
           };
           const playFromPicker = (v) => {
             setVideoPicker(false);
+            // 책 칸(sub-tab) 선택을 비워 두면 지금 펼친 강의의 책이 저절로 열린다.
+            // 그래야 다른 책 강의를 골라도 그 카드가 화면에 실제로 그려지고 스크롤이 먹는다.
             setSelectedVideoBook(null);
             if (viewingVideo?.id !== v.id) toggleVideo(v); // 이미 열려 있으면 다시 누르지 않는다(닫힘 방지)
             setTab("videos");
             scrollToVideoCard(v.id);
           };
           const openVideosFromCard = () => {
-            // [0813] 시작 강의가 있으면 고르기 창부터(추가 강의는 접힌 상태로). 하나도 없으면 예전처럼 목록으로.
-            if (picker.main) { setPickerMore(false); setVideoPicker(true); return; }
+            // [0813-2 원장 지시] 고르기 창을 띄우지 않는다. 눌렀으면 곧바로 강의 탭으로 가서
+            // 시작 강의(오늘 숙제 "수강" 중 가장 앞 번호, 없으면 보던 강의)를 펼치고 그 자리까지 내려간다.
+            // 볼 강의를 하나도 못 고르면 예전처럼 전체 목록만 연다.
+            if (picker.main) { playFromPicker(picker.main.video); return; }
             setSelectedVideoBook(null);
             setTab("videos");
           };
@@ -4535,7 +4539,8 @@ export default function App() {
                 </button>
               </div>
               {/* [0813] 강의 고르기 창 — 시작 강의 하나 크게, 앞뒤 강의는 "추가 강의"를 눌러야 펼쳐짐. 바깥을 누르면 닫힌다 */}
-              {videoPicker && picker.main && (
+              {/* [0813-2] 고르기 창 은퇴 — 카드를 누르면 창 없이 바로 강의 탭으로 간다. 되살리려면 false && 를 지우면 된다. */}
+              {false && videoPicker && picker.main && (
                 <div onClick={() => setVideoPicker(false)} style={{ position: "fixed", inset: 0, background: "rgba(20,25,40,0.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
                   <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 340, padding: "16px 15px", boxSizing: "border-box" }}>
                     <div style={{ fontSize: 15, fontWeight: 800, color: "#1a1a2e" }}>어떤 강의를 볼까요?</div>
@@ -5414,12 +5419,77 @@ const isGenericVideoKeyword = (keyword = "", video = {}) => {
   return bookNorm.includes(kn) && kn.length <= 5;
 };
 
+// [0813-2] 교재 이름에 들어 있는 숫자는 회차가 아니다.
+// 예) "왓츠리딩-70A"의 70 — 이걸 회차로 세면 그 책 강의가 전부 걸려서
+//     "6강 수강"이라고 적어도 5·6·7강이 다 뜨고, 홈 카드가 엉뚱한 강의를 연다.
+const stripBookNumbers = (nums = [], video = {}) => {
+  const bookNums = new Set(extractTaskNumbers(String(video?.subject || video?.bookName || "")));
+  const kept = nums.filter(n => !bookNums.has(n));
+  return kept.length ? kept : nums; // 다 빠지면 예전대로(안전)
+};
+// ─── [0813-3] "챕터2 1 2 3 4 수강" 같은 줄을 제대로 읽기 ────────────────────
+// 원장 표기: 앞에 챕터(단원) 번호, 뒤에 그 안의 지문 번호. 곧 챕터2의 1·2·3·4 = 2-1,2-2,2-3,2-4.
+// 예전에는 뒤 숫자 1·2·3·4를 "1강·2강·3강·4강"으로 읽어서 챕터1 영상이 떴다.
+// 이제 챕터 번호와 뒤 숫자를 붙여 "2-1" 꼴로 만들어, 영상 키워드의 "2-1"과 정확히 맞춘다.
+const TASK_LABEL_NUM_RE = /(?:챕터|chapter|ch|유닛|unit|lesson|레슨|day|데이|파트|part)\.?\s*-?\s*(\d{1,4})/gi;
+const TASK_NUM_LABEL_RE = /(\d{1,4})\s*(?:강|과|회|장|단원)/g;
+
+// 줄에서 "챕터N" 같은 큰 단위 번호만 뽑는다.
+const extractTaskLabelNumbers = (text = "") => {
+  const out = []; let m;
+  const re = new RegExp(TASK_LABEL_NUM_RE.source, "gi");
+  while ((m = re.exec(String(text || "")))) out.push(parseInt(m[1], 10));
+  return out;
+};
+// "챕터2"·"3강" 같은 딱지 붙은 표현을 지운 나머지에서 맨숫자만 뽑는다(교재 숫자는 뺀다).
+const extractTaskLooseNumbers = (text = "", video = {}) => {
+  const rest = String(text || "")
+    .replace(new RegExp(TASK_LABEL_NUM_RE.source, "gi"), " ")
+    .replace(new RegExp(TASK_NUM_LABEL_RE.source, "g"), " ");
+  const bookNums = new Set(extractTaskNumbers(String(video?.subject || video?.bookName || "")));
+  return extractTaskNumbers(rest).filter(n => !bookNums.has(n));
+};
+// 영상 키워드에서 "2-1" 꼴 짝을 뽑는다.
+const extractVideoNumberPairs = (video = {}) => {
+  const out = new Set();
+  getVideoMatchKeywords(video).forEach(k => {
+    const m = String(k).match(/^\s*(\d{1,4})\s*[-–—~]\s*(\d{1,4})\s*$/);
+    if (m) out.add(`${parseInt(m[1], 10)}-${parseInt(m[2], 10)}`);
+  });
+  return out;
+};
+// 줄이 원하는 "2-1" 짝들.
+//  ① 챕터 번호 × 뒤 숫자 (챕터2 1 2 3 4 → 2-1,2-2,2-3,2-4)
+//  ② 줄에 "2-1"이라고 그대로 적은 경우도 그대로 인정
+const TASK_LITERAL_PAIR_RE = /(?:^|[^\d])(\d{1,4})\s*-\s*(\d{1,4})(?![\d])/g;
+const buildTaskNumberPairs = (taskText = "", video = {}) => {
+  const out = new Set();
+  const labels = extractTaskLabelNumbers(taskText);
+  const loose = extractTaskLooseNumbers(taskText, video);
+  labels.forEach(L => loose.forEach(n => out.add(`${L}-${n}`)));
+  // 교재 이름 부분("왓츠리딩-70A")은 떼고 본다 — 거기 숫자는 회차가 아니다.
+  const bookName = String(video?.subject || video?.bookName || "");
+  let rest = String(taskText || "");
+  if (bookName) rest = rest.split(bookName).join(" ");
+  let m; const re = new RegExp(TASK_LITERAL_PAIR_RE.source, "g");
+  while ((m = re.exec(rest))) out.add(`${parseInt(m[1], 10)}-${parseInt(m[2], 10)}`);
+  return out;
+};
+// 줄의 "챕터N"이 영상 키워드의 "챕터N"과 같은가(뒤 숫자 없이 "챕터2 수강"만 적었을 때)
+const videoMatchesTaskLabel = (video = {}, labelNums = []) => {
+  if (!labelNums.length) return false;
+  const vids = new Set();
+  getVideoMatchKeywords(video).forEach(k => extractTaskLabelNumbers(k).forEach(n => vids.add(n)));
+  return labelNums.some(n => vids.has(n));
+};
+
 const videoMatchesTaskNumber = (video = {}, taskNumbers = []) => {
   if (!taskNumbers.length) return false;
-  const titleNums = extractTaskNumbers(video.title || "");
-  if (titleNums.some(n => taskNumbers.includes(n))) return true;
+  const wanted = stripBookNumbers(taskNumbers, video);
+  const titleNums = stripBookNumbers(extractTaskNumbers(video.title || ""), video);
+  if (titleNums.some(n => wanted.includes(n))) return true;
   const keywordNums = getVideoMatchKeywords(video).flatMap(k => extractTaskNumbers(k));
-  return keywordNums.some(n => taskNumbers.includes(n));
+  return keywordNums.some(n => wanted.includes(n));
 };
 
 const countSpecificVideoKeywordMatches = (taskText, video = {}) => {
@@ -5504,6 +5574,27 @@ function matchVideosForTask(taskText, studentVideos) {
     return subj && (taskNorm.includes(subj) || subj.includes(taskNorm));
   }));
 
+  // [0813-3] 1.5순위: "챕터2 1 2 3 4" 처럼 챕터 번호 + 그 안의 지문 번호로 적힌 줄.
+  //   ① 챕터와 뒤 숫자를 붙인 "2-1" 짝이 영상 키워드와 정확히 맞으면 그 영상들만.
+  //   ② 뒤 숫자가 없어 짝을 못 만들면("챕터2 수강") 챕터 번호만 같은 영상들.
+  //   여기서 답이 나오면 아래 맨숫자 매칭으로 내려가지 않는다(1강·2강이 잘못 걸리던 자리).
+  if (bookCandidates.length > 0) {
+    const wantPairs = buildTaskNumberPairs(taskText, bookCandidates[0] || {});
+    if (wantPairs.size > 0) {
+      const pairMatched = uniqVideosById(bookCandidates.filter(v => {
+        const vp = extractVideoNumberPairs(v);
+        for (const pr of wantPairs) if (vp.has(pr)) return true;
+        return false;
+      }));
+      if (pairMatched.length > 0) return { hasKeyword: true, matched: pairMatched.slice(0, 4), bookCandidates };
+    }
+    const labelNums = extractTaskLabelNumbers(taskText);
+    if (labelNums.length > 0) {
+      const labelMatched = uniqVideosById(bookCandidates.filter(v => videoMatchesTaskLabel(v, labelNums)));
+      if (labelMatched.length > 0) return { hasKeyword: true, matched: labelMatched.slice(0, 4), bookCandidates };
+    }
+  }
+
   // 2순위: 과제에 숫자가 있으면, 책 후보 안에서 제목/키워드 숫자가 맞는 영상만 확정한다.
   if (taskNumbers.length > 0 && bookCandidates.length > 0) {
     const numberMatched = uniqVideosById(bookCandidates.filter(v => videoMatchesTaskNumber(v, taskNumbers)));
@@ -5547,8 +5638,12 @@ function pickDefaultTodoDate(allDatesFull, todayStr) {
 // main = 오늘 숙제 "수강" 강의 중 가장 앞 번호(없으면 마지막 본 강의).
 // extras = 시작 강의와 같은 책에서 앞뒤 2개씩 + 나머지 숙제 강의 + 보던 강의, 번호순, 최대 6개.
 function videoNumberOf(v) {
-  const nums = extractTaskNumbers(String(v?.title || ""));
-  return nums.length ? nums[nums.length - 1] : null;
+  // [0813-2] 제목의 교재 숫자("70A"의 70)를 빼고 진짜 회차만 본다.
+  const bookNums = new Set(extractTaskNumbers(String(v?.subject || v?.bookName || "")));
+  const all = extractTaskNumbers(String(v?.title || ""));
+  const nums = all.filter(n => !bookNums.has(n));
+  const use = nums.length ? nums : all;
+  return use.length ? use[use.length - 1] : null;
 }
 function buildVideoPickerV2(lastVideo, taskItems, studentVideos) {
   const taskMatched = [];
