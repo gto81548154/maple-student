@@ -110,12 +110,34 @@ const VOCA_SHORT_LABELS = { wm_sn: "워마 수능", wm_basic: "워마 Basic", wm
 const VOCA_UNIT_WORDS = { wm_sn: "DAY", wm_basic: "DAY", wm_hi: "DAY", ve_ess: "UNIT", ve_adv: "UNIT", ve_ety: "DAY" };
 // 숙제 항목에서 "단어-워마 수능 25 26 27 28" 같은 줄을 찾아 { book, lecs }로 돌려준다.
 // 책 이름이 잡히고 1~60 사이 숫자가 있는 첫 줄을 쓴다. 없으면 null. (2000 같은 큰 숫자는 걸러짐)
+// [0813 검토수정] ① "25~28" 같은 물결표(및 붙임표) 범위를 26·27까지 펼쳐서 읽는다
+//                ② "3회독"·"10개"처럼 단원이 아닌 숫자는 먼저 지우고 읽는다
+const VOCA_NOISE_NUMBER = /\d+\s*(회독|회씩|회|개씩|개|문제|문항|일차|일|쪽|페이지|주차|분|차|번씩)/g;
+const VOCA_RANGE_MARK = /(\d+)\s*[~∼〜～\-–—]\s*(\d+)/g;
+function parseVocaLecs(text) {
+  const cleaned = String(text || "").replace(VOCA_NOISE_NUMBER, " ");
+  const out = [];
+  // 범위를 먼저 펼친다. 범위로 보기 어려우면 그대로 두고 아래에서 낱개로 읽는다.
+  const rest = cleaned.replace(VOCA_RANGE_MARK, (whole, a, b) => {
+    const s = parseInt(a, 10), e = parseInt(b, 10);
+    if (s >= 1 && e >= 1 && s <= 60 && e <= 60 && e >= s && e - s <= 40) {
+      for (let n = s; n <= e; n++) out.push(n);
+      return " ";
+    }
+    return whole;
+  });
+  (rest.match(/\d+/g) || []).forEach(t => {
+    const n = parseInt(t, 10);
+    if (n >= 1 && n <= 60) out.push(n);
+  });
+  return [...new Set(out)].sort((a, b) => a - b);
+}
 function findTaskVocaRange(taskItems) {
   for (const item of (taskItems || [])) {
     const text = String(item?.text || "");
     const m = VOCA_BOOK_MATCHERS.find(mm => mm.re.test(text));
     if (!m) continue;
-    const lecs = [...new Set(extractTaskNumbers(text).filter(n => n >= 1 && n <= 60))].sort((a, b) => a - b);
+    const lecs = parseVocaLecs(text);
     if (!lecs.length) continue;
     return { book: m.id, lecs };
   }
@@ -4076,10 +4098,12 @@ export default function App() {
   // ③ 미래 기록도 없으면 가장 최근 지난 기록. 학생이 단추로 고른 날짜(selectedDate)가 언제나 먼저다.
   const todayStrForTab = getTodayStr();
   const defaultDate = pickDefaultTodoDate(allDatesFull, todayStrForTab);
-  // 날짜 단추는 3개 유지. 기본 날짜가 최신 3개 밖이면 가장 오래된 단추 하나를 빼고 넣는다.
+  // 날짜 단추는 3개 유지. 기본 날짜가 최신 3개 밖이면, 기본 날짜와 그보다 가까운 날짜 2개로 채운다.
+  // [0813 검토수정] 예전에는 최신(=가장 먼) 2개를 데려와서 정작 가까운 날짜가 안 보였다.
   let allDates = allDatesFull.slice(0, 3);
   if (allDatesFull.includes(defaultDate) && !allDates.includes(defaultDate)) {
-    allDates = [...allDates.slice(0, 2), defaultDate];
+    const nearerNewer = allDatesFull.filter(d => d > defaultDate).slice(-2);
+    allDates = [...nearerNewer, defaultDate];
   }
   const activeDate = selectedDate || defaultDate;
   const todo = todos[activeDate]?.[studentId] || todos[activeDate]?.[Number(studentId)] || {};
