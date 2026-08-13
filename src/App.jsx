@@ -812,8 +812,13 @@ const computeAttNotice = (student, makeups, customHolidays) => {
 };
 // 날짜 → "8월 19일 (수)"
 const fmtAttDayParen = (d) => `${d.getMonth() + 1}월 ${d.getDate()}일 (${DK[d.getDay()]})`;
-// 등원 항목 꼬리표 — 보충이면 " (보충)", 방학 시간표면 " (방학)"
-const attTag = (a) => (a && a.isMakeup ? " (보충)" : a && a.isVacation ? " (방학)" : "");
+// 등원 항목 꼬리표 — 보충이면 " (보충)"만 붙인다.
+// [0813] "(방학)" 꼬리표 삭제 — 원장 결정.
+//   원래 뜻은 "이 시간은 방학 시간표에서 가져온 시간"이었지만,
+//   학생이 "그날은 쉬는 날"로 오해해서 홈 등원 안내(파란 띠·흰 띠) 두 곳 모두에서 안 붙이기로 함.
+//   시간 자체는 방학 시간표 값이 그대로 나오므로 정보 손실 없음.
+//   되살리려면 : 뒤에 (a && a.isVacation ? " (방학)" : "") 분기를 다시 넣으면 된다.
+const attTag = (a) => (a && a.isMakeup ? " (보충)" : "");
 
 
 // ─── 학생앱 시험 D-Day: 스케줄러(exam3) 연동 ───
@@ -4054,7 +4059,8 @@ export default function App() {
     .sort(([a], [b]) => b.localeCompare(a));
 
   // allDates: homework/academy 또는 steps5 중 하나라도 데이터가 있는 날짜
-  const allDates = Object.keys(todos)
+  // [0813] 전체 목록(allDatesFull)을 먼저 만들고, 기본 날짜를 정한 뒤 단추 3개를 뽑는다.
+  const allDatesFull = Object.keys(todos)
     .filter((d) => {
       const t = todos[d]?.[studentId] || todos[d]?.[Number(studentId)];
       if (!t) return false;
@@ -4063,14 +4069,18 @@ export default function App() {
       const hasSteps5 = t.steps5 && Object.values(t.steps5).some(v => (v || "").trim());
       return hw || ac || hasSteps5;
     })
-    .sort((a, b) => b.localeCompare(a))
-    .slice(0, 3);
+    .sort((a, b) => b.localeCompare(a));
 
-  // [3차 ②] 앱을 열었을 때 기본으로 보여줄 날짜.
-  // 오늘 기록이 있으면 오늘, 없으면 예전처럼 가장 나중에 기록된 날짜.
-  // 학생이 날짜 단추를 눌러 고른 것(selectedDate)이 언제나 먼저다.
+  // [0813] 앱을 열었을 때 기본으로 보여줄 날짜 — 원장 결정:
+  // ① 오늘 기록이 있으면 오늘 ② 없으면 오늘 이후 가장 가까운 기록(=다음 숙제)
+  // ③ 미래 기록도 없으면 가장 최근 지난 기록. 학생이 단추로 고른 날짜(selectedDate)가 언제나 먼저다.
   const todayStrForTab = getTodayStr();
-  const defaultDate = allDates.includes(todayStrForTab) ? todayStrForTab : (allDates[0] || todayStrForTab);
+  const defaultDate = pickDefaultTodoDate(allDatesFull, todayStrForTab);
+  // 날짜 단추는 3개 유지. 기본 날짜가 최신 3개 밖이면 가장 오래된 단추 하나를 빼고 넣는다.
+  let allDates = allDatesFull.slice(0, 3);
+  if (allDatesFull.includes(defaultDate) && !allDates.includes(defaultDate)) {
+    allDates = [...allDates.slice(0, 2), defaultDate];
+  }
   const activeDate = selectedDate || defaultDate;
   const todo = todos[activeDate]?.[studentId] || todos[activeDate]?.[Number(studentId)] || {};
 
@@ -4138,7 +4148,8 @@ export default function App() {
   // 다가올 등원일 텍스트 (헤더 표시용)
   const upcomingAtt = computeUpcomingAttendance(student, makeups, customHolidays);
   const upcomingAttText = upcomingAtt
-    .map(a => `${fmtAttDay(a.dateObj)} ${fmtTime(a.time)}${a.isMakeup ? " (보충)" : a.isVacation ? " (방학)" : ""}`)
+    // [0813] 꼬리표 규칙은 attTag 한 곳으로 통일 — 여기서도 "(방학)"은 안 붙는다(현재 이 줄은 화면에 표시되지 않음)
+    .map(a => `${fmtAttDay(a.dateObj)} ${fmtTime(a.time)}${attTag(a)}`)
     .join(", ");
   const examDdays = buildStudentExamDdays(student, exams, 2);
 
@@ -4442,6 +4453,9 @@ export default function App() {
                   <span style={{ fontSize: 12, fontWeight: 800, color: "#e84393" }}>1. 오늘 숙제</span>
                   <span style={{ marginLeft: "auto", fontSize: 11.5, color: "#9aa0ab", fontWeight: 600 }}>
                     {fmtDateKR(activeDate)}{isToday(activeDate) ? " · 오늘" : ""}
+                    {/* [0813] 오늘이 아닌 날짜를 보여줄 때는 지난/다음 표시로 헷갈림 방지 — 원장 결정 */}
+                    {!isToday(activeDate) && activeDate < todayStrForTab && <span style={{ marginLeft: 5, fontSize: 10.5, fontWeight: 700, color: "#b03a2e", background: "#fdecea", borderRadius: 6, padding: "1px 6px" }}>지난 숙제</span>}
+                    {!isToday(activeDate) && activeDate > todayStrForTab && <span style={{ marginLeft: 5, fontSize: 10.5, fontWeight: 700, color: "#0c5a9e", background: "#e8f2fc", borderRadius: 6, padding: "1px 6px" }}>다음 숙제</span>}
                   </span>
                 </div>
                 {step1Items.length === 0 ? (
@@ -5492,6 +5506,17 @@ function matchVideosForTask(taskText, studentVideos) {
   }
 
   return { hasKeyword: true, matched: [], bookCandidates: [] };
+}
+
+// ─── [0813] 숙제 기본 날짜 고르기 — 원장 결정 규칙 ───
+// ① 오늘 기록이 있으면 오늘 ② 없으면 오늘 이후 가장 가까운 기록 날짜(다음 숙제)
+// ③ 미래 기록도 없으면 가장 최근 지난 기록 ④ 기록이 하나도 없으면 오늘
+function pickDefaultTodoDate(allDatesFull, todayStr) {
+  const list = Array.isArray(allDatesFull) ? allDatesFull : [];
+  if (list.includes(todayStr)) return todayStr;
+  const upcoming = list.filter(d => d > todayStr).sort()[0];
+  if (upcoming) return upcoming;
+  return list[0] || todayStr;
 }
 
 // ─── [0813] 홈 강의 고르기 창: 시작 강의 하나 + 추가 강의(앞뒤 2개씩) ───
