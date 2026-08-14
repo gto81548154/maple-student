@@ -106,7 +106,19 @@ const VOCA_BOOK_MATCHERS = [
   { id: "ve_ety",   re: /어원편/ },
 ];
 // ─── [0813] 홈 "수업 단어 공부" 카드: 오늘 숙제에서 단어장 범위 읽기 ───
-const VOCA_SHORT_LABELS = { wm_sn: "워마 수능", wm_basic: "워마 Basic", wm_hi: "하이스트", ve_ess: "어휘끝 필수", ve_adv: "어휘끝 고난도", ve_ety: "어원편" };
+// [0814] 책 이름표는 이 표 한 곳에만 둔다 — full은 크게 쓰는 정식 이름(마플보카 책장 제목과 같게),
+//        short는 좁은 카드에서 쓰는 줄임말. 이름을 고칠 일이 생기면 여기만 고치면 된다.
+const VOCA_BOOK_LABELS = {
+  wm_sn:     { full: "워드마스터 수능 2000",  short: "워마 수능" },
+  wm_basic:  { full: "워드마스터 고등 Basic", short: "워마 Basic" },
+  wm_hi:     { full: "워드마스터 하이스트",   short: "하이스트" },
+  ve_ess:    { full: "어휘끝 중학 필수",      short: "어휘끝 필수" },
+  ve_adv:    { full: "어휘끝 중학 고난도",    short: "어휘끝 고난도" },
+  ve_ety:    { full: "어휘끝 어원편",         short: "어원편" },
+  vocabible: { full: "보카바이블 A·B",        short: "보카바이블" },
+};
+const vocaFullLabel = (id) => (VOCA_BOOK_LABELS[id] ? VOCA_BOOK_LABELS[id].full : "");
+const vocaShortLabel = (id) => (VOCA_BOOK_LABELS[id] ? VOCA_BOOK_LABELS[id].short : "단어장");
 const VOCA_UNIT_WORDS = { wm_sn: "DAY", wm_basic: "DAY", wm_hi: "DAY", ve_ess: "UNIT", ve_adv: "UNIT", ve_ety: "DAY" };
 // 숙제 항목에서 "단어-워마 수능 25 26 27 28" 같은 줄을 찾아 { book, lecs }로 돌려준다.
 // 책 이름이 잡히고 1~60 사이 숫자가 있는 첫 줄을 쓴다. 없으면 null. (2000 같은 큰 숫자는 걸러짐)
@@ -132,9 +144,77 @@ function parseVocaLecs(text) {
   });
   return [...new Set(out)].sort((a, b) => a - b);
 }
-function findTaskVocaRange(taskItems) {
+// ─── [0814] 원장앱 교재 이름·별칭으로 단어장 찾기 ───
+// 원장앱 "교재 설정"의 교재명과 별칭(줄임말)은 진도 맵(ptree3) 안에 그대로 들어 있다.
+// 교재명(또는 별칭)이 위 기본 규칙에 걸리면, 그 교재의 별칭을 전부 같은 단어장으로 등록한다.
+// → 원장이 별칭을 새로 넣어도 앱을 다시 고칠 필요가 없다.
+// 비교할 때는 띄어쓰기·붙임표를 지운다. "단어-중학-고난도"와 "단어 중학-고난도"를 같은 것으로 본다.
+const VOCA_SEP_CHARS = "\\s\\-–—_.·ㆍ・/";
+const VOCA_SEP_RE = new RegExp("[" + VOCA_SEP_CHARS + "]+", "g");
+const VOCA_SEP_ONE = new RegExp("[" + VOCA_SEP_CHARS + "]");
+const normVocaName = (s) => String(s || "").toLowerCase().replace(VOCA_SEP_RE, "");
+// 지운 글자 때문에 자리가 밀리므로, 남은 글자가 원래 몇 번째였는지도 같이 적어 둔다.
+// (뒤에서 교재 이름 부분만 정확히 도려내기 위함 — 교재 이름 속 숫자가 단원으로 세어지면 안 된다)
+function normVocaWithMap(text) {
+  const src = String(text || "");
+  let norm = ""; const map = [];
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (VOCA_SEP_ONE.test(ch)) continue;
+    norm += ch.toLowerCase(); map.push(i);
+  }
+  return { src, norm, map };
+}
+// 진도 맵을 훑어 [{ book, key }] 목록을 만든다. key는 띄어쓰기·붙임표를 지운 이름.
+function buildVocaAliasIndex(progressTree) {
+  const out = []; const seen = new Set();
+  (progressTree?.lanes || []).forEach((l) => (l.nodes || []).forEach((n) => {
+    const names = [String(n?.name || ""), ...String(n?.alias || "").split(",")]
+      .map(v => String(v).trim()).filter(Boolean);
+    if (!names.length) return;
+    let book = "";
+    for (const nm of names) {
+      const m = VOCA_BOOK_MATCHERS.find(mm => mm.re.test(nm));
+      if (m) { book = m.id; break; }
+    }
+    if (!book) return;   // 단어장이 아닌 교재(독해·구문·문법)는 건너뛴다
+    names.forEach(nm => {
+      const key = normVocaName(nm);
+      if (key.length < 3) return;   // 너무 짧은 별칭은 엉뚱한 줄에 걸릴 수 있어 쓰지 않는다
+      const tag = book + "|" + key;
+      if (seen.has(tag)) return;
+      seen.add(tag);
+      out.push({ book, key });
+    });
+  }));
+  out.sort((a, b) => b.key.length - a.key.length);   // 긴 이름부터 찾는다
+  return out;
+}
+// 숙제 줄에서 교재 이름·별칭을 찾는다. rest = 그 이름을 도려낸 나머지 글자.
+function matchVocaAliasInText(text, aliasIndex) {
+  if (!aliasIndex || !aliasIndex.length) return null;
+  const { src, norm, map } = normVocaWithMap(text);
+  if (!norm) return null;
+  for (const item of aliasIndex) {
+    const pos = norm.indexOf(item.key);
+    if (pos < 0) continue;
+    const from = map[pos], to = map[pos + item.key.length - 1];
+    return { book: item.book, rest: src.slice(0, from) + " " + src.slice(to + 1) };
+  }
+  return null;
+}
+// [0814] 찾는 순서 ① 원장앱 교재명·별칭이 먼저 ② 못 찾으면 예전 기본 규칙을 쓰되
+//        "단어"라고 적힌 줄만 본다(안 그러면 "독해-자이-고난도" 같은 줄을 단어장으로 잘못 읽는다).
+function findTaskVocaRange(taskItems, aliasIndex) {
   for (const item of (taskItems || [])) {
     const text = String(item?.text || "");
+    const hit = matchVocaAliasInText(text, aliasIndex);
+    if (hit) {
+      const lecs = parseVocaLecs(hit.rest);
+      if (lecs.length) return { book: hit.book, lecs };
+      continue;
+    }
+    if (!/단어/.test(text)) continue;
     const m = VOCA_BOOK_MATCHERS.find(mm => mm.re.test(text));
     if (!m) continue;
     const lecs = parseVocaLecs(text);
@@ -4167,7 +4247,9 @@ export default function App() {
   const vocabWarn = computeVocabReviewWarning(vocabWrongWords);
 
   // [0813] 오늘 숙제에 적힌 단어장 범위 — 홈 "수업 단어 공부" 카드와 단어장 탭 books 목록에 쓴다
-  const taskVoca = findTaskVocaRange(stepGroups.flatMap(s => s.items));
+  // [0814] 원장앱 교재명·별칭 표(진도 맵에서 뽑음)를 같이 넘긴다 — 새 훅 없이 그때그때 계산(교재 수십 개라 가볍다)
+  const vocaAliasIndex = buildVocaAliasIndex(progressTree);
+  const taskVoca = findTaskVocaRange(stepGroups.flatMap(s => s.items), vocaAliasIndex);
 
   // 다가올 등원일 텍스트 (헤더 표시용)
   const upcomingAtt = computeUpcomingAttendance(student, makeups, customHolidays);
@@ -4403,15 +4485,14 @@ export default function App() {
           const step1Items = (stepGroups.find(s => s.key === "step1")?.items) || [];
           // [0813] 등원 안내 — 이미 있는 등원일 계산 규칙 재사용. 서버 추가 요청 없음
           const attNotice = computeAttNotice(student, makeups, customHolidays);
-          // [0813] 책 이름표 — voca.html의 BOOKS 제목과 같게 유지(어원편·보카바이블 포함)
-          const VOCA_CARD_LABELS = { wm_sn: "워드마스터 수능 2000", wm_basic: "워드마스터 고등 Basic", wm_hi: "워드마스터 하이스트", ve_ess: "어휘끝 중학 필수", ve_adv: "어휘끝 중학 고난도", ve_ety: "어휘끝 어원편", vocabible: "보카바이블 A·B" };
+          // [0814] 책 이름표는 위쪽 VOCA_BOOK_LABELS 한 곳에서만 가져온다(두 벌로 갈라지지 않게)
           const vocaIds = guessVocaBooks(progressTree, videos);
           // [0813] 카드 제목 = 이 폰에서 마지막으로 연 책(누르면 실제로 열리는 책과 이름이 같게).
           //        기록이 없으면 배정 첫 책 이름, 그것도 없으면 "내 단어장".
           let vocaLastId = "";
           try { vocaLastId = localStorage.getItem("maplevoca_lastbook") || ""; } catch (e) { vocaLastId = ""; }
-          const vocaLastName = VOCA_CARD_LABELS[vocaLastId] || "";
-          const vocaTitle = vocaLastName || (vocaIds.length ? (VOCA_CARD_LABELS[vocaIds[0]] || "내 단어장") : "내 단어장");
+          const vocaLastName = vocaFullLabel(vocaLastId);
+          const vocaTitle = vocaLastName || (vocaIds.length ? (vocaFullLabel(vocaIds[0]) || "내 단어장") : "내 단어장");
           // 마지막에 보던 강의 = 시청 기록(lastAt)이 가장 최근인 영상
           const watchBySid = videoWatch[String(studentId)] || videoWatch[Number(studentId)] || {};
           let lastVideo = null; let lastVideoAt = 0;
@@ -4512,15 +4593,17 @@ export default function App() {
                 }} style={cardBox}>
                   <div style={cardLabel}>📚 2. 수업 단어 공부</div>
                   <div style={cardMain}>{taskVoca
-                    ? `${VOCA_SHORT_LABELS[taskVoca.book] || "단어장"} ${VOCA_UNIT_WORDS[taskVoca.book] || "DAY"} ${fmtLecRange(taskVoca.lecs)}`
+                    ? `${vocaShortLabel(taskVoca.book)} ${VOCA_UNIT_WORDS[taskVoca.book] || "DAY"} ${fmtLecRange(taskVoca.lecs)}`
                     : vocaTitle}</div>
                   <div style={cardSub}>{taskVoca ? "오늘 숙제 범위로 바로 시작" : vocaLastName ? "이어서 공부하기" : "공부하러 가기"}</div>
                 </button>
                 {studentVideos.length > 0 && (
                   <button onClick={openVideosFromCard} style={cardBox}>
                     <div style={cardLabel}>🎬 3. 강의 영상</div>
-                    <div style={cardMain}>{lastVideo ? (lastVideo.title || lastVideo.subject || "강의") : `강의 ${studentVideos.length}개`}</div>
-                    <div style={cardSub}>{lastVideo ? "이어보기" : "보러 가기"}</div>
+                    {/* [0814] 제목 = 눌렀을 때 실제로 열리는 강의(picker.main)와 같게 맞춘다.
+                        예전에는 "마지막 본 강의" 이름을 적어 두고 숙제 강의를 여는 바람에 이름과 동작이 달랐다. */}
+                    <div style={cardMain}>{picker.main ? (picker.main.video.title || picker.main.video.subject || "강의") : `강의 ${studentVideos.length}개`}</div>
+                    <div style={cardSub}>{picker.main ? (picker.main.kind === "task" ? "오늘 숙제 강의" : "이어보기") : "보러 가기"}</div>
                   </button>
                 )}
                 {hasVocabWrong && (
@@ -4790,7 +4873,9 @@ const computeTreeProgressForStudent = (sid, todos, tree) => {
   const result = { units: {}, recent: {} };
   if (!sid || !tree) return result;
   const prepared = (tree.lanes || []).flatMap(l => l.nodes || [])
-    .map(n => ({ n, keys: String(n.alias || n.name || "").split(",").map(v => v.trim()).filter(Boolean) }));
+    // [0814] 예전에는 별칭이 있으면 교재명을 아예 안 봤다(String(n.alias || n.name)).
+    //        그래서 투두에 교재명이 그대로 적히면 진도가 안 쌓였다. 이제 교재명 + 별칭을 모두 본다.
+    .map(n => ({ n, keys: [...new Set([String(n.name || ""), ...String(n.alias || "").split(",")].map(v => v.trim()).filter(Boolean))] }));
   Object.keys(todos || {}).sort().forEach(dk => {
     const day = todos[dk] || {};
     const row = day[String(sid)] !== undefined ? day[String(sid)] : day[sid];
