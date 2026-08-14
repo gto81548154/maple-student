@@ -232,6 +232,10 @@ header{position:sticky; top:0; z-index:10; background:var(--paper);
 .book .bc{font-size:13px; letter-spacing:1.5px; margin-top:7px; min-height:15px}
 .book .bpriv{position:absolute; top:9px; right:10px; font-size:10.5px; font-weight:700; color:var(--crimson); white-space:nowrap;
   border:1px solid #E9C6C1; border-radius:6px; padding:2px 5px; background:var(--paper)}
+/* [0814] 난이도 단계 배지 — 자리·크기는 위 '원장 전용' 배지와 같게, 색만 파랑 계열.
+ * 색은 변수라서 블랙홀(어두운) 모드에서도 알아서 바뀐다. */
+.book .blv{position:absolute; top:9px; right:10px; font-size:10.5px; font-weight:700; color:var(--teal); white-space:nowrap;
+  border:1px solid var(--teal); border-radius:6px; padding:2px 5px; background:var(--teal-soft)}
 .book.soon{opacity:.45; cursor:default}
 .shelfempty{grid-column:1/-1; text-align:center; color:var(--ink-soft); font-size:14px;
   line-height:1.6; padding:30px 10px}
@@ -747,6 +751,10 @@ const BOOKS = [
   { id:'ve_adv',    title:'어휘끝 중학 고난도',    sub:'중2~중3',     unit:'UNIT' },
   { id:'ve_ety',    title:'어휘끝 어원편',      sub:'고1~고3',     unit:'DAY' },
 ];
+/* [0814 원장 지시] 책장 난이도 단계 — 1(가장 쉬움) ~ 5(가장 어려움).
+ * 어원편은 뺀다(어휘 수준이 아니라 어원으로 묶인 책). 보카바이블도 편입용이라 뺀다.
+ * 이 표에 없는 책은 배지가 안 붙는다. 순서를 바꾸고 싶으면 숫자만 고치면 된다. */
+const BOOK_LEVEL = { ve_ess:1, ve_adv:2, wm_basic:3, wm_sn:4, wm_hi:5 };
 /* 강(UNIT)별 제목 — 어휘끝 2권만 존재. 워드마스터 계열은 DAY 번호만 쓰므로 없음(정상). */
 const TITLES = {
   ve_ess: {1:"외모",2:"감정",3:"신체 부위와 감각",4:"사람의 상태",5:"신체 동작",6:"가족",7:"가구, 가정용품",8:"부엌",9:"일상",10:"패션",11:"학교와 수업 1",12:"학교와 수업 2",13:"친구",14:"사고",15:"스포츠",16:"여가와 취미",17:"식사와 맛",18:"예술",19:"여행",20:"날씨",21:"호칭",22:"직업",23:"의사소통",24:"회사",25:"경제와 금융",26:"장소",27:"교통과 도로",28:"방향과 위치",29:"사회와 사회 문제",30:"범죄와 법",31:"자연과 환경 1",32:"자연과 환경 2",33:"동물과 조류",34:"식물과 곤충",35:"우주",36:"수와 양",37:"시간과 순서",38:"사물 묘사 1",39:"사물 묘사 2",40:"의미를 더 명확히 해주는 어휘"},
@@ -922,7 +930,9 @@ function renderShelf(){
     const total = bs?.total || countCache[b.id];
     const card = document.createElement('div');
     card.className = 'book' + (ready ? '' : ' soon');
-    const badge = b.priv ? (stu ? `<div class="bhid">히든</div>` : `<div class="bpriv">원장 전용</div>`) : '';
+    const lv = BOOK_LEVEL[b.id];                             // [0814] 난이도 단계(없으면 배지 안 붙음)
+    const badge = b.priv ? (stu ? `<div class="bhid">히든</div>` : `<div class="bpriv">원장 전용</div>`)
+                         : (lv ? `<div class="blv">${lv}단계</div>` : '');
     card.innerHTML =
       `<div class="bt">${b.title}</div>` +
       `<div class="bs">${ready ? (bs ? `${bs.round}회독 진행 중${total ? ` · ${total}단어` : ''}` : `시작 전 · ${b.sub}${total ? ` · ${total}단어` : ''}`) : '자료 준비 중'}</div>` +
@@ -2020,6 +2030,28 @@ async function tryOpenTaskBook(){
   if (!lecs.length) return;                           // 이 책에 없는 단원뿐이면 책만 열어둔다
   selLecs = new Set(lecs);
   renderHome();                                       // 체크 표시 + "선택 범위에서 학습 시작" 버튼 갱신
+  openTaskPicker();                                   // [0814] 체크에서 멈추지 않고 방식 고르는 창까지 띄운다
+}
+/* [0814 원장 지시] 숙제 범위를 체크한 뒤 "어떻게 공부할까요?" 창을 자동으로 띄운다.
+ * 학생은 방식만 고르면 바로 시작한다. 창을 닫으면 범위가 체크된 홈에 그대로 남는다(예전 동작).
+ * 학생앱 안(iframe)에서는 부모가 "보이는 영역"을 알려준 뒤에 열어야 창이 화면 밖에 그려지지 않는다.
+ * 3초를 기다려도 안 오면 조용히 포기한다 — 창을 엉뚱한 자리에 띄우느니 체크된 홈에 머무는 게 낫다. */
+function openTaskPicker(){
+  const embedded = window.parent !== window;
+  let tries = 0;
+  const go = () => {
+    if (!BOOK) return;                                 // 그새 책장으로 나갔으면 그만둔다
+    if (!scr.home.classList.contains('show')) return;  // 이미 다른 화면으로 갔으면 방해하지 않는다
+    if (document.querySelector('.modal.show')) return; // 다른 창이 떠 있으면 덮지 않는다
+    if (embedded && !EMB){
+      if (++tries > 20) return;
+      setTimeout(go, 150);
+      return;
+    }
+    const list = rangeList();
+    if (list.length) openModePicker(list, '오늘 숙제 범위');
+  };
+  go();
 }
 window.addEventListener('message', (e) => {
   const d = e.data;
