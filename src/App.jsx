@@ -3642,12 +3642,12 @@ export default function App() {
   useEffect(() => { viewingVideoRef.current = viewingVideo; }, [viewingVideo]);
 
   // [3차 ①] 자동 새로고침 방식
-  //  - 화면을 보고 있을 때: 예전처럼 30초마다
+  //  - 화면을 보고 있을 때: 60초마다 ([다이어트 4차 2026-08-17] 30초→60초, 워커 부담 절반)
   //  - 화면을 껐거나 다른 앱으로 갔을 때: 아예 멈춤 (데이터·배터리 절약)
   //  - 화면을 다시 켠 순간: 즉시 한 번 불러오기
   //  - 단, 강의 영상을 보는 중이면 즉시 불러오기는 건너뛴다.
   //    (영상 보다가 잠깐 나갔다 온 경우 화면을 다시 그리면 영상이 튈 수 있어서)
-  //    이때도 30초 타이머는 다시 돌기 때문에 최대 30초 안에 최신이 된다.
+  //    이때도 60초 타이머는 다시 돌기 때문에 최대 60초 안에 최신이 된다.
   useEffect(() => {
     // 학생 id가 없는 경우(링크 복구 첫 화면)에도 loadData를 한 번은 불러야 한다.
     // loadData 안에서 로딩 표시를 꺼주기 때문에, 여기서 그냥 return 하면 화면이 계속 "불러오는 중"에 멈춘다.
@@ -3655,7 +3655,7 @@ export default function App() {
 
     let timer = null;
     const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
-    const start = () => { stop(); timer = setInterval(() => loadData(), 30000); };
+    const start = () => { stop(); timer = setInterval(() => loadData(), 60000); };
 
     const onVisRefresh = () => {
       if (document.hidden) {
