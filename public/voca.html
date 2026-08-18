@@ -1256,7 +1256,7 @@ function renderHome(){
   $('#stampHome').innerHTML = `<b>${S.round}</b>회독`;
   $('#crownHome').textContent = S.crowns > 0 ? '👑'.repeat(S.crowns) : '';
   const pb = $('#btnPick');                                   // [숙제 2차수] 단어 선별하기 — 마스터(원장)만
-  if (pb) pb.style.display = (STU && STU.master) ? '' : 'none';
+  if (pb) pb.style.display = (STU && STU.master) ? 'block' : 'none';
   const exN = DATA.filter(w => S.words[w.id]?.x).length;      // 아는 단어 제외(카드·블링크) 개수
   $('#exCount').textContent = exN;
   $('#exLink').style.display = exN ? 'block' : 'none';
@@ -2576,6 +2576,5 @@ $('#brandBtn').onclick = goShelf;
 </script>
 </body>
 </html>
- 
  
  
