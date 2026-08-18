@@ -27,7 +27,7 @@ const VOCA_TAB_ENABLED = true;
 // 내부 스크롤을 없앤다. 반대로 여기서는 "지금 보이는 영역"(maplVis)을 계속 알려줘
 // 마플보카의 모달·토스트가 화면 안에 뜨게 하고, 화면 전환(maplVocaScroll) 때는 맨 위로 스크롤한다.
 // 옛 voca.html(높이를 안 보내는 판)과 섞이면 아래가 잘리므로 두 파일은 반드시 한 커밋으로 배포.
-function VocaFrame({ title, src, topOffset = 60, openLast = false, onOpenLastDone, openTask = null, onOpenTaskDone }) {
+function VocaFrame({ title, src, topOffset = 60, openLast = false, onOpenLastDone, openTask = null, onOpenTaskDone, hwTask = null, onHwTaskDone }) {
   const ref = useRef(null);
   const [h, setH] = useState(560);
   // [0812] 홈 카드 "단어장"으로 들어온 경우: voca가 살아있다는 첫 신호(높이)가 오면
@@ -41,6 +41,12 @@ function VocaFrame({ title, src, topOffset = 60, openLast = false, onOpenLastDon
   const openTaskDoneRef = useRef(onOpenTaskDone);
   openTaskDoneRef.current = onOpenTaskDone;
   useEffect(() => { if (openTask) openTaskRef.current = openTask; }, [openTask]);
+  // [숙제 5차수 0818] 홈 "수업 단어 공부" 카드: {book, lecs, date, deadline}를 담아
+  // "숙제 TEST를 바로 시작해줘"를 딱 한 번 보낸다. 마플보카가 객관식 클리어 모드로 연다.
+  const hwTaskRef = useRef(null);
+  const hwTaskDoneRef = useRef(onHwTaskDone);
+  hwTaskDoneRef.current = onHwTaskDone;
+  useEffect(() => { if (hwTask) hwTaskRef.current = hwTask; }, [hwTask]);
   useEffect(() => {
     let raf = 0;
     const sendVis = () => {
@@ -60,7 +66,11 @@ function VocaFrame({ title, src, topOffset = 60, openLast = false, onOpenLastDon
       if (!d || typeof d !== "object") return;
       if (d.type === "maplVocaHeight" && Number.isFinite(d.h)) {
         setH(Math.max(360, Math.ceil(d.h))); queueVis();
-        if (openTaskRef.current) {
+        if (hwTaskRef.current) {                                       // [숙제 5차수] 숙제 신호가 최우선
+          const req = hwTaskRef.current; hwTaskRef.current = null;      // 두 번 보내지 않기
+          try { el.contentWindow.postMessage({ type: "maplVocaHwTask", book: req.book, lecs: req.lecs, date: req.date, deadline: req.deadline }, "*"); } catch (e) {}
+          if (hwTaskDoneRef.current) hwTaskDoneRef.current();
+        } else if (openTaskRef.current) {
           const req = openTaskRef.current; openTaskRef.current = null;   // 두 번 보내지 않기
           try { el.contentWindow.postMessage({ type: "maplVocaOpenTask", book: req.book, lecs: req.lecs }, "*"); } catch (e) {}
           if (openTaskDoneRef.current) openTaskDoneRef.current();
@@ -3465,6 +3475,7 @@ export default function App() {
   const [videoPicker, setVideoPicker] = useState(false); // [0813] 홈 강의영상 카드의 "강의 고르기" 창 열림 여부
   const [pickerMore, setPickerMore] = useState(false); // [0813] 고르기 창에서 "추가 강의" 펼침 여부
   const [vocaOpenTask, setVocaOpenTask] = useState(null); // [0813] 홈 "수업 단어 공부" 카드 → 마플보카에 보낼 {book, lecs}. 보내면 비운다
+  const [vocaHwTask, setVocaHwTask] = useState(null);     // [숙제 5차수 0818] 홈 카드 → 마플보카 숙제 TEST {book, lecs, date, deadline}. 보내면 비운다
   const [showAttQr, setShowAttQr] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
   const [viewingVideo, setViewingVideo] = useState(null);
@@ -4587,15 +4598,34 @@ export default function App() {
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <button onClick={() => {
-                  // [0813] 숙제에 단어장 범위가 있으면 그 책·단원을 미리 체크해 열고, 없으면 예전처럼 마지막 책
-                  if (taskVoca) { setVocaOpenTask(taskVoca); setTab("voca"); return; }
+                  // [숙제 5차수 0818] 숙제에 단어장 범위가 있으면 숙제 TEST(객관식 클리어)를 바로 시작.
+                  // date = 이 숙제의 수업 날짜(activeDate) — 전날 미리 해도 그 수업 칸에 도장이 찍힌다.
+                  // deadline = 그 수업 날짜의 등원 시각. 등원 정보가 없으면 빈 값(서버는 그 경우 늦음 판정 안 함).
+                  if (taskVoca) {
+                    let deadline = "";
+                    try {
+                      const allHol = { ...HOLIDAYS, ...(customHolidays || {}) };
+                      const mks = (makeups || []).filter(m => String(m.studentId) === String(student.id));
+                      const dObj = new Date(activeDate + "T00:00:00");
+                      const ent = attEntryForDay(student, mks, allHol, dObj);
+                      if (ent && ent.time) {
+                        const [hh, mm] = String(ent.time).split(":");
+                        const dl = new Date(dObj);
+                        dl.setHours(parseInt(hh, 10) || 0, parseInt(mm, 10) || 0, 0, 0);
+                        deadline = dl.toISOString();
+                      }
+                    } catch (e) { deadline = ""; }
+                    setVocaHwTask({ book: taskVoca.book, lecs: taskVoca.lecs, date: activeDate, deadline });
+                    setTab("voca");
+                    return;
+                  }
                   setVocaOpenLast(true); setTab("voca");
                 }} style={cardBox}>
                   <div style={cardLabel}>📚 2. 수업 단어 공부</div>
                   <div style={cardMain}>{taskVoca
                     ? `${vocaShortLabel(taskVoca.book)} ${VOCA_UNIT_WORDS[taskVoca.book] || "DAY"} ${fmtLecRange(taskVoca.lecs)}`
                     : vocaTitle}</div>
-                  <div style={cardSub}>{taskVoca ? "오늘 숙제 범위로 바로 시작" : vocaLastName ? "이어서 공부하기" : "공부하러 가기"}</div>
+                  <div style={cardSub}>{taskVoca ? "숙제 TEST 바로 시작 — 전부 맞히면 완료" : vocaLastName ? "이어서 공부하기" : "공부하러 가기"}</div>
                 </button>
                 {studentVideos.length > 0 && (
                   <button onClick={openVideosFromCard} style={cardBox}>
@@ -4741,7 +4771,8 @@ export default function App() {
           return (
             <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden", border: "1px solid #eceef2" }}>
               <VocaFrame title="단어장" src={src} openLast={vocaOpenLast} onOpenLastDone={() => setVocaOpenLast(false)}
-                openTask={vocaOpenTask} onOpenTaskDone={() => setVocaOpenTask(null)} />
+                openTask={vocaOpenTask} onOpenTaskDone={() => setVocaOpenTask(null)}
+                hwTask={vocaHwTask} onHwTaskDone={() => setVocaHwTask(null)} />
             </div>
           );
         })()}
