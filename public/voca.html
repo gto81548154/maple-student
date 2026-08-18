@@ -357,6 +357,32 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
 .toast.show{opacity:1}
 .screen{display:none} .screen.show{display:block}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+/* ── [숙제 2차수] 단어 선별하기 (마스터 전용) ── */
+.pickbtn{display:none; width:100%; margin:10px 0 2px; padding:12px; border:1.5px dashed var(--line-strong,#c9c4b8); border-radius:12px;
+  background:var(--card,#fff); color:var(--ink,#222); font-size:14.5px; font-weight:700; cursor:pointer; text-align:center}
+.pickbtn small{display:block; margin-top:3px; font-weight:400; font-size:12px; color:var(--ink-soft,#777)}
+.pkbar{display:flex; align-items:center; gap:8px; margin:2px 0 10px}
+.pkbar .cnt{margin-left:auto; font-size:13px; font-weight:800; padding:4px 10px; border-radius:999px; background:var(--teal-bg,#e1f5ee); color:var(--teal,#0f6e56)}
+.pkinfo{font-size:12.5px; color:var(--ink-soft,#777); margin:0 0 10px; line-height:1.5}
+.pklist{display:flex; flex-direction:column; gap:6px; margin-bottom:12px}
+.pkrow{display:flex; align-items:center; gap:10px; padding:10px 12px; border:1px solid var(--line,#e3ded2); border-radius:10px;
+  background:var(--card,#fff); cursor:pointer; user-select:none}
+.pkrow .chk{width:20px; height:20px; flex:none; border:2px solid var(--line-strong,#c9c4b8); border-radius:6px; position:relative}
+.pkrow.on{border-color:var(--teal,#0f6e56); background:var(--teal-bg,#e1f5ee)}
+.pkrow.on .chk{border-color:var(--teal,#0f6e56); background:var(--teal,#0f6e56)}
+.pkrow.on .chk::after{content:''; position:absolute; left:5px; top:1px; width:5px; height:10px; border:solid #fff; border-width:0 2.5px 2.5px 0; transform:rotate(45deg)}
+.pkrow .w{font-size:15px; font-weight:700; flex:none}
+.pkrow .m{color:var(--ink-soft,#777); font-size:12.5px; flex:1; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.pkrow.on .w{color:var(--teal-ink,#04342c)}
+.pksave{position:sticky; bottom:8px; display:flex; gap:8px; padding:8px; background:var(--bg,#faf9f5); border-radius:12px}
+.pksave button{flex:1; padding:13px; border:0; border-radius:10px; font-size:15px; font-weight:800; cursor:pointer;
+  background:var(--teal,#0f6e56); color:#fff}
+.pksave button:disabled{opacity:.45; cursor:default}
+.pksave .pkclear{flex:none; background:transparent; color:var(--ink-soft,#777); border:1px solid var(--line,#e3ded2); font-weight:600; padding:13px 14px}
+.lec .pk{position:absolute; top:6px; right:8px; font-size:10px; font-weight:800; padding:2px 7px; border-radius:999px;
+  background:var(--teal-bg,#e1f5ee); color:var(--teal,#0f6e56)}
+.lec .pk.no{background:transparent; color:var(--ink-soft,#999); border:1px dashed var(--line-strong,#c9c4b8)}
+.lec{position:relative}
 </style>
 </head>
 <body>
@@ -402,10 +428,28 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
       <button class="mode" data-m="star">별표<span class="cnt"></span></button>
     </div>
     <div class="exlink" id="exLink" style="display:none">🚫 제외한 단어 <b id="exCount">0</b>개 보기</div>
+    <button class="pickbtn" id="btnPick" type="button">🎯 단어 선별하기<small>유닛마다 숙제로 낼 어려운 단어 10개를 고릅니다</small></button>
     <button class="allbtn" id="btnAll" disabled>선택 범위에서 학습 시작</button>
     <div class="rangeinfo" id="rangePick">아래 단원 목록에서 체크하세요</div>
     <div class="sechead">단원 목록 — 체크하면 범위에 담겨요</div>
     <div class="lecgrid" id="lecGrid"></div>
+  </section>
+
+  <!-- [숙제 2차수] 단어 선별하기 (마스터 전용) -->
+  <section class="screen" id="scrPick">
+    <div class="sechead" id="pkHead">단어 선별하기</div>
+    <div class="pkinfo" id="pkInfoLec" style="display:none">유닛을 누르면 그 유닛의 단어가 전부 나옵니다. 이미 고른 유닛에는 개수가 표시돼요.</div>
+    <div class="lecgrid" id="pkLecGrid" style="display:none"></div>
+    <div class="pkbar" id="pkBar" style="display:none">
+      <div class="sechead" id="pkLecTitle" style="margin:0">UNIT</div>
+      <span class="cnt" id="pkCnt">0 / 10</span>
+    </div>
+    <div class="pkinfo" id="pkInfoWord" style="display:none">숙제 모드는 여기서 고른 단어로만 나갑니다. 안 고른 유닛은 아무 단어나 10개가 나가요.</div>
+    <div class="pklist" id="pkList" style="display:none"></div>
+    <div class="pksave" id="pkSaveBar" style="display:none">
+      <button class="pkclear" id="pkClear" type="button">선별 지우기</button>
+      <button id="pkSave" type="button" disabled>저장</button>
+    </div>
   </section>
 
   <!-- 학습 -->
@@ -626,6 +670,16 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
 </div></div>
 
 <!-- 확인 모달: 바깥을 눌러도 닫히지 않음 (locked) -->
+<!-- [숙제 3차수] 숙제 클리어 완료 창 -->
+<div class="modal locked" id="mHwDone"><div class="sheet">
+  <h2 id="hwDoneTitle">🎉 오늘 단어 숙제 클리어!</h2>
+  <p id="hwDoneBody" style="font-size:14px; line-height:1.6; color:var(--ink-soft,#777); margin:8px 0 14px"></p>
+  <div class="btnrow" style="display:flex; gap:8px">
+    <button id="hwRetrySend" style="display:none">기록 다시 보내기</button>
+    <button id="hwDoneOk" class="yes">확인</button>
+  </div>
+</div></div>
+
 <div class="modal locked" id="mConfirm"><div class="sheet">
   <h2 id="cfTitle">확인</h2>
   <div id="cfBody" style="font-size:14.5px; color:var(--ink-soft); line-height:1.8"></div>
@@ -1094,13 +1148,16 @@ function matchSense(input, sense){
   }
   return false;
 }
-/* 반환: {ok, senseIdx, prevRound} — prevRound: 이전 회독에서 소진된 뜻을 쓴 경우 */
+/* 반환: {ok, senseIdx, prevRound} — prevRound: 이전 회독에서 소진된 뜻을 쓴 경우
+ * [숙제 4차수 08-18 원장 확정] 허들 완화 — 1·2회독은 같은 뜻을 또 적어도 정답.
+ * 3회독부터만 "앞 회독에서 쓴 뜻"을 오답 처리한다(다의어만 — 뜻 하나뿐인 단어는 원래부터 예외). */
+const spendRule = () => S.round >= 3;               // 뜻 소진 규칙이 켜지는 회독
 function grade(word, input){
   const p = W(word.id), multi = word.senses.length > 1;
   const availIdx = [], usedIdx = [];
   word.senses.forEach((s,i) => {
     const ur = p.u[s.sid];
-    (multi && ur != null && ur < S.round ? usedIdx : availIdx).push(i);
+    (multi && spendRule() && ur != null && ur < S.round ? usedIdx : availIdx).push(i);
   });
   const pool = availIdx.length ? availIdx : word.senses.map((_,i)=>i);  // 전부 소진 → 재허용
   for (const i of pool) if (matchSense(input, word.senses[i])) return { ok:true, senseIdx:i, sid:word.senses[i].sid };
@@ -1148,7 +1205,7 @@ function speak(text){
 /* ───────── 화면 전환 ───────── */
 const $ = q => document.querySelector(q);
 const scr = { shelf:$('#scrShelf'), home:$('#scrHome'), study:$('#scrStudy'), sum:$('#scrSum'),
-              flash:$('#scrFlash'), blink:$('#scrBlink'), mc:$('#scrMc') };
+              flash:$('#scrFlash'), blink:$('#scrBlink'), mc:$('#scrMc'), pick:$('#scrPick') };
 function show(name){
   if (name !== 'blink') stopBlink();               // 블링크 화면을 떠나면 자동 넘김 정지
   Object.values(scr).forEach(s => s.classList.remove('show'));
@@ -1198,6 +1255,8 @@ function renderHome(){
   $('#statBar').style.width = (correct/DATA.length*100).toFixed(1) + '%';
   $('#stampHome').innerHTML = `<b>${S.round}</b>회독`;
   $('#crownHome').textContent = S.crowns > 0 ? '👑'.repeat(S.crowns) : '';
+  const pb = $('#btnPick');                                   // [숙제 2차수] 단어 선별하기 — 마스터(원장)만
+  if (pb) pb.style.display = (STU && STU.master) ? '' : 'none';
   const exN = DATA.filter(w => S.words[w.id]?.x).length;      // 아는 단어 제외(카드·블링크) 개수
   $('#exCount').textContent = exN;
   $('#exLink').style.display = exN ? 'block' : 'none';
@@ -1336,9 +1395,9 @@ function renderCard(){
   // sense 점
   const multi = w.senses.length > 1;
   $('#senseInfo').innerHTML = w.senses.map((s,i) => {
-    const used = multi && p.u[s.sid] != null && p.u[s.sid] < S.round;
+    const used = multi && spendRule() && p.u[s.sid] != null && p.u[s.sid] < S.round;   // [숙제 4차수] 1~2회독은 소진 표시 없음
     return `<i class="sdot ${used?'used':'left'}"></i>`;
-  }).join('') + `<span>뜻 ${w.senses.filter(s=>!(multi&&p.u[s.sid]!=null&&p.u[s.sid]<S.round)).length}/${w.senses.length}</span>`;
+  }).join('') + `<span>뜻 ${w.senses.filter(s=>!(multi&&spendRule()&&p.u[s.sid]!=null&&p.u[s.sid]<S.round)).length}/${w.senses.length}</span>`;
   // 힌트
   $('#hint').classList.remove('open');
   $('#btnHint').style.display = (w.ef || w.ed) ? 'block' : 'none';
@@ -1424,7 +1483,7 @@ function showFeedback(w, p, res, input){
   const multi = w.senses.length > 1;
   $('#fbSenses').innerHTML = w.senses.map((s,i) => {
     const ur = p.u[s.sid];
-    const goneBefore = multi && ur != null && ur < S.round;
+    const goneBefore = multi && spendRule() && ur != null && ur < S.round;   // [숙제 4차수] 1~2회독은 취소선 없음
     const hitNow = res.ok && res.senseIdx === i;
     const cls = 'sense' + (hitNow ? ' hit' : goneBefore ? ' gone' : '');
     const tag = hitNow ? '<span class="tag now">이번 회독 ✓</span>' :
@@ -1701,7 +1760,7 @@ function pickMeaning(w){                            // 단어에서 낱개 뜻 �
 }
 function buildChoices(w){
   const corrects = [{ text: (w.senses[0].m[0] || '').trim(), ok: true }];
-  if (w.senses.length >= 2){                        // 다의어 → 답 2개 (두 번째 뜻묶음의 대표 뜻)
+  if (!HW && w.senses.length >= 2){                 // 다의어 → 답 2개 (두 번째 뜻묶음의 대표 뜻) — 숙제 모드는 항상 답 1개(원장 확정)
     const t2 = (w.senses[1].m[0] || '').trim();
     if (t2 && norm(t2) && norm(t2) !== norm(corrects[0].text)) corrects.push({ text: t2, ok: true });
   }
@@ -1765,9 +1824,9 @@ function renderMc(){
   const w = Q[qi], p = W(w.id);
   mcTopScroll();
   mark20(p);
-  $('#mcProgNum').textContent = `${qi+1} / ${Q.length}`;
+  $('#mcProgNum').textContent = HW ? `남은 ${Q.length - qi}개` : `${qi+1} / ${Q.length}`;   // [숙제 3차수] 틀리면 통 뒤로 다시 들어와 남은 수가 늘 수 있다
   $('#mcProgUnit').textContent = lecFull(w.lec);
-  $('#stampMc').innerHTML = `<b>${S.round}</b>회독`;
+  $('#stampMc').innerHTML = HW ? `숙제` : `<b>${S.round}</b>회독`;
   $('#mcStar').classList.toggle('on', !!p.s);
   $('#mcWord').innerHTML = `${w.w}<span class="spk">🔊</span>`;
   $('#mcPron').innerHTML = pronHtml(w);
@@ -1821,7 +1880,15 @@ function answerMc(picked){                          // picked: 고른 보기 번
       b.classList.add('dim');
     }
   });
-  if (ok){                                          // 대표 뜻(첫 뜻묶음)만 기록 — 2회독 서술형은 다른 뜻 요구
+  if (HW){                                          // [숙제 3차수] 클리어 규칙 — 맞히면 빠지고 틀리면 통 뒤로
+    if (ok){
+      if (S.round <= 2 && LAYER === 'main' && p.r[S.round] !== 1){ p.c++; p.r[S.round] = 1; }   // 1~2회독만 회독 반영, 뜻 소진 없음
+      sesOk++;
+    } else {
+      p.w++; hwWrong++;
+      Q.push(w);                                    // 통 맨 뒤로 — 다 맞혀야 끝난다
+    }
+  } else if (ok){                                   // 대표 뜻(첫 뜻묶음)만 기록 — 2회독 서술형은 다른 뜻 요구
     p.u[w.senses[0].sid] = S.round;
     p.c++; p.r[S.round] = 1;
     sesOk++;
@@ -1855,7 +1922,7 @@ function answerMc(picked){                          // picked: 고른 보기 번
 function mcAdvance(){
   if (!mcDone) return;
   if (Date.now() - mcDoneAt < 400) return;
-  if (qi === Q.length-1) return showSummary();
+  if (qi === Q.length-1) return HW ? finishHw() : showSummary();   // [숙제 3차수] 숙제는 결과 화면 대신 완료 창
   qi++; renderMc();
 }
 $('#scrMc').addEventListener('click', (e) => {
@@ -1875,7 +1942,125 @@ $('#mcStar').onclick = () => {
   $('#mcStar').classList.toggle('on', !!p.s);
   store.save(); renderHome();
 };
-$('#mcQuit').onclick = () => { renderHome(); show('home'); };
+$('#mcQuit').onclick = () => {
+  if (HW){                                          // [숙제 3차수] 중간에 나가면 처음부터 — 확인 후 종료
+    askConfirm({ title:'숙제 그만두기', body:'숙제가 아직 안 끝났어요. 나가면 다음에 처음부터 다시 풀어요. 그만둘까요?', yes:'그만두기', danger:true },
+      () => { HW = null; hwWrong = 0; renderHome(); show('home'); });
+    return;
+  }
+  renderHome(); show('home');
+};
+
+/* ───────── [숙제 3차수] 숙제 모드 — 객관식 클리어 (원장 확정 08-18) ─────────
+ * 학생앱 홈 "수업 단어 공부" 카드가 maplVocaHwTask{book, lecs, date, deadline} 신호를 보내면
+ * 그 책을 열고 곧바로 시작한다. 방식 고르는 창 없음, 범위 못 바꿈.
+ * 출제 = 유닛마다 원장이 선별한 단어(picks). 안 고른 유닛은 그 유닛에서 10개를 뽑되,
+ *        같은 학생·같은 날짜면 항상 같은 10개가 나오게 날짜+학생+유닛으로 섞는다(이어 풀기 공정).
+ * 진행 = 객관식 4지선다 답 1개(복수정답 없음). 맞히면 빠지고 틀리면 통 맨 뒤로 다시 — 전부 맞혀야 끝.
+ * 회독 = 1~2회독이면 맞힌 단어를 그 회독 정답으로 기록(뜻 소진 없음 — 같은 뜻 인정 방침).
+ *        3회독 이상은 기록하지 않는다(3회독은 다른 뜻을 직접 적어야 하므로 — 완료 도장만).
+ * 끝 = 서버에 완료 기록(POST /voca/hw-clear). 늦음 판정은 서버가 한다. */
+let HW = null;                       // 진행 중인 숙제 세션 { date, deadline, book, lecs, total }
+let hwWrong = 0;                     // 이번 숙제에서 틀린 횟수 합
+let OPEN_HW_PENDING = null;
+
+function hwToday(){                  // 로컬(폰) 날짜 YYYY-MM-DD — 신호에 date가 없을 때만 사용
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function seededShuffle(arr, seedStr){  // 같은 씨앗이면 항상 같은 순서 — 날짜가 바뀌면 다른 10개
+  let h = 0;
+  for (let i = 0; i < seedStr.length; i++){ h = (Math.imul(31, h) + seedStr.charCodeAt(i)) | 0; }
+  let a = h >>> 0;
+  const rnd = () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const out = arr.slice();
+  for (let i = out.length - 1; i > 0; i--){ const j = Math.floor(rnd() * (i + 1)); [out[i], out[j]] = [out[j], out[i]]; }
+  return out;
+}
+function buildHwWords(lecs, date){   // 유닛마다 출제 단어 고르기 (표제어만)
+  const byL = pkMainByLec();
+  const out = [];
+  for (const lec of lecs){
+    const main = byL[lec] || [];
+    if (!main.length) continue;
+    const picked = Array.isArray(PICKS[String(lec)]) ? PICKS[String(lec)] : [];
+    let sel = main.filter(w => picked.includes(w.id));           // 원장이 고른 단어(책에 실제 있는 것만)
+    if (!sel.length){                                            // 미선별 유닛 → 아무거나 10개 (날짜 고정 랜덤)
+      sel = seededShuffle(main, `${date}|${STU ? STU.id : ''}|${lec}`).slice(0, PK_GOAL);
+    }
+    out.push(...sel);
+  }
+  return out;
+}
+async function tryOpenHwBook(){
+  if (!OPEN_HW_PENDING || !SHELF_READY) return;
+  const req = OPEN_HW_PENDING; OPEN_HW_PENDING = null;
+  const id = String(req.book || '');
+  const b = BOOKS.find(x => x.id === id);
+  if (!b) return;
+  if (shelfStates()[id] !== 'normal') return;
+  if (STU && !STU.master && !bookReady(b)) return;
+  const m = document.querySelector('.modal.show');               // 열린 창이 있으면 닫고 시작
+  if (m){ if (m.id === 'mConfirm') $('#cfNo').click(); else m.classList.remove('show'); }
+  if (!BOOK || BOOK.id !== id){                                  // 다른 책이 열려 있어도 숙제 책으로 전환
+    await openBook(id);
+    if (!BOOK || BOOK.id !== id) return;
+  } else if (LAYER !== 'main'){ setLayer('main'); renderHome(); }
+  startHwSession(req);
+}
+async function startHwSession(req){
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(req.date || '')) ? String(req.date) : hwToday();
+  PICKS = await loadPicks(BOOK.id);
+  const lecs = Array.isArray(req.lecs)
+    ? [...new Set(req.lecs.map(Number).filter(x => Number.isFinite(x)))].sort((a, b) => a - b)
+    : [];
+  const words = buildHwWords(lecs, date);
+  if (!words.length){ toast('오늘 숙제 범위의 단어를 찾지 못했어요'); renderHome(); show('home'); return; }
+  HW = { date, deadline: req.deadline ? String(req.deadline) : '', book: BOOK.id, lecs, total: words.length };
+  hwWrong = 0;
+  Q = seededShuffle(words, `${date}|${STU ? STU.id : ''}|order`);
+  qi = 0; sesOk = 0; sesWrong = []; sesInputs = {};
+  renderMc(); show('mc');
+  toast('오늘 단어 숙제 — 전부 맞히면 끝!');
+}
+async function finishHw(){
+  const hw = HW; HW = null;
+  $('#hwDoneTitle').textContent = '🎉 오늘 단어 숙제 클리어!';
+  $('#hwDoneBody').textContent = '완료 기록을 저장하는 중이에요…';
+  $('#hwRetrySend').style.display = 'none';
+  openModal('#mHwDone');
+  const sendOnce = async () => {
+    if (!STU || !STU.api || !STU.t) return { offline: true };
+    try{
+      const u = `${STU.api}/voca/hw-clear?id=${encodeURIComponent(STU.id)}&t=${encodeURIComponent(STU.t)}`;
+      const r = await fetch(u, { method:'POST', headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ date: hw.date, book: hw.book, lecs: hw.lecs, n: hw.total, w: hwWrong, deadline: hw.deadline || undefined }) });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j || !j.success) return { fail: true };
+      return { late: !!j.late };
+    }catch(e){ return { fail: true }; }
+  };
+  const base = `총 ${hw.total}단어 · 틀린 횟수 ${hwWrong}번.`;
+  const res = await sendOnce();
+  if (res.offline){
+    $('#hwDoneBody').textContent = base + ' (단독 열람이라 완료 기록은 저장하지 않았어요)';
+  } else if (res.fail){
+    $('#hwDoneBody').textContent = base + ' 완료 기록을 아직 못 보냈어요 — 아래 버튼으로 다시 보내주세요.';
+    const rb = $('#hwRetrySend');
+    rb.style.display = '';
+    rb.onclick = async () => {
+      rb.disabled = true; rb.textContent = '보내는 중…';
+      const r2 = await sendOnce();
+      rb.disabled = false; rb.textContent = '기록 다시 보내기';
+      if (r2.fail){ toast('아직 안 돼요 — 인터넷 연결을 확인하고 다시 눌러주세요'); return; }
+      rb.style.display = 'none';
+      $('#hwDoneBody').textContent = base + (r2.late ? ' 등원 시간이 지나서 늦은 완료로 기록됐어요.' : ' 제때 완료로 기록됐어요!');
+    };
+  } else {
+    $('#hwDoneBody').textContent = base + (res.late ? ' 등원 시간이 지나서 늦은 완료로 기록됐어요.' : ' 제때 완료로 기록됐어요!');
+  }
+}
+$('#hwDoneOk').onclick = () => { $('#mHwDone').classList.remove('show'); renderHome(); show('home'); };
 
 /* ───────── 아는 단어 제외 (카드·블링크에서만 건너뜀 — 시험·진도는 그대로) ───────── */
 function toggleExclude(id, btn){
@@ -1940,6 +2125,145 @@ $('#exAll').onclick = () => {
  * 소모되면서 여기서 한 단계만 되돌리고(열린 창 닫기 → 학습 → 홈 → 책장) 계단을 다시 쌓는다.
  * 책장에서 누르면 계단을 안 쌓아 진짜로 밖(학생앱)으로 나간다. */
 let navArmed = false;
+/* ───────── [숙제 2차수] 단어 선별하기 (마스터 전용) ─────────
+ * 원장이 유닛마다 "어려운 단어 10개"를 골라 서버(R2 voca/picks/{책id}.json)에 저장한다.
+ * 학생 숙제 모드(3차수)는 이 목록으로 출제한다. 화면은 두 단계: 유닛 목록 → 단어 목록.
+ * 선별은 항상 일반 층(표제어) 기준 — 블랙홀 파생어는 대상이 아니다. */
+let PICKS = {};                 // { "유닛번호": [단어 id, ...] } — 지금 연 책의 선별본
+let pkLec = null;               // 지금 고르는 중인 유닛 번호 (null = 유닛 목록 단계)
+let pkSel = new Set();          // 지금 화면에서 체크된 단어 id들
+const PK_GOAL = 10;             // 유닛마다 고르는 개수 (단어가 10개 미만인 유닛은 전부)
+
+const pickBase = () => { const b = dataBase(); return b ? b.replace(/\/books\/?$/, '/picks') : ''; };
+const pkMainByLec = () => {     // 표제어만, 유닛별로
+  const m = {};
+  ALL.forEach(w => { if (!w.k) (m[w.lec] ||= []).push(w); });
+  return m;
+};
+async function loadPicks(bookId){
+  const base = pickBase();
+  if (!base) return {};
+  try{
+    const r = await fetch(`${base.replace(/\/+$/, '')}/${bookId}.json`, { cache:'no-store' });
+    if (!r.ok) return {};
+    const j = await r.json();
+    return (j && typeof j === 'object' && !Array.isArray(j)) ? j : {};
+  }catch(e){ return {}; }
+}
+async function enterPick(){
+  if (!BOOK || !STU || !STU.master) return;
+  PICKS = await loadPicks(BOOK.id);
+  enterPickLecs();
+  show('pick');
+}
+function pkGoalFor(list){ return Math.min(PK_GOAL, list.length); }
+function enterPickLecs(){       // 1단계: 유닛 목록
+  pkLec = null; pkSel = new Set();
+  $('#pkHead').textContent = `단어 선별하기 — ${BOOK ? BOOK.title : ''}`;
+  $('#pkInfoLec').style.display = '';
+  $('#pkLecGrid').style.display = '';
+  $('#pkBar').style.display = 'none';
+  $('#pkInfoWord').style.display = 'none';
+  $('#pkList').style.display = 'none';
+  $('#pkSaveBar').style.display = 'none';
+  const g = $('#pkLecGrid'); g.innerHTML = '';
+  const byL = pkMainByLec();
+  for (const lec of Object.keys(byL).map(Number).sort((a,b)=>a-b)){
+    const picked = Array.isArray(PICKS[String(lec)]) ? PICKS[String(lec)].length : 0;
+    const b = document.createElement('div');
+    b.className = 'lec';
+    b.innerHTML = `<div class="t">${lecLabel(lec)}</div>
+      <div class="n">${byL[lec].length}단어</div>
+      <div class="pk${picked ? '' : ' no'}">${picked ? '✓ ' + picked + '개' : '미선별'}</div>`;
+    b.onclick = () => enterPickWords(lec);
+    g.appendChild(b);
+  }
+  window.scrollTo(0,0); embScrollTop();
+}
+function enterPickWords(lec){   // 2단계: 그 유닛 단어 전부 + 체크
+  pkLec = lec;
+  const byL = pkMainByLec();
+  const list = byL[lec] || [];
+  const saved = Array.isArray(PICKS[String(lec)]) ? PICKS[String(lec)] : [];
+  pkSel = new Set(saved.filter(id => list.some(w => w.id === id)));
+  $('#pkInfoLec').style.display = 'none';
+  $('#pkLecGrid').style.display = 'none';
+  $('#pkBar').style.display = '';
+  $('#pkInfoWord').style.display = '';
+  $('#pkList').style.display = '';
+  $('#pkSaveBar').style.display = '';
+  $('#pkLecTitle').textContent = lecFull(lec);
+  const box = $('#pkList'); box.innerHTML = '';
+  for (const w of list){
+    const row = document.createElement('div');
+    row.className = 'pkrow' + (pkSel.has(w.id) ? ' on' : '');
+    const means = w.senses.map(s => s.m.join(', ')).join(' · ');
+    row.innerHTML = `<div class="chk"></div><div class="w"></div><div class="m"></div>`;
+    row.querySelector('.w').textContent = w.w;
+    row.querySelector('.m').textContent = means;
+    row.onclick = () => pkToggle(w.id, list, row);
+    box.appendChild(row);
+  }
+  pkRefresh(list);
+  window.scrollTo(0,0); embScrollTop();
+}
+function pkToggle(id, list, row){
+  const goal = pkGoalFor(list);
+  if (pkSel.has(id)){ pkSel.delete(id); row.classList.remove('on'); }
+  else {
+    if (pkSel.size >= goal){ toast(`${goal}개까지만 골라요 — 다른 단어를 빼고 고르세요`); return; }
+    pkSel.add(id); row.classList.add('on');
+  }
+  pkRefresh(list);
+}
+function pkRefresh(list){
+  const goal = pkGoalFor(list);
+  $('#pkCnt').textContent = `${pkSel.size} / ${goal}`;
+  const btn = $('#pkSave');
+  btn.disabled = pkSel.size !== goal;
+  btn.textContent = pkSel.size === goal ? '저장' : `저장 (${goal - pkSel.size}개 더 고르세요)`;
+  $('#pkClear').style.display = (Array.isArray(PICKS[String(pkLec)]) && PICKS[String(pkLec)].length) ? '' : 'none';
+}
+async function pkPut(lec, ids){ // 서버 저장 — 성공하면 true
+  const base = pickBase();
+  if (!base || !STU){ toast('서버 주소가 없어 저장할 수 없어요'); return false; }
+  const u = `${STU.api}/voca/picks?id=${encodeURIComponent(STU.id)}&t=${encodeURIComponent(STU.t)}&book=${encodeURIComponent(BOOK.id)}`;
+  try{
+    const r = await fetch(u, { method:'PUT', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ lec, ids }) });
+    const j = await r.json().catch(() => null);
+    if (!r.ok || !j || !j.success){ toast('저장하지 못했어요 — 잠시 후 다시 해보세요'); return false; }
+    return true;
+  }catch(e){ toast('저장하지 못했어요 — 인터넷 연결을 확인하세요'); return false; }
+}
+(function(){
+  const bp = $('#btnPick');
+  if (bp) bp.onclick = () => { enterPick(); };
+  const sv = $('#pkSave');
+  if (sv) sv.onclick = async () => {
+    if (pkLec == null) return;
+    sv.disabled = true;
+    const ids = [...pkSel];
+    const ok = await pkPut(pkLec, ids);
+    if (ok){
+      PICKS[String(pkLec)] = ids;
+      toast(`${lecLabel(pkLec)} 선별 ${ids.length}개 저장 완료`);
+      enterPickLecs();
+    } else { sv.disabled = false; }
+  };
+  const cl = $('#pkClear');
+  if (cl) cl.onclick = () => {
+    if (pkLec == null) return;
+    askConfirm({ title:'선별 지우기', body:`${lecLabel(pkLec)}의 선별을 지울까요? 지우면 이 유닛 숙제는 아무 단어나 10개로 나가요.`, yes:'지우기', danger:true }, async () => {
+      const ok = await pkPut(pkLec, []);
+      if (ok){
+        delete PICKS[String(pkLec)];
+        toast('선별을 지웠어요');
+        enterPickLecs();
+      }
+    });
+  };
+})();
+
 function navArm(){
   if (navArmed) return;
   try{ history.pushState({ mapl: 1 }, ''); navArmed = true; }catch(e){}
@@ -1956,6 +2280,10 @@ function navBackStep(){
   if (scr.flash.classList.contains('show')){ $('#flQuit').click(); return true; }
   if (scr.blink.classList.contains('show')){ $('#bkQuit').click(); return true; }
   if (scr.mc.classList.contains('show')){ $('#mcQuit').click(); return true; }
+  if (scr.pick.classList.contains('show')){                    // [숙제 2차수] 단어 목록이면 유닛 목록으로, 유닛 목록이면 홈으로
+    if (pkLec != null) enterPickLecs(); else { renderHome(); show('home'); }
+    return true;
+  }
   if (scr.home.classList.contains('show')){ goShelf(); return true; }
   return false;                                    // 책장 → 진짜 뒤로
 }
@@ -2058,6 +2386,7 @@ window.addEventListener('message', (e) => {
   if (!d || typeof d !== 'object') return;
   if (d.type === 'maplVocaOpenLast'){ OPEN_LAST_PENDING = true; tryOpenLastBook(); return; }
   if (d.type === 'maplVocaOpenTask'){ OPEN_TASK_PENDING = { book: d.book, lecs: d.lecs }; tryOpenTaskBook(); return; }
+  if (d.type === 'maplVocaHwTask'){ OPEN_HW_PENDING = { book: d.book, lecs: d.lecs, date: d.date, deadline: d.deadline }; tryOpenHwBook(); return; }   // [숙제 3차수]
   if (d.type !== 'maplVis') return;
   EMB = true;
   VIS = { top: Math.max(0, d.top | 0), h: Math.max(200, d.h | 0) };
@@ -2204,7 +2533,7 @@ $('#btnRound').onclick = () => {
     `현재 <b>${S.round}회독</b> · 맞힌 단어 ${correct} / ${DATA.length}개<br>` +
     `획득한 왕관: ${S.crowns > 0 ? `${crownStr(S.crowns)} (${S.crowns}개)` : '아직 없음'} · 최대 ${MAX_ROUND}회독<br>` +
     `지금까지 소진된 뜻(sense): ${usedSenses}개<br>` +
-    `<span style="font-size:12.5px">여러 뜻이 있는 단어는 다음 회독에서 이전에 쓴 뜻을 적으면 오답이에요. 뜻이 하나뿐인 단어는 매 회독 같은 뜻으로 정답 처리됩니다.${atMax ? ' 3회독을 완주하면 초기화 후 1회독부터 다시 시작합니다.' : ''}</span>`;
+    `<span style="font-size:12.5px">1·2회독은 같은 뜻을 또 적어도 정답이에요. 3회독부터는 앞 회독에서 쓴 뜻 말고 다른 뜻을 적어야 해요(뜻이 하나뿐인 단어는 항상 같은 뜻으로 정답).${atMax ? ' 3회독을 완주하면 초기화 후 1회독부터 다시 시작합니다.' : ''}</span>`;
   $('#nextRoundRow').style.display = atMax ? 'none' : 'flex';
   $('#resetRoundRow').style.display = atMax && complete ? 'flex' : 'none';
   openModal('#mRound');
@@ -2213,7 +2542,7 @@ $('#btnNextRound').onclick = () => {
   if (S.round >= MAX_ROUND) return;
   askConfirm({
     title: `${S.round + 1}회독 시작`,
-    body: `${S.round + 1}회독을 시작할까요?<br><span style="font-size:12.5px">이번 회독에서 쓴 뜻은 다음 회독에서 오답 처리됩니다.</span>`,
+    body: `${S.round + 1}회독을 시작할까요?<br><span style="font-size:12.5px">${S.round + 1 >= 3 ? '3회독부터는 앞에서 쓴 뜻 말고 다른 뜻을 적어야 정답이에요.' : '2회독까지는 같은 뜻을 적어도 정답이에요.'}</span>`,
     yes: '시작', no: '아니요'
   }, startNextRound);
 };
@@ -2232,7 +2561,7 @@ $('#brandBtn').onclick = goShelf;
   applyStudentMode();
   await loadBookIndex();                        // 완성된 책만 책장에 올리기
   renderShelf(); show('shelf');
-  SHELF_READY = true; tryOpenLastBook(); tryOpenTaskBook();        // [0812] 홈 카드 "바로 열기" 신호가 먼저 와 있었으면 지금 연다
+  SHELF_READY = true; tryOpenLastBook(); tryOpenTaskBook(); tryOpenHwBook();        // [0812] 홈 카드 "바로 열기" 신호가 먼저 와 있었으면 지금 연다
   if (syncOn()){
     const r = await pullServer();
     if (r && !r.err && r.data){
