@@ -892,6 +892,15 @@ const computeUpcomingAttendance = (student, makeups, customHolidays) => {
 // ─── [0813] 홈 등원 안내: 오늘 등원 + 다음 수업 ───
 // 하루치 등원 판정. 규칙은 위 computeUpcomingAttendance의 collect와 동일하게 유지할 것
 // (공휴일 제외 → 등원 취소(isHidden) 제외 → 보충·시간변경 우선 → 방학>특별기간>정규 시간표).
+/* [0819 늦음판정 보정] 학원 시간표 시각("4:00", "8:30")은 오전/오후 표기가 없는 오후 시각이다.
+ * 예전에는 이걸 그대로 시(時)로 써서 "4:00"이 새벽 4시가 됐고, 오후 등원 학생의 앱 숙제가
+ * 전부 "늦은 완료"로 찍힐 뻔했다. 규칙: 1~11시는 오후로(+12), 12시·이미 24시간 표기는 그대로.
+ * 혹시 아침 등원(방학 특강)이 섞여도 마감이 늦은 쪽으로 잡힐 뿐, 학생에게 불리해지지 않는다. */
+const academyHour24 = (hh) => {
+  const h = parseInt(hh, 10);
+  if (!Number.isFinite(h)) return 0;
+  return (h >= 1 && h <= 11) ? h + 12 : h;
+};
 const attEntryForDay = (student, mks, allHol, d) => {
   const ds = fmtYMD(d);
   if (allHol[ds]) return null; // 공휴일
@@ -4480,20 +4489,27 @@ export default function App() {
           overflowX: "auto", WebkitOverflowScrolling: "touch",
           scrollbarWidth: "none",
         }}>
+        {/* [0819 탭줄 정리] 원장 결정
+            ① 순서 = 매일 쓰는 것(홈·단어·숙제·강의·오답)을 앞으로, 가끔 보는 것(일정·모의·진도)을 뒤로
+            ② 이름 = 두 글자로 줄여 글자가 접히지 않게
+            오답·진도·강의 탭은 예전처럼 있을 때만 나타난다(없는 학생에겐 아예 안 보임). */}
         {[
           { key: "home", label: "홈" },
-          { key: "tasks", label: "숙제/과제" },
+          ...(VOCA_TAB_ENABLED ? [{ key: "voca", label: "단어" }] : []),
+          { key: "tasks", label: "숙제" },
+          ...(studentVideos.length > 0 ? [{ key: "videos", label: "강의" }] : []),
+          ...(hasVocabWrong ? [{ key: "vocabWrong", label: "오답" }] : []),
           { key: "cal", label: "일정" },
           // [0812 대시보드] 모의고사 탭은 중학생에게도 보여준다(원장 결정). 회차가 없으면 빈 안내만 뜬다.
-          { key: "mock", label: "모의고사" },
-          ...(VOCA_TAB_ENABLED ? [{ key: "voca", label: "단어장" }] : []),
-          ...(studentVideos.length > 0 ? [{ key: "videos", label: "강의 영상" }] : []),
-          ...(hasVocabWrong ? [{ key: "vocabWrong", label: "오답 단어" }] : []),
+          { key: "mock", label: "모의" },
           ...((progressTree?.lanes || []).length ? [{ key: "progress", label: "진도" }] : []),
         ].map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
-            flex: "1 0 auto", whiteSpace: "nowrap", padding: "14px 12px", border: "none", cursor: "pointer",
-            background: "transparent", fontSize: 14, fontWeight: tab === t.key ? 700 : 500,
+            // [0819] 한 칸을 화면 너비의 23%로 고정한다 — 넷이 꽉 차고 다섯째가 조금 보여서
+            //        "옆으로 밀면 더 있다"는 것이 눈에 띈다. 글자를 꾸겨 넣지 않아 크게 보인다.
+            flex: "0 0 23%", whiteSpace: "nowrap", textAlign: "center",
+            padding: "15px 4px", border: "none", cursor: "pointer",
+            background: "transparent", fontSize: 15, fontWeight: tab === t.key ? 700 : 500,
             color: tab === t.key ? "#182848" : "#9aa0ab",
             borderBottom: tab === t.key ? "2.5px solid #182848" : "2.5px solid transparent",
           }}>{t.label}</button>
@@ -4624,7 +4640,7 @@ export default function App() {
                       if (ent && ent.time) {
                         const [hh, mm] = String(ent.time).split(":");
                         const dl = new Date(dObj);
-                        dl.setHours(parseInt(hh, 10) || 0, parseInt(mm, 10) || 0, 0, 0);
+                        dl.setHours(academyHour24(hh), parseInt(mm, 10) || 0, 0, 0);   // [0819 늦음판정 보정] "4:00" = 오후 4시
                         deadline = dl.toISOString();
                       }
                     } catch (e) { deadline = ""; }
