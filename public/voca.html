@@ -128,8 +128,11 @@ header{position:sticky; top:0; z-index:10; background:var(--paper);
 
 .word{font-family:Charter,Georgia,"Times New Roman",serif; font-size:clamp(36px,9.5vw,50px);
   font-weight:700; text-align:center; letter-spacing:.01em; margin-top:14px;
-  cursor:pointer; -webkit-tap-highlight-color:transparent}
-.word .spk{font-size:.45em; vertical-align:middle; margin-left:8px; opacity:.45}
+  cursor:pointer; -webkit-tap-highlight-color:transparent;
+  user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; touch-action:manipulation}
+.word .spk{display:inline-block; font-size:.5em; vertical-align:middle; margin-left:6px; padding:2px 8px;
+  color:var(--teal); opacity:.85}
+.word:active .spk{opacity:1}
 .pron{text-align:center; color:var(--ink-soft); font-size:17px; margin-top:2px; min-height:24px}
 .pron b{color:var(--crimson); font-weight:700}
 
@@ -280,7 +283,8 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
   border-radius:6px; padding:2px 7px; margin:0 8px; white-space:nowrap; flex:none}
 
 /* ── 카드 ── */
-#flCard{cursor:pointer; -webkit-tap-highlight-color:transparent}
+#flCard{cursor:pointer; -webkit-tap-highlight-color:transparent;
+  user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; touch-action:manipulation}
 .flipzone{margin-top:18px; border-top:1px dashed var(--line); padding-top:14px}
 .fliphint{text-align:center; color:var(--ink-soft); font-size:13.5px; padding:34px 0}
 .flnav{display:flex; gap:8px; margin-top:14px}
@@ -309,7 +313,8 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
 /* ── 객관식 ── */
 .mcops{display:flex; flex-direction:column; gap:8px; margin-top:20px}
 .mcop{text-align:left; border:1.5px solid var(--line); background:var(--card); border-radius:11px;
-  padding:12px 14px; font-size:15px; color:var(--ink); line-height:1.45}
+  padding:12px 14px; font-size:15px; color:var(--ink); line-height:1.45;
+  user-select:none; -webkit-user-select:none; touch-action:manipulation}
 .mcop:disabled,.mcop.locked{cursor:default; color:var(--ink)}
 .mcop.right{border-color:var(--teal); background:var(--teal-soft); font-weight:700}
 .mcop.wrongpick{border-color:var(--crimson); background:var(--crimson-soft)}
@@ -1295,7 +1300,7 @@ function grade(word, input){
 }
 
 /* ───────── TTS ───────── */
-let voice = null, warnedNoVoice = false;
+let voice = null, warnedNoVoice = false, warnedNoSound = false;
 function pickVoice(){
   const vs = speechSynthesis.getVoices();
   const en = vs.filter(v => /^en([-_]|$)/i.test(v.lang));
@@ -1326,8 +1331,30 @@ function speak(text){
       warnedNoVoice = true;
     }
   }
-  try { speechSynthesis.cancel(); } catch(e){}
-  speechSynthesis.speak(u);
+  /* [0819 발음 수정] 폰에서 눌러도 소리가 안 나던 것
+   * 예전에는 누를 때마다 "지금 나오던 소리 끊기 → 곧바로 말하기" 순서였다.
+   * 폰 브라우저(아이폰·안드로이드)는 이 조합에서 소리를 통째로 삼키는 일이 잦다.
+   * 그래서 말하는 중일 때만 끊고, 끊었으면 아주 잠깐(80ms) 뒤에 말한다.
+   * 말하는 중이 아니면 예전처럼 곧바로 말한다 — 아이폰은 손가락으로 누른 그 순간에
+   * 말을 시작해야 허락해 주므로, 이 길에는 절대 지연을 넣으면 안 된다. */
+  u.onerror = (e) => {
+    const why = (e && e.error) || '';
+    if (why === 'interrupted' || why === 'canceled') return;   // 다음 단어를 눌러 끊긴 것은 정상
+    if (!warnedNoSound){
+      toast('소리가 안 나와요 — 폰의 무음 스위치와 볼륨을 확인해 주세요');
+      warnedNoSound = true;
+    }
+  };
+  const go = () => { try { speechSynthesis.speak(u); } catch(e){} };
+  try { if (speechSynthesis.paused) speechSynthesis.resume(); } catch(e){}   // 안드로이드가 멈춰 있는 경우
+  let busy = false;
+  try { busy = !!(speechSynthesis.speaking || speechSynthesis.pending); } catch(e){ busy = false; }
+  if (busy){
+    try { speechSynthesis.cancel(); } catch(e){}
+    setTimeout(go, 80);
+  } else {
+    go();
+  }
 }
 
 /* ───────── 화면 전환 ───────── */
