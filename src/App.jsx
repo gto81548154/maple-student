@@ -3304,6 +3304,9 @@ function MasterHome({ mk }) {
     p.set("mk", "1");
     return `${VOCA_APP_URL}?${p.toString()}`;
   })();
+  // [0818 4차수] 단어 선별 탭 — 같은 마플보카를 "선별 전용"(pick=1)으로 연다.
+  // 책을 고르면 학습 홈을 건너뛰고 곧장 유닛 목록이 나온다.
+  const vocaPickSrc = `${vocaSrc}&pick=1`;
 
   const card = { width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 10, padding: "13px 14px", marginBottom: 8, borderRadius: 12, border: "1px solid #eceef4", background: "#fff", cursor: "pointer", fontFamily: "inherit" };
   const busyBox = <div style={{ padding: 40, textAlign: "center", color: "#999", fontSize: 14 }}>불러오는 중...</div>;
@@ -3333,6 +3336,7 @@ function MasterHome({ mk }) {
         }}>
           {[
             { key: "voca", label: "단어장" },
+            { key: "pick", label: "🎯 단어 선별" },
             { key: "videos", label: "강의 영상" },
             { key: "students", label: "👥 학생" },
           ].map((t) => (
@@ -3353,6 +3357,15 @@ function MasterHome({ mk }) {
         {tab === "voca" && (
           <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden", border: "1px solid #eceef2" }}>
             <VocaFrame title="원장 단어장" src={vocaSrc} />
+          </div>
+        )}
+
+        {tab === "pick" && (
+          <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden", border: "1px solid #eceef2" }}>
+            <div style={{ padding: "12px 14px", borderBottom: "1px solid #f1f3f7", fontSize: 12.5, color: "#7b8494", lineHeight: 1.6 }}>
+              숙제 TEST에 낼 <b style={{ color: "#2A2A28" }}>어려운 단어</b>를 유닛마다 10개씩 골라둡니다. 안 고른 유닛은 그 유닛에서 아무 단어나 10개가 나갑니다.
+            </div>
+            <VocaFrame title="단어 선별" src={vocaPickSrc} />
           </div>
         )}
 
@@ -4621,7 +4634,7 @@ export default function App() {
                   }
                   setVocaOpenLast(true); setTab("voca");
                 }} style={cardBox}>
-                  <div style={cardLabel}>📚 2. 수업 단어 공부</div>
+                  <div style={cardLabel}>📚 2. 단어 숙제</div>
                   <div style={cardMain}>{taskVoca
                     ? `${vocaShortLabel(taskVoca.book)} ${VOCA_UNIT_WORDS[taskVoca.book] || "DAY"} ${fmtLecRange(taskVoca.lecs)}`
                     : vocaTitle}</div>
@@ -6034,4 +6047,3 @@ function StepSection({ step, displayNum, stampDate, isChecked, isFailed, getFail
     </div>
   );
 }
- 
