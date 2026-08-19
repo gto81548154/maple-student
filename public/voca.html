@@ -438,7 +438,7 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
   <!-- [숙제 2차수] 단어 선별하기 (마스터 전용) -->
   <section class="screen" id="scrPick">
     <div class="sechead" id="pkHead">단어 선별하기</div>
-    <div class="pkinfo" id="pkInfoLec" style="display:none">유닛을 누르면 그 유닛의 단어가 전부 나옵니다. 이미 고른 유닛에는 개수가 표시돼요.</div>
+    <div class="pkinfo" id="pkInfoLec" style="display:none">유닛을 누르면 그 유닛의 단어가 전부 나옵니다. 다 고른 유닛은 아래로 내려가고, 아직 안 고른 유닛이 위에 남아요.</div>
     <div class="lecgrid" id="pkLecGrid" style="display:none"></div>
     <div class="pkbar" id="pkBar" style="display:none">
       <div class="sechead" id="pkLecTitle" style="margin:0">UNIT</div>
@@ -613,6 +613,8 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
   <div class="setrow"><div>진행 데이터 가져오기<div class="d">아래 칸에 붙여넣고 누르세요</div></div>
     <button id="btnImp">가져오기</button></div>
   <textarea class="io" id="ioBox" placeholder="내보내기를 누르면 여기에 표시됩니다. 가져올 땐 백업 텍스트를 붙여넣으세요."></textarea>
+  <div class="setrow"><div>폰에 저장된 단어 비우기<div class="d" id="cacheInfo">공부 기록은 그대로 두고, 단어 파일만 다시 받습니다</div></div>
+    <button id="btnCacheClear">비우기</button></div>
   <div class="setrow"><div>단어장 초기화<div class="d">지금 보고 있는 단어장의 회독·기록·별표 삭제 (왕관 유지)</div></div>
     <button class="danger" id="btnReset">초기화</button></div>
   <button class="closebtn" data-close>닫기</button>
@@ -714,6 +716,12 @@ const STU = (() => {
 })();
 
 /* ───────── 저장소 (window.storage → localStorage → 메모리) ───────── */
+/* [0818 4차수] 선별 전용 모드 — 마스터 홈의 [🎯 단어 선별] 탭이 ?pick=1 로 연다.
+ * 책장에서 책을 고르면 학습 홈을 건너뛰고 곧장 유닛 목록(선별 화면)으로 간다. 원장만 켜진다. */
+const PICKMODE = (() => {
+  const q = new URLSearchParams(location.search);
+  return q.get('pick') === '1' && !!(STU && STU.master);
+})();
 const KEY = STU ? `maplevoca_v1_s${STU.id}` : 'maplevoca_v1';   // 학생 모드: 기기 공유 대비 학생별 분리
 const store = {
   mem: null,
@@ -820,8 +828,37 @@ const TITLES = {
  * 예: ["ve_adv","wm_sn"]  → 이 두 권만 학생 책장에 뜹니다.
  * 파일이 없거나 형식이 깨지면 예전처럼 전부 표시합니다(기능이 멈추지 않게). */
 let READY_IDS = null;
+/* [0818 속도 1차수] 책 목록표 — { 책id: {n:단어 개수, v:파일 지문} }
+ * 워커의 GET /voca/books-meta 한 번으로 개수와 지문을 받는다.
+ * 개수: 책장 카드에 "2000단어"를 띄우려고 책을 통째로 받던 일을 없앤다.
+ * 지문(v): 폰에 저장해둔 단어를 언제 새로 받을지 가리는 도장 (2차수에서 사용). */
+let BOOKMETA = {};
+const metaUrl = () => { const b = dataBase(); return b ? b.replace(/\/books\/?$/, '/books-meta') : ''; };
+async function loadBooksMeta(){                       // 성공하면 true
+  const u = metaUrl();
+  if (!u) return false;
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 4000);
+  try{
+    const r = await fetch(u, { cache:'no-store', signal:ac.signal });
+    if (!r.ok) return false;
+    const j = await r.json();
+    if (!j || !Array.isArray(j.books)) return false;
+    const m = {};
+    for (const b of j.books){
+      if (!b || !b.id) continue;
+      m[String(b.id)] = { n: Number(b.n) || 0, v: String(b.v || '') };
+    }
+    BOOKMETA = m;
+    if (Array.isArray(j.ready)) READY_IDS = j.ready.map(String);
+    return true;
+  }catch(e){ return false; }
+  finally{ clearTimeout(timer); }
+}
+const metaCount = id => (BOOKMETA[id] && BOOKMETA[id].n) || 0;   // 모르면 0
 async function loadBookIndex(){
-  const base = dataBase();
+  if (await loadBooksMeta()) return;                  // 새 길이 되면 여기서 끝(요청 1번)
+  const base = dataBase();                            // 옛 길 — 워커가 아직 예전 판일 때
   if (!base) return;
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), 4000);
@@ -981,7 +1018,7 @@ function renderShelf(){
     if (stu && !ready) continue;                             // 학생: 완성된 책만(현행 유지)
     const bs = ROOT.books[b.id];
     const crowns = bs?.crowns || 0;
-    const total = bs?.total || countCache[b.id];
+    const total = bs?.total || countCache[b.id] || metaCount(b.id);   // [0818] 목록표 개수도 씀
     const card = document.createElement('div');
     card.className = 'book' + (ready ? '' : ' soon');
     const lv = BOOK_LEVEL[b.id];                             // [0814] 난이도 단계(없으면 배지 안 붙음)
@@ -1013,12 +1050,16 @@ function maybeBossToast(states){
   }
 }
 /* 준비된 책 중 단어 개수(total)를 아직 모르는 것들을 백그라운드로 세어 카드에 반영 */
+let bfRunning = false;                             // [0818] 겹쳐 도는 것 막기 — 아래에서 renderShelf를 다시 부르므로
 async function backfillCounts(shelf){
+  if (bfRunning) return;                           // 이미 세는 중이면 또 시작하지 않는다(같은 책 여러 번 받던 낭비)
+  bfRunning = true;
+  try{
   for (const b of shelf){
     if (!bookReady(b)) continue;                 // 자료 준비 안 된 책은 건너뜀
     const st = ROOT.books[b.id];
-    const known = st?.total || countCache[b.id];
-    if (known) continue;                         // 이미 개수를 알면 스킵
+    const known = st?.total || countCache[b.id] || metaCount(b.id);
+    if (known) continue;                         // 이미 개수를 알면 스킵(목록표로 아는 것 포함)
     try {
       const list = await loadBookData(b);        // 캐시가 있으면 재사용됨
       const n = Array.isArray(list) ? list.length : 0;
@@ -1029,17 +1070,102 @@ async function backfillCounts(shelf){
       renderShelf();                             // 개수 반영해 다시 그림
     } catch(e){ /* 실패해도 조용히 무시 — 개수만 안 보일 뿐 */ }
   }
+  } finally { bfRunning = false; }
 }
-async function loadBookData(b){
-  if (bookCache[b.id]) return bookCache[b.id];
+/* ───────── [0818 속도 2차수] 폰 창고 — 받은 단어를 이 기기에 저장해 둔다 ─────────
+ * 두 번째부터는 인터넷을 안 타고 바로 연다. 인터넷이 끊겨도 저장해둔 책은 열린다.
+ * 언제 새로 받나: 책 목록표(1차수)의 지문 v가 저장해둔 것과 다를 때만. 기한은 없다.
+ * 창고를 못 쓰는 기기(사생활 모드 등)에서는 조용히 예전처럼 매번 받는다. */
+const IDB_NAME = 'maplVocaBooks1', IDB_STORE = 'books';
+let _idb = null, _idbBad = false;
+function idbOpen(){
+  if (_idbBad || !window.indexedDB) return Promise.resolve(null);
+  if (_idb) return Promise.resolve(_idb);
+  return new Promise(res => {
+    let done = false;
+    const fin = v => { if (!done){ done = true; res(v); } };
+    try{
+      const rq = indexedDB.open(IDB_NAME, 1);
+      rq.onupgradeneeded = () => { try{ rq.result.createObjectStore(IDB_STORE, { keyPath:'id' }); }catch(e){} };
+      rq.onsuccess = () => { _idb = rq.result; fin(_idb); };
+      rq.onerror = () => { _idbBad = true; fin(null); };
+      rq.onblocked = () => fin(null);
+      setTimeout(() => fin(null), 3000);            // 열리지 않으면 그냥 서버로 간다
+    }catch(e){ _idbBad = true; fin(null); }
+  });
+}
+function idbRun(mode, fn){                          // 창고 한 번 열고 닫기 — 어떤 실패든 null
+  return idbOpen().then(db => {
+    if (!db) return null;
+    return new Promise(res => {
+      let done = false;
+      const fin = v => { if (!done){ done = true; res(v); } };
+      try{
+        const tx = db.transaction(IDB_STORE, mode);
+        const out = fn(tx.objectStore(IDB_STORE), fin);
+        tx.onerror = () => fin(null);
+        tx.onabort = () => fin(null);
+        if (mode === 'readwrite') tx.oncomplete = () => fin(out === undefined ? true : out);
+      }catch(e){ fin(null); }
+      setTimeout(() => fin(null), 5000);
+    });
+  }).catch(() => null);
+}
+const idbGetBook = id => idbRun('readonly', (st, fin) => {
+  const rq = st.get(id); rq.onsuccess = () => fin(rq.result || null); rq.onerror = () => fin(null);
+});
+const idbPutBook = (id, v, list) => idbRun('readwrite', st => { st.put({ id, v:String(v||''), list, at:Date.now() }); });
+const idbClearBooks = () => idbRun('readwrite', st => { st.clear(); });
+const idbCountBooks = () => idbRun('readonly', (st, fin) => {
+  const rq = st.count(); rq.onsuccess = () => fin(rq.result || 0); rq.onerror = () => fin(0);
+});
+const goodList = l => Array.isArray(l) && l.length && l[0] && l[0].w && l[0].senses;
+
+const bookInflight = {};                           // [0818] 받는 중인 책 — 같은 책을 두 번 받지 않게
+function loadBookData(b){
+  if (bookCache[b.id]) return Promise.resolve(bookCache[b.id]);
+  if (bookInflight[b.id]) return bookInflight[b.id];   // 미리 받기와 겹쳐도 한 번만
+  const p = _loadBookData(b);
+  bookInflight[b.id] = p;
+  p.then(() => { delete bookInflight[b.id]; }, () => { delete bookInflight[b.id]; });
+  return p;
+}
+async function _loadBookData(b){
+  if (bookCache[b.id]) return bookCache[b.id];      // 이번에 이미 받은 것(가장 빠름)
+  const want = BOOKMETA[b.id] ? String(BOOKMETA[b.id].v || '') : '';
+  const saved = await idbGetBook(b.id);             // 창고에 있나
+  if (saved && goodList(saved.list) && want && String(saved.v || '') === want){
+    bookCache[b.id] = saved.list;                   // 지문이 같으면 서버에 안 간다
+    return saved.list;
+  }
   const url = bookUrl(b);
-  if (!url) throw new Error('no-url');
-  const r = await fetch(url);
-  if (!r.ok) throw new Error('http-' + r.status);
-  const list = await r.json();
-  if (!Array.isArray(list) || !list.length || !list[0].w || !list[0].senses) throw new Error('format');
-  bookCache[b.id] = list;
-  return list;
+  if (!url){
+    if (saved && goodList(saved.list)){ bookCache[b.id] = saved.list; return saved.list; }
+    throw new Error('no-url');
+  }
+  /* [0818 검토손질] 저장본이 있으면 서버를 6초까지만 기다린다.
+   * 인터넷이 "끊긴" 게 아니라 "느려서 하염없는" 상태에서, 폰에 멀쩡한 저장본을 두고
+   * 책 열기가 멈춰 있는 일을 막는다. 저장본이 없으면 예전처럼 끝까지 기다린다. */
+  const hasSaved = !!(saved && goodList(saved.list));
+  const ac = new AbortController();
+  const timer = hasSaved ? setTimeout(() => ac.abort(), 6000) : null;
+  try{
+    const r = await fetch(url, { signal: ac.signal });
+    if (!r.ok) throw new Error('http-' + r.status);
+    const list = await r.json();
+    if (!goodList(list)) throw new Error('format');
+    bookCache[b.id] = list;
+    idbPutBook(b.id, want, list);                   // 저장은 기다리지 않는다(실패해도 무해)
+    return list;
+  }catch(e){
+    if (hasSaved){                                  // 서버가 안 되거나 6초를 넘기면 저장해둔 것으로 (오프라인 구제)
+      bookCache[b.id] = saved.list;
+      return saved.list;
+    }
+    throw e;
+  }finally{
+    if (timer) clearTimeout(timer);
+  }
 }
 async function openBook(id){
   const b = BOOKS.find(x => x.id === id);
@@ -1054,6 +1180,7 @@ async function openBook(id){
   setLayer('main');                                // 책을 열 때는 언제나 일반 모드로 시작
   if (S.total !== DATA.length){ S.total = DATA.length; store.save(); }
   $('#brandSub').textContent = b.title;
+  if (PICKMODE){ renderHome(); await enterPick(); return; }   // [0818 4차수] 선별 탭: 홈을 건너뛰고 바로 유닛 목록
   renderHome(); show('home');
   maybeCelebrate();
 }
@@ -1076,7 +1203,8 @@ function adoptRemote(remote){                       // 서버/백업 데이터�
 }
 function applyStudentMode(){                        // 학생 모드: 이름 표시 + 수동 동기화 UI 숨김
   if (!STU) return;
-  if (STU.name) $('#shelfHead').textContent = `${STU.name}님, 단어장을 선택하세요`;
+  if (PICKMODE) $('#shelfHead').textContent = '어느 단어장의 단어를 고를까요?';
+  else if (STU.name) $('#shelfHead').textContent = `${STU.name}님, 단어장을 선택하세요`;
   const a = $('#syncSecTitle'), b = $('#syncSec');
   if (a) a.style.display = 'none';
   if (b) b.style.display = 'none';
@@ -1334,6 +1462,7 @@ let pick20 = false;
 try{ pick20 = localStorage.getItem('maplevoca_pick20') === '1'; }catch(e){}
 function mark20(p){ if (pick20 && p && p.g !== S.round){ p.g = S.round; store.save(); } }
 let Q = [], qi = 0, sesOk = 0, sesWrong = [], sesInputs = {};   // sesInputs: AI 재검토용 오답 입력 기록
+let HWSI = {};                  // [0818 회전 1차수] 숙제 모드: { 단어id: 몇 번째 뜻을 물을지 } — 숙제 시작 때 채운다
 let SES = { kind:'test' };               // 이번 세션의 학습 방식: test | mc | card | blink
 function startSession(list, opts){
   if (!list.length) return;
@@ -1759,7 +1888,10 @@ function pickMeaning(w){                            // 단어에서 낱개 뜻 �
   return (s.m[Math.floor(Math.random()*s.m.length)] || '').trim();
 }
 function buildChoices(w){
-  const corrects = [{ text: (w.senses[0].m[0] || '').trim(), ok: true }];
+  // [0818 회전 1차수] 숙제 모드는 HWSI에 적힌 번째 뜻을 정답으로 낸다(지금은 전부 첫 뜻).
+  // 번호가 뜻 개수를 넘거나 이상하면 첫 뜻으로 안전하게 되돌린다. 일반 공부 모드는 예전 그대로.
+  const si = (HW && Number.isInteger(HWSI[w.id]) && w.senses[HWSI[w.id]]) ? HWSI[w.id] : 0;
+  const corrects = [{ text: ((w.senses[si] || w.senses[0]).m[0] || '').trim(), ok: true }];
   if (!HW && w.senses.length >= 2){                 // 다의어 → 답 2개 (두 번째 뜻묶음의 대표 뜻) — 숙제 모드는 항상 답 1개(원장 확정)
     const t2 = (w.senses[1].m[0] || '').trim();
     if (t2 && norm(t2) && norm(t2) !== norm(corrects[0].text)) corrects.push({ text: t2, ok: true });
@@ -1968,6 +2100,68 @@ function hwToday(){                  // 로컬(폰) 날짜 YYYY-MM-DD — 신호
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
+/* ── [0818 도장 1차수] 못 보낸 완료 도장을 폰에 적어두기 ──
+ * 전송이 실패한 순간 팝업을 닫아버리면 도장이 영영 사라지던 것을 막는다.
+ * 메모에는 실제로 다 푼 시각(doneAt)도 같이 적어둔다(나중 판정 보정용 재료).
+ * 날짜별로 한 칸씩, 14일 지난 메모는 정리. 성공하면 그 날짜 칸을 지운다. */
+const hwPendKey = () => (STU && !STU.master) ? `maplevoca_hwpend_s${STU.id}` : '';
+function hwPendLoad(){
+  const k = hwPendKey(); if (!k) return {};
+  try{ const s = localStorage.getItem(k); const j = s ? JSON.parse(s) : null;
+    return (j && typeof j === 'object' && !Array.isArray(j)) ? j : {}; }catch(e){ return {}; }
+}
+function hwPendSave(m){
+  const k = hwPendKey(); if (!k) return;
+  try{ if (Object.keys(m).length) localStorage.setItem(k, JSON.stringify(m));
+    else localStorage.removeItem(k); }catch(e){}
+}
+function hwPendPut(rec){
+  if (!hwPendKey() || !rec || !rec.date) return;
+  const m = hwPendLoad();
+  m[String(rec.date)] = rec;
+  const cut = Date.now() - 14 * 86400000;               // 14일 지난 메모는 버린다
+  for (const d of Object.keys(m)){ const t = Date.parse(d); if (Number.isFinite(t) && t < cut) delete m[d]; }
+  hwPendSave(m);
+}
+function hwPendDrop(date){
+  if (!hwPendKey()) return;
+  const m = hwPendLoad();
+  if (m[String(date)] !== undefined){ delete m[String(date)]; hwPendSave(m); }
+}
+/* 도장 하나를 서버로 보낸다 — 성공 {late}, 실패 {fail}, 보낼 곳 없음(단독 열람) {offline} */
+async function sendHwRecord(rec){
+  if (!STU || !STU.api || !STU.t) return { offline: true };
+  try{
+    const u = `${STU.api}/voca/hw-clear?id=${encodeURIComponent(STU.id)}&t=${encodeURIComponent(STU.t)}`;
+    const r = await fetch(u, { method:'POST', headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ date: rec.date, book: rec.book, lecs: rec.lecs, n: rec.n, w: rec.w,
+        deadline: rec.deadline || undefined, doneAt: rec.doneAt || undefined }) });
+    const j = await r.json().catch(() => null);
+    if (!r.ok || !j || !j.success) return { fail: true };
+    return { late: !!j.late };
+  }catch(e){ return { fail: true }; }
+}
+/* ── [0818 도장 2차수] 폰에 남은 도장 자동 재전송 ──
+ * 앱을 켤 때(부팅 2.5초 뒤), 그리고 끊겼던 인터넷이 돌아오는 순간 조용히 보낸다.
+ * 학생은 아무것도 누르지 않아도 된다. 성공한 날짜만 메모에서 지우고,
+ * 하나라도 실패하면 멈췄다가 다음 기회에 다시 한다. 티 안 나게(토스트 없음). */
+let hwFlushBusy = false;
+async function hwPendFlush(){
+  if (hwFlushBusy) return;                            // 겹쳐 돌지 않게
+  if (!STU || STU.master || !STU.api || !STU.t) return;
+  const m = hwPendLoad();
+  const dates = Object.keys(m).sort();                // 오래된 날짜부터
+  if (!dates.length) return;
+  hwFlushBusy = true;
+  try{
+    for (const d of dates){
+      const res = await sendHwRecord(m[d]);
+      if (res.fail || res.offline) break;             // 아직 안 되면 다음 기회에 (메모는 그대로)
+      hwPendDrop(d);
+    }
+  } finally { hwFlushBusy = false; }
+}
+window.addEventListener('online', () => setTimeout(hwPendFlush, 1000));
 function seededShuffle(arr, seedStr){  // 같은 씨앗이면 항상 같은 순서 — 날짜가 바뀌면 다른 10개
   let h = 0;
   for (let i = 0; i < seedStr.length; i++){ h = (Math.imul(31, h) + seedStr.charCodeAt(i)) | 0; }
@@ -1978,7 +2172,18 @@ function seededShuffle(arr, seedStr){  // 같은 씨앗이면 항상 같은 순�
   return out;
 }
 function buildHwWords(lecs, date){   // 유닛마다 출제 단어 고르기 (표제어만)
+  /* [0818 회전 3차수] 선별 유닛의 출제 규칙(원장 확정):
+   * - 단어마다 "몇 번 나왔나"(hwAsk)를 보고, 안 나온 뜻이 남으면 그 다음 뜻을 낸다 (1번째→2번째→…)
+   * - 뜻을 다 쓴 단어는 빠지고, 선별 밖 나머지 단어가 대신 들어온다 (안 나온 단어 우선, 같으면 날짜 랜덤)
+   * - 나머지 단어까지 바닥나면 소진된 단어들이 처음 뜻부터 다시 돈다
+   * - 완료 기록이 없는 학생(결석 등)은 횟수가 0이라 자연히 첫 판 그대로
+   * 미선별 유닛은 예전 그대로: 날짜+학생 고정 랜덤 10개(첫 뜻). */
   const byL = pkMainByLec();
+  const bs = ROOT.books[BOOK.id] || {};
+  const ask = (bs.hwAsk && typeof bs.hwAsk === 'object') ? bs.hwAsk : {};
+  const cnt = w => Number(ask[w.id]) || 0;
+  const cycleSi = w => { const n = w.senses.length; const c = cnt(w); HWSI[w.id] = n ? (c % n) : 0; };
+  HWSI = {};
   const out = [];
   for (const lec of lecs){
     const main = byL[lec] || [];
@@ -1987,8 +2192,30 @@ function buildHwWords(lecs, date){   // 유닛마다 출제 단어 고르기 (�
     let sel = main.filter(w => picked.includes(w.id));           // 원장이 고른 단어(책에 실제 있는 것만)
     if (!sel.length){                                            // 미선별 유닛 → 아무거나 10개 (날짜 고정 랜덤)
       sel = seededShuffle(main, `${date}|${STU ? STU.id : ''}|${lec}`).slice(0, PK_GOAL);
+      for (const w of sel) HWSI[w.id] = 0;
+      out.push(...sel);
+      continue;
     }
-    out.push(...sel);
+    const keep = [], usedUp = [];                                // usedUp = 뜻을 다 쓴 단어(교체 대상)
+    for (const w of sel){
+      const c = cnt(w);
+      if (c < w.senses.length){ keep.push(w); HWSI[w.id] = c; }  // 다음 뜻(안 나온 첫 번째)
+      else usedUp.push(w);
+    }
+    let subs = [];
+    if (usedUp.length){
+      const pool = main.filter(w => !picked.includes(w.id));     // 선별 밖 나머지
+      const shuffled = seededShuffle(pool, `${date}|${STU ? STU.id : ''}|${lec}|sub`);
+      shuffled.sort((a, b) => cnt(a) - cnt(b));                  // 안 나온 단어 우선(끼리끼리는 랜덤 유지)
+      subs = shuffled.slice(0, usedUp.length);
+      for (const w of subs) cycleSi(w);
+      if (subs.length < usedUp.length){                          // 나머지까지 바닥 → 소진 단어가 처음부터 다시
+        const back = usedUp.slice(0, usedUp.length - subs.length);
+        for (const w of back) cycleSi(w);
+        subs = subs.concat(back);
+      }
+    }
+    out.push(...keep, ...subs);
   }
   return out;
 }
@@ -2010,13 +2237,14 @@ async function tryOpenHwBook(){
 }
 async function startHwSession(req){
   const date = /^\d{4}-\d{2}-\d{2}$/.test(String(req.date || '')) ? String(req.date) : hwToday();
-  PICKS = await loadPicks(BOOK.id);
+  PICKS = (await loadPicks(BOOK.id)) || {};   // [0818 검토손질] 못 읽으면 빈 것으로 — 미선별 규칙(랜덤 10개)로 조용히 진행
   const lecs = Array.isArray(req.lecs)
     ? [...new Set(req.lecs.map(Number).filter(x => Number.isFinite(x)))].sort((a, b) => a - b)
     : [];
-  const words = buildHwWords(lecs, date);
+  const words = buildHwWords(lecs, date);   // [0818 회전 3차수] 어떤 단어의 몇 번째 뜻을 낼지(HWSI)도 여기서 정해진다
   if (!words.length){ toast('오늘 숙제 범위의 단어를 찾지 못했어요'); renderHome(); show('home'); return; }
-  HW = { date, deadline: req.deadline ? String(req.deadline) : '', book: BOOK.id, lecs, total: words.length };
+  HW = { date, deadline: req.deadline ? String(req.deadline) : '', book: BOOK.id, lecs, total: words.length,
+    rec: words.map(w => ({ id: w.id, lec: w.lec })) };   // [0818 회전 2차수] 완료 때 기록할 "이번에 본 단어" 목록
   hwWrong = 0;
   Q = seededShuffle(words, `${date}|${STU ? STU.id : ''}|order`);
   qi = 0; sesOk = 0; sesWrong = []; sesInputs = {};
@@ -2025,38 +2253,56 @@ async function startHwSession(req){
 }
 async function finishHw(){
   const hw = HW; HW = null;
+  /* [0818 회전 2차수] 완료한 순간, 이번에 본 단어들의 "출제 횟수"를 진도 저장에 적는다.
+   * - hwAsk = { 단어id: 몇 번 나왔나 } / hwDates = { 유닛: 마지막으로 반영한 날짜 }
+   * - 같은 유닛을 같은 날 다시 풀면 또 세지 않는다(하루 한 번만) — 그날은 같은 문제 원칙 유지
+   * - 중간에 끄면 여기까지 안 오므로 기록 없음 = 다음에도 같은 문제(원장 확정 기준)
+   * - store.save()가 폰 저장 + 서버 동기화를 같이 해준다(기존 통로) */
+  try{
+    const bs = ROOT.books[hw.book];
+    if (bs && Array.isArray(hw.rec)){
+      const a = (bs.hwAsk && typeof bs.hwAsk === 'object') ? bs.hwAsk : {};
+      const dt = (bs.hwDates && typeof bs.hwDates === 'object') ? bs.hwDates : {};
+      let changed = false;
+      for (const lec of hw.lecs){
+        if (dt[String(lec)] === hw.date) continue;         // 오늘 이미 반영한 유닛
+        for (const r of hw.rec){
+          if (r.lec !== lec) continue;
+          a[r.id] = (Number(a[r.id]) || 0) + 1;
+        }
+        dt[String(lec)] = hw.date;
+        changed = true;
+      }
+      if (changed){ bs.hwAsk = a; bs.hwDates = dt; store.save(); }
+    }
+  }catch(e){}
   $('#hwDoneTitle').textContent = '🎉 오늘 단어 숙제 클리어!';
   $('#hwDoneBody').textContent = '완료 기록을 저장하는 중이에요…';
   $('#hwRetrySend').style.display = 'none';
   openModal('#mHwDone');
-  const sendOnce = async () => {
-    if (!STU || !STU.api || !STU.t) return { offline: true };
-    try{
-      const u = `${STU.api}/voca/hw-clear?id=${encodeURIComponent(STU.id)}&t=${encodeURIComponent(STU.t)}`;
-      const r = await fetch(u, { method:'POST', headers:{ 'Content-Type':'application/json' },
-        body: JSON.stringify({ date: hw.date, book: hw.book, lecs: hw.lecs, n: hw.total, w: hwWrong, deadline: hw.deadline || undefined }) });
-      const j = await r.json().catch(() => null);
-      if (!r.ok || !j || !j.success) return { fail: true };
-      return { late: !!j.late };
-    }catch(e){ return { fail: true }; }
-  };
+  // [0818 도장 1차수] 보낼 내용을 한 뭉치로 — 실패하면 이 뭉치를 그대로 폰에 적어둔다
+  const rec = { date: hw.date, book: hw.book, lecs: hw.lecs, n: hw.total, w: hwWrong,
+    deadline: hw.deadline || '', doneAt: new Date().toISOString() };
   const base = `총 ${hw.total}단어 · 틀린 횟수 ${hwWrong}번.`;
-  const res = await sendOnce();
+  const res = await sendHwRecord(rec);
   if (res.offline){
     $('#hwDoneBody').textContent = base + ' (단독 열람이라 완료 기록은 저장하지 않았어요)';
   } else if (res.fail){
-    $('#hwDoneBody').textContent = base + ' 완료 기록을 아직 못 보냈어요 — 아래 버튼으로 다시 보내주세요.';
+    hwPendPut(rec);                                     // 팝업을 닫아도 도장이 안 사라지게
+    $('#hwDoneBody').textContent = base + ' 완료 기록을 아직 못 보냈어요 — 인터넷이 되면 자동으로 다시 보내드려요. 지금 보내려면 아래 버튼을 누르세요.';
     const rb = $('#hwRetrySend');
     rb.style.display = '';
     rb.onclick = async () => {
       rb.disabled = true; rb.textContent = '보내는 중…';
-      const r2 = await sendOnce();
+      const r2 = await sendHwRecord(rec);
       rb.disabled = false; rb.textContent = '기록 다시 보내기';
       if (r2.fail){ toast('아직 안 돼요 — 인터넷 연결을 확인하고 다시 눌러주세요'); return; }
+      hwPendDrop(rec.date);                             // 보냈으니 메모 삭제
       rb.style.display = 'none';
       $('#hwDoneBody').textContent = base + (r2.late ? ' 등원 시간이 지나서 늦은 완료로 기록됐어요.' : ' 제때 완료로 기록됐어요!');
     };
   } else {
+    hwPendDrop(rec.date);                               // 같은 날짜의 옛 메모가 있었다면 정리
     $('#hwDoneBody').textContent = base + (res.late ? ' 등원 시간이 지나서 늦은 완료로 기록됐어요.' : ' 제때 완료로 기록됐어요!');
   }
 }
@@ -2140,19 +2386,23 @@ const pkMainByLec = () => {     // 표제어만, 유닛별로
   ALL.forEach(w => { if (!w.k) (m[w.lec] ||= []).push(w); });
   return m;
 };
+/* [0818 검토손질] "아직 아무것도 안 골랐다"({})와 "서버에서 못 읽었다"(null)를 구분한다.
+ * 못 읽었는데 조용히 {}를 주면, 골라둔 게 있는데도 전부 "미선별"로 보여서 놀라게 된다. */
 async function loadPicks(bookId){
   const base = pickBase();
   if (!base) return {};
   try{
     const r = await fetch(`${base.replace(/\/+$/, '')}/${bookId}.json`, { cache:'no-store' });
-    if (!r.ok) return {};
+    if (!r.ok) return null;
     const j = await r.json();
     return (j && typeof j === 'object' && !Array.isArray(j)) ? j : {};
-  }catch(e){ return {}; }
+  }catch(e){ return null; }
 }
 async function enterPick(){
   if (!BOOK || !STU || !STU.master) return;
-  PICKS = await loadPicks(BOOK.id);
+  const p = await loadPicks(BOOK.id);
+  if (p === null) toast('저장된 선별 목록을 못 불러왔어요 — 지금 보이는 "미선별"은 진짜가 아닐 수 있어요. 인터넷 확인 후 다시 들어와 주세요');
+  PICKS = p || {};
   enterPickLecs();
   show('pick');
 }
@@ -2168,7 +2418,11 @@ function enterPickLecs(){       // 1단계: 유닛 목록
   $('#pkSaveBar').style.display = 'none';
   const g = $('#pkLecGrid'); g.innerHTML = '';
   const byL = pkMainByLec();
-  for (const lec of Object.keys(byL).map(Number).sort((a,b)=>a-b)){
+  /* [0818 원장 요청] 이미 고른 유닛은 목록 뒤로 — 아직 안 고른 유닛이 항상 맨 위에 온다.
+   * 같은 무리 안에서는 원래 순서(유닛 번호 오름차순) 그대로. */
+  const pkDone = lec => (Array.isArray(PICKS[String(lec)]) && PICKS[String(lec)].length) ? 1 : 0;
+  const lecOrder = Object.keys(byL).map(Number).sort((a,b) => pkDone(a) - pkDone(b) || a - b);
+  for (const lec of lecOrder){
     const picked = Array.isArray(PICKS[String(lec)]) ? PICKS[String(lec)].length : 0;
     const b = document.createElement('div');
     b.className = 'lec';
@@ -2281,7 +2535,9 @@ function navBackStep(){
   if (scr.blink.classList.contains('show')){ $('#bkQuit').click(); return true; }
   if (scr.mc.classList.contains('show')){ $('#mcQuit').click(); return true; }
   if (scr.pick.classList.contains('show')){                    // [숙제 2차수] 단어 목록이면 유닛 목록으로, 유닛 목록이면 홈으로
-    if (pkLec != null) enterPickLecs(); else { renderHome(); show('home'); }
+    if (pkLec != null) enterPickLecs();
+    else if (PICKMODE) goShelf();                              // [0818 4차수] 선별 탭은 홈이 없으니 책장으로
+    else { renderHome(); show('home'); }
     return true;
   }
   if (scr.home.classList.contains('show')){ goShelf(); return true; }
@@ -2410,7 +2666,24 @@ $('#btnSet').onclick = () => {
   $('#tgAuto').classList.toggle('on', ROOT.auto);
   $('#syncUrl').value = CFG.url; $('#syncToken').value = CFG.token;
   updateSyncStat();
+  refreshCacheInfo();                                   // [0818] 폰에 저장된 단어 권수
   openModal('#mSet');
+};
+/* [0818 속도 2차수] 폰 창고 안내·비우기 */
+async function refreshCacheInfo(){
+  const el = $('#cacheInfo'); if (!el) return;
+  const n = await idbCountBooks();
+  el.textContent = (n > 0)
+    ? `이 기기에 ${n}권이 저장돼 있어 바로 열려요. 비우면 다음에 열 때 다시 받습니다(공부 기록은 그대로).`
+    : '공부 기록은 그대로 두고, 단어 파일만 다시 받습니다';
+}
+$('#btnCacheClear').onclick = () => {
+  askConfirm({ title:'폰에 저장된 단어 비우기', body:'저장해둔 단어 파일만 지웁니다. 회독·별표·진도 같은 공부 기록은 그대로 남아요.', yes:'비우기' }, async () => {
+    await idbClearBooks();
+    for (const k of Object.keys(bookCache)) delete bookCache[k];
+    toast('폰에 저장된 단어를 비웠어요');
+    refreshCacheInfo();
+  });
 };
 $('#btnSyncTest').onclick = async () => {
   CFG.url = $('#syncUrl').value.trim(); CFG.token = $('#syncToken').value.trim();
@@ -2550,6 +2823,45 @@ $('#btnResetDone').onclick = confirmFullReset;
 $('#btnShelf').onclick = goShelf;
 $('#brandBtn').onclick = goShelf;
 
+/* ───────── [0818 속도 3차수] 미리 받아두기 ─────────
+ * 앱을 켜면 화면 뒤에서 조용히 자기 책을 받아 창고에 넣어둔다.
+ * 그래서 단어장을 누르는 순간엔 이미 준비가 끝나 있다.
+ * 원칙: 티 안 나게(토스트 없음) · 실패해도 무시 · 한 권씩 차례로 ·
+ *       창고에 최신본이 이미 있으면 건너뜀 · 데이터 절약 모드나 느린 회선이면 아예 안 함. */
+function prefetchList(){
+  const shelf = shelfBooks().filter(bookReady);
+  const stu = STU && !STU.master;
+  const last = (() => { try{ return localStorage.getItem('maplevoca_lastbook') || ''; }catch(e){ return ''; } })();
+  const pick = [];
+  const add = id => { const b = shelf.find(x => x.id === id); if (b && !pick.includes(b)) pick.push(b); };
+  add(last);                                        // 어느 화면이든 마지막으로 본 책이 1순위
+  if (stu){
+    for (const id of (STU.books || [])) add(id);    // 배정받은 교재
+    for (const b of shelf) if (ROOT.books[b.id] && Object.keys(ROOT.books[b.id].words || {}).length) add(b.id);
+  }
+  return pick.slice(0, stu ? 3 : 1);                // 학생은 최대 3권, 원장 화면은 마지막 책 하나만
+}
+function netTooSlow(){
+  const c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (!c) return false;
+  if (c.saveData) return true;                      // 데이터 절약 모드면 안 받는다
+  return /(^|-)2g$/.test(String(c.effectiveType || ''));
+}
+async function prefetchBooks(){
+  if (PICKMODE) return;                             // [0818 4차수] 선별 탭은 고를 책만 받으면 된다
+  if (netTooSlow()) return;
+  for (const b of prefetchList()){
+    if (bookCache[b.id]) continue;
+    try{
+      const want = BOOKMETA[b.id] ? String(BOOKMETA[b.id].v || '') : '';
+      if (!want) continue;                          // 지문을 모르면 미리 받지 않는다(서버 낭비 방지)
+      const saved = await idbGetBook(b.id);
+      if (saved && goodList(saved.list) && String(saved.v || '') === want) continue;   // 이미 최신본이 있다
+      await loadBookData(b);                        // 받아서 창고에 저장(loadBookData가 알아서 넣음)
+    }catch(e){ /* 조용히 넘어간다 — 미리 받기는 실패해도 그만 */ }
+  }
+}
+
 /* ───────── 시작 ───────── */
 (async () => {
   // [08-08] 그만둔 학생이면 여기서 멈춘다 — 책장을 그리기도 전에 막아야 단어가 안 보인다.
@@ -2562,6 +2874,8 @@ $('#brandBtn').onclick = goShelf;
   await loadBookIndex();                        // 완성된 책만 책장에 올리기
   renderShelf(); show('shelf');
   SHELF_READY = true; tryOpenLastBook(); tryOpenTaskBook(); tryOpenHwBook();        // [0812] 홈 카드 "바로 열기" 신호가 먼저 와 있었으면 지금 연다
+  setTimeout(prefetchBooks, 1500);              // [0818] 화면이 다 뜬 뒤에 조용히 미리 받기
+  setTimeout(hwPendFlush, 2500);                // [0818 도장 2차수] 폰에 남은 완료 도장이 있으면 조용히 재전송
   if (syncOn()){
     const r = await pullServer();
     if (r && !r.err && r.data){
