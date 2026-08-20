@@ -717,6 +717,12 @@ const STU = (() => {
     api: (q.get('api') || '').replace(/\/+$/, ''),
     books: (q.get('books') || '').split(',').map(x => x.trim()).filter(Boolean),
     master: q.get('mk') === '1',   // 원장 전용 앱(마스터 홈)에서 열렸는지 — 원장 전용 책까지 책장에 올린다
+    /* [내신 2차수] 학교 시험 단어용 — 학생앱이 붙여 준다.
+     *   sc  : 학생의 학교코드 (예: 하남고1) — 어느 교과서 단어책을 쓰는지 고르는 열쇠
+     *   nsl : 이번 시험범위 과 번호 (예: 3,4) — 이 과에 해당하는 유닛만 진열한다
+     * 둘 다 없으면 내신 단어는 아예 나타나지 않는다(지금까지와 똑같이 동작). */
+    sc: (q.get('sc') || '').trim(),
+    nsl: (q.get('nsl') || '').split(',').map(x => parseInt(x, 10)).filter(v => Number.isFinite(v)),
   };
 })();
 
@@ -876,10 +882,73 @@ async function loadBookIndex(){
   finally{ clearTimeout(timer); }
 }
 
+/* ───────── [내신 2차수] 학교 시험 단어 ─────────
+ * 학생앱이 ?sc=학교코드&nsl=과번호목록 을 붙여 주면 여기서 세 가지를 한다.
+ *   1. R2의 ns_units.json(학교표 + 유닛표)을 읽는다
+ *   2. 그 학교가 쓰는 교과서 단어책 한 권을 찾아 "내신 단어"라는 이름으로 책장에 올린다
+ *   3. 이번 시험범위 과에 해당하는 유닛만 진열하도록 이름표를 만들어 둔다
+ * 학교표가 없거나·못 읽거나·범위에 맞는 유닛이 없으면 조용히 아무 일도 하지 않는다.
+ * 학교가 늘거나 교과서가 바뀌면 R2의 ns_units.json만 고치면 된다(앱 배포 불필요). */
+const NS_UNITS_FILE = 'ns_units.json';
+let NSBOOK  = null;                // 학생에게 올린 내신 책 { id, name, schools, units }
+let NSLEC   = null;                // Map: 유닛 번호(lec) → 이름. 여기 없는 유닛은 학생 화면에서 감춘다
+const NSNAMES = {};                // 책id → Map(유닛 번호 → 이름). 범위와 상관없이 전 유닛 (선별 화면용)
+const nsLabel = u => (Number(u.of) === 1)                       // 한 과가 유닛 하나뿐이면 "1과-1차"가 아니라 "1과"
+  ? `${u.lesson}과`
+  : String(u.label || `${u.lesson}과-${u.seq}차`);
+const nsWordSum = units => units.reduce((t, u) => t + (Number(u.count) || 0), 0);
+async function loadNaesin(){
+  if (!STU) return;
+  if (!STU.sc && !PICKMODE) return;         // 학생은 학교코드가 있어야, 원장은 선별 탭에서만 내신 책을 본다
+  const base = dataBase(); if (!base) return;
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 4000);
+  try{
+    const r = await fetch(`${base.replace(/\/+$/, '')}/${NS_UNITS_FILE}`, { cache:'no-store', signal:ac.signal });
+    if (!r.ok) return;
+    const j = await r.json();
+    const books = j && j.books;
+    if (!books || typeof books !== 'object') return;
+
+    for (const id of Object.keys(books)){                       // 유닛 이름표는 모든 책에 대해 미리 만들어 둔다
+      const b = books[id];
+      if (!b || !Array.isArray(b.units)) continue;
+      const nm = new Map();
+      for (const u of b.units) nm.set(Number(u.lec), nsLabel(u));
+      NSNAMES[id] = nm;
+    }
+
+    if (PICKMODE){                                              // [내신 3차수] 원장 선별 탭 — 교과서 11권을 그대로 올린다
+      for (const id of Object.keys(books)){                     // 학생과 달리 범위를 자르지 않는다(전 유닛에서 10개씩 고름)
+        const b = books[id];
+        if (!b || !Array.isArray(b.units) || !b.units.length) continue;
+        BOOKS.push({ id, title: b.name || id, sub: (b.schools || []).join(' · ') || '내신 교과서',
+                     unit:'유닛', ns:true, nsWords: nsWordSum(b.units) });
+      }
+      return;
+    }
+
+    let hit = null;                                             // 학생: 내 학교가 쓰는 책 한 권만
+    for (const id of Object.keys(books)){
+      const b = books[id];
+      if (b && Array.isArray(b.schools) && b.schools.includes(STU.sc)){ hit = Object.assign({ id }, b); break; }
+    }
+    if (!hit || !Array.isArray(hit.units) || !hit.units.length) return;
+    const want = new Set(STU.nsl.map(Number));
+    const inRange = hit.units.filter(u => want.has(Number(u.lesson)));   // 이번 시험범위 과만
+    if (!inRange.length) return;                                // 범위에 해당하는 유닛이 없으면 책을 안 올린다
+    NSBOOK = hit;
+    NSLEC = new Map(inRange.map(u => [Number(u.lec), nsLabel(u)]));
+    BOOKS.push({ id: hit.id, title:'내신 단어', sub: hit.name || '학교 시험 범위',
+                 unit:'유닛', ns:true, nsWords: nsWordSum(inRange) });
+  }catch(e){ /* 표가 없거나 못 읽으면 지금까지와 똑같이 동작한다 */ }
+  finally{ clearTimeout(timer); }
+}
+
 const dataBase = () => (STU && STU.api) ? STU.api + '/voca/books'
   : (DATA_BASE || (CFG.url ? syncBase() + '/voca/books' : ''));   // 단독 열람은 설정의 워커 주소 재사용
 const bookUrl = b => dataBase() ? `${dataBase().replace(/\/+$/, '')}/${b.id}.json` : '';
-const bookReady = b => !!bookUrl(b) && (!READY_IDS || READY_IDS.includes(b.id));
+const bookReady = b => !!bookUrl(b) && (b.ns || !READY_IDS || READY_IDS.includes(b.id));   // [내신 2차수] 내신 책은 학교·범위로 이미 걸러졌다
 /* ── 히든보스 (2026-08-04 원장 최종 확정: 중간보스는 폐지) ──
  * 하이스트는 일반 책과 똑같이 배정 규칙만 따른다(배정 목록이 비면 전권 표시).
  * 히든보스 보카바이블: 하이스트 왕관 3개(3회독 완주)면 열림. 원장(마스터·단독)은 항상 전부 보임.
@@ -894,6 +963,7 @@ function shelfStates(){
   const stu = STU && !STU.master;
   for (const b of BOOKS){
     if (!stu){ st[b.id] = 'normal'; continue; }             // 원장·마스터: 전부 표시(현행)
+    if (b.ns){ st[b.id] = 'normal'; continue; }             // [내신 2차수] 내 학교·이번 범위로 이미 걸러진 책
     if (b.id === 'vocabible'){ st[b.id] = 'hide'; continue; }   // 아래에서 재결정
     if (STU.books.length && !STU.books.includes(b.id)){ st[b.id] = 'hide'; continue; }
     st[b.id] = 'normal';
@@ -945,6 +1015,8 @@ function setBookData(list){
 const hasBH = () => ALL.some(w => w.k);            // 파생어가 하나라도 있어야 블랙홀 버튼이 뜬다
 function applyLayerData(){
   DATA = (LAYER === 'bh') ? ALL : ALL.filter(w => !w.k);
+  if (BOOK && BOOK.ns && NSLEC && NSBOOK && BOOK.id === NSBOOK.id)                    // [내신 2차수] 이번 시험범위 유닛만 진열
+    DATA = DATA.filter(w => NSLEC.has(Number(w.lec)));                                 // (원장 선별 탭은 자르지 않는다 — 전 유닛에서 고름)
   byLec = {};
   DATA.forEach(w => (byLec[w.lec] ||= []).push(w));
 }
@@ -1023,7 +1095,8 @@ function renderShelf(){
     if (stu && !ready) continue;                             // 학생: 완성된 책만(현행 유지)
     const bs = ROOT.books[b.id];
     const crowns = bs?.crowns || 0;
-    const total = bs?.total || countCache[b.id] || metaCount(b.id);   // [0818] 목록표 개수도 씀
+    const total = b.ns ? (b.nsWords || 0)                            // [내신 2차수] 내신은 전권이 아니라 이번 범위 단어 수
+                       : (bs?.total || countCache[b.id] || metaCount(b.id));   // [0818] 목록표 개수도 씀
     const card = document.createElement('div');
     card.className = 'book' + (ready ? '' : ' soon');
     const lv = BOOK_LEVEL[b.id];                             // [0814] 난이도 단계(없으면 배지 안 붙음)
@@ -1380,7 +1453,10 @@ function toast(msg){
 
 /* ───────── 홈 렌더 ───────── */
 let mode = 'all';
-const lecLabel = n => BOOK && BOOK.unit !== '강' ? `${BOOK.unit} ${String(n).padStart(2,'0')}` : `${String(n).padStart(2,'0')}강`;
+const lecLabel = n => {
+  if (BOOK && BOOK.ns) return (NSNAMES[BOOK.id] && NSNAMES[BOOK.id].get(Number(n))) || `유닛 ${n}`;   // [내신 2차수] 교과서 과 이름을 그대로 쓴다
+  return BOOK && BOOK.unit !== '강' ? `${BOOK.unit} ${String(n).padStart(2,'0')}` : `${String(n).padStart(2,'0')}강`;
+};
 /* 학습 화면 위쪽 줄용 — 제목이 있으면 "UNIT 03 · 학교와 수업 2", 없으면 "DAY 03" */
 const lecFull = n => {
   if (!BOOK) return '';
@@ -2249,6 +2325,15 @@ function buildHwWords(lecs, date){   // 유닛마다 출제 단어 고르기 (�
 async function tryOpenHwBook(){
   if (!OPEN_HW_PENDING || !SHELF_READY) return;
   const req = OPEN_HW_PENDING; OPEN_HW_PENDING = null;
+  /* [내신 4차수] 내신 앱 단어 숙제 — 학생앱은 "몇 과"만 보낸다.
+   * 어느 책인지(내 학교 교과서)와 그 과가 어느 유닛인지는 여기서 학교표를 보고 정한다. */
+  if (req.ns){
+    if (!NSBOOK || !Array.isArray(NSBOOK.units)) return;         // 내 학교 내신 책이 없으면 조용히 지나간다
+    const want = new Set((Array.isArray(req.lessons) ? req.lessons : []).map(Number));
+    const lecs = NSBOOK.units.filter(u => want.has(Number(u.lesson))).map(u => Number(u.lec));
+    if (!lecs.length) return;
+    req.book = NSBOOK.id; req.lecs = lecs;
+  }
   const id = String(req.book || '');
   const b = BOOKS.find(x => x.id === id);
   if (!b) return;
@@ -2669,7 +2754,7 @@ window.addEventListener('message', (e) => {
   if (!d || typeof d !== 'object') return;
   if (d.type === 'maplVocaOpenLast'){ OPEN_LAST_PENDING = true; tryOpenLastBook(); return; }
   if (d.type === 'maplVocaOpenTask'){ OPEN_TASK_PENDING = { book: d.book, lecs: d.lecs }; tryOpenTaskBook(); return; }
-  if (d.type === 'maplVocaHwTask'){ OPEN_HW_PENDING = { book: d.book, lecs: d.lecs, date: d.date, deadline: d.deadline }; tryOpenHwBook(); return; }   // [숙제 3차수]
+  if (d.type === 'maplVocaHwTask'){ OPEN_HW_PENDING = { book: d.book, lecs: d.lecs, ns: d.ns, lessons: d.lessons, date: d.date, deadline: d.deadline }; tryOpenHwBook(); return; }   // [숙제 3차수 · 내신 4차수]
   if (d.type !== 'maplVis') return;
   EMB = true;
   VIS = { top: Math.max(0, d.top | 0), h: Math.max(200, d.h | 0) };
@@ -2899,6 +2984,7 @@ async function prefetchBooks(){
   if (m) ROOT = Object.assign({ v:3, auto:false, books:{} }, m);
   applyStudentMode();
   await loadBookIndex();                        // 완성된 책만 책장에 올리기
+  await loadNaesin();                           // [내신 2차수] 내 학교 시험범위 단어책을 책장에 올리기
   renderShelf(); show('shelf');
   SHELF_READY = true; tryOpenLastBook(); tryOpenTaskBook(); tryOpenHwBook();        // [0812] 홈 카드 "바로 열기" 신호가 먼저 와 있었으면 지금 연다
   setTimeout(prefetchBooks, 1500);              // [0818] 화면이 다 뜬 뒤에 조용히 미리 받기
