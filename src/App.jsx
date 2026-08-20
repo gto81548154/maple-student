@@ -68,7 +68,7 @@ function VocaFrame({ title, src, topOffset = 60, openLast = false, onOpenLastDon
         setH(Math.max(360, Math.ceil(d.h))); queueVis();
         if (hwTaskRef.current) {                                       // [숙제 5차수] 숙제 신호가 최우선
           const req = hwTaskRef.current; hwTaskRef.current = null;      // 두 번 보내지 않기
-          try { el.contentWindow.postMessage({ type: "maplVocaHwTask", book: req.book, lecs: req.lecs, date: req.date, deadline: req.deadline }, "*"); } catch (e) {}
+          try { el.contentWindow.postMessage({ type: "maplVocaHwTask", book: req.book, lecs: req.lecs, ns: req.ns, lessons: req.lessons, date: req.date, deadline: req.deadline }, "*"); } catch (e) {}
           if (hwTaskDoneRef.current) hwTaskDoneRef.current();
         } else if (openTaskRef.current) {
           const req = openTaskRef.current; openTaskRef.current = null;   // 두 번 보내지 않기
@@ -154,6 +154,27 @@ function parseVocaLecs(text) {
   });
   return [...new Set(out)].sort((a, b) => a - b);
 }
+// ─── [내신 4차수] 내신 앱 단어 숙제 줄 읽기 ───
+// 투두 줄 예: "내신-하남고1-YBM 5~6과 앱 단어 통과" → 5과·6과.
+// 교재 이름에 붙은 숫자("하남고1"의 1, "미사중2"의 2)를 단원으로 잘못 읽지 않도록,
+// 숫자 바로 뒤가 "과"·"강"이거나 물결표·쉼표로 이어지는 덩어리만 읽는다.
+const NAESIN_APP_VOCA_RE = /앱\s*단어/;
+const NAESIN_LESSON_RE = /(\d+(?:\s*[~\u223c\u301c\uff5e\-\u2013\u2014]\s*\d+)?(?:\s*,\s*\d+(?:\s*[~\u223c\u301c\uff5e\-\u2013\u2014]\s*\d+)?)*)\s*(?:과|강)/g;
+function parseNaesinLessons(text) {
+  const head = String(text || "").split(NAESIN_APP_VOCA_RE)[0];
+  let last = null, m;
+  NAESIN_LESSON_RE.lastIndex = 0;
+  while ((m = NAESIN_LESSON_RE.exec(head))) last = m[1];   // 맨 뒤 덩어리 = 진짜 범위
+  if (!last) return [];
+  const out = [];
+  const rest = String(last).replace(VOCA_RANGE_MARK, (whole, a, b) => {
+    const s = parseInt(a, 10), e = parseInt(b, 10);
+    if (s >= 1 && e >= s && e <= 30 && e - s <= 20) { for (let k = s; k <= e; k++) out.push(k); return " "; }
+    return whole;
+  });
+  (rest.match(/\d+/g) || []).forEach(t => { const v = parseInt(t, 10); if (v >= 1 && v <= 30) out.push(v); });
+  return [...new Set(out)].sort((a, b) => a - b);
+}
 // ─── [0814] 원장앱 교재 이름·별칭으로 단어장 찾기 ───
 // 원장앱 "교재 설정"의 교재명과 별칭(줄임말)은 진도 맵(ptree3) 안에 그대로 들어 있다.
 // 교재명(또는 별칭)이 위 기본 규칙에 걸리면, 그 교재의 별칭을 전부 같은 단어장으로 등록한다.
@@ -218,6 +239,11 @@ function matchVocaAliasInText(text, aliasIndex) {
 function findTaskVocaRange(taskItems, aliasIndex) {
   for (const item of (taskItems || [])) {
     const text = String(item?.text || "");
+    if (NAESIN_APP_VOCA_RE.test(text)) {                    // [내신 4차수] "… 5~6과 앱 단어 통과"
+      const lessons = parseNaesinLessons(text);             // 책과 유닛은 마플보카가 학교표를 보고 정한다
+      if (lessons.length) return { ns: true, lessons };
+      continue;
+    }
     const hit = matchVocaAliasInText(text, aliasIndex);
     if (hit) {
       const lecs = parseVocaLecs(hit.rest);
@@ -1246,6 +1272,28 @@ const getExamRangeTextForStudent = (examRanges, schoolCode, exam = {}) => {
   const text = entry ? examRangeSlotToText(entry[slot]).trim() : "";
   return text ? { slot, year, text, value: entry[slot] } : null;
 };
+// [내신 4차수] 마플보카에 넘길 값 — 학교코드(sc)와 이번 시험범위 교과서 과 번호(nsl).
+// 교과서 줄만 쓴다(부교재·외부지문은 단어 창고가 없다). 시험이 없거나 범위가 없으면 과 번호는 빈 배열.
+const NAESIN_TEXTBOOK_AREA = "naesin_textbook";
+function getNaesinVocaParams(student, examRanges, items) {
+  const sc = getStudentSchoolCodeForRange(student || {});
+  if (!sc) return { sc: "", nsl: [] };
+  const naesin = (items || []).find(x => x && x.type === "내신") || null;
+  if (!naesin) return { sc, nsl: [] };
+  // 범위 글자가 비어 있어도 번호(units)만 있으면 쓴다 — 그래서 슬롯 값을 직접 읽는다.
+  const slot = getExamRangeSlotForExam({ name: naesin.name, date: naesin.start, kind: naesin.kind, semester: naesin.semester });
+  const year = Number(String(naesin.start || "").slice(0, 4));
+  if (!slot || !year) return { sc, nsl: [] };
+  const byYear = examRanges?.data?.[sc];
+  const entry = byYear ? (byYear[year] || byYear[String(year)]) : null;
+  if (!entry) return { sc, nsl: [] };
+  const out = [];
+  for (const r of normalizeExamRangeSlot(entry[slot]).rows) {
+    if (String(r?.area || "") !== NAESIN_TEXTBOOK_AREA) continue;
+    (Array.isArray(r.units) ? r.units : []).forEach(v => { const k = Number(v); if (Number.isFinite(k)) out.push(k); });
+  }
+  return { sc, nsl: [...new Set(out)].sort((a, b) => a - b) };
+}
 function StudentExamRangeCard({ student, items, examRanges }) {
   // [수정 07-31] 평소에는 접어두고, 시험이 일주일 안으로 들어오면 저절로 펼쳐지게.
   // null = 학생이 아직 안 눌렀다는 뜻(위 StudentExamDdaySection과 같은 방식).
@@ -4644,7 +4692,9 @@ export default function App() {
                         deadline = dl.toISOString();
                       }
                     } catch (e) { deadline = ""; }
-                    setVocaHwTask({ book: taskVoca.book, lecs: taskVoca.lecs, date: activeDate, deadline });
+                    setVocaHwTask(taskVoca.ns
+                      ? { ns: true, lessons: taskVoca.lessons, date: activeDate, deadline }   // [내신 4차수]
+                      : { book: taskVoca.book, lecs: taskVoca.lecs, date: activeDate, deadline });
                     setTab("voca");
                     return;
                   }
@@ -4652,7 +4702,9 @@ export default function App() {
                 }} style={cardBox}>
                   <div style={cardLabel}>📚 2. 단어 숙제</div>
                   <div style={cardMain}>{taskVoca
-                    ? `${vocaShortLabel(taskVoca.book)} ${VOCA_UNIT_WORDS[taskVoca.book] || "DAY"} ${fmtLecRange(taskVoca.lecs)}`
+                    ? (taskVoca.ns
+                        ? `내신 단어 ${fmtLecRange(taskVoca.lessons)}과`                          /* [내신 4차수] */
+                        : `${vocaShortLabel(taskVoca.book)} ${VOCA_UNIT_WORDS[taskVoca.book] || "DAY"} ${fmtLecRange(taskVoca.lecs)}`)
                     : vocaTitle}</div>
                   <div style={cardSub}>{taskVoca ? "숙제 TEST 바로 시작 — 전부 맞히면 완료" : vocaLastName ? "이어서 공부하기" : "공부하러 가기"}</div>
                 </button>
@@ -4789,13 +4841,16 @@ export default function App() {
           const sp = new URLSearchParams(window.location.search);
           const books = guessVocaBooks(progressTree, studentVideos);
           // [0813] 숙제에 적힌 단어장이 추정 목록에 없으면 책장에 같이 보여준다(범위 열기가 막히지 않게)
-          if (taskVoca && !books.includes(taskVoca.book)) books.push(taskVoca.book);
+          if (taskVoca && taskVoca.book && !books.includes(taskVoca.book)) books.push(taskVoca.book);   // [내신 4차수] 내신은 책 id가 없다
           const q = new URLSearchParams();
           q.set("id", String(studentId || sp.get("id") || ""));
           if (sp.get("t")) q.set("t", sp.get("t"));
           if (student?.name) q.set("n", student.name);
           if (WORKER_ORIGIN) q.set("api", WORKER_ORIGIN);
           if (books.length) q.set("books", books.join(","));
+          const nsp = getNaesinVocaParams(student, examRanges, examDdays);   // [내신 4차수] 내 학교·이번 시험범위
+          if (nsp.sc) q.set("sc", nsp.sc);
+          if (nsp.nsl.length) q.set("nsl", nsp.nsl.join(","));
           const src = `${VOCA_APP_URL}?${q.toString()}`;
           return (
             <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden", border: "1px solid #eceef2" }}>
