@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import QRCodeLib from "qrcode";
 // [0824 3차수] 배포 확인용 차수 표시 — 원장앱 APP_BUILD와 같은 장치. 학생 화면에는 안 띄우고
 //   마스터 홈(원장 전용) 머리글에만 뜬다(원장 결정). 새 차수 파일을 만들 때마다 이 글자를 같이 바꿀 것.
-const STUDENT_APP_BUILD = "학생앱 4차수 · 2026-08-25";
+const STUDENT_APP_BUILD = "학생앱 5차수 · 2026-08-25";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -2141,6 +2141,28 @@ const buildSteps5FromLegacy = (homework, academy) => {
 };
 
 
+// ─── [0825 5차수] 화면 기본 날짜(activeDate)를 훅 자리(이른 위치)에서 계산하는 도우미 ───
+// 본문의 0813(기본 날짜)·0824(밤 10시 숨김) 계산과 반드시 같은 결과여야 한다 — 규칙을 바꾸면 두 곳을 같이 고칠 것.
+// 앱 단어 숙제 도장을 읽을 날짜를 정하는 데 쓴다(도장은 "수업 날짜"에 찍힌다).
+const computeActiveTodoDateEarly = (todos, studentId, selectedDate) => {
+  try {
+    if (selectedDate) return selectedDate;
+    const allDatesRaw = Object.keys(todos || {})
+      .filter((d) => {
+        const t2 = todos[d]?.[studentId] || todos[d]?.[Number(studentId)];
+        if (!t2) return false;
+        const hw = stripLabels(t2.homework || "").trim();
+        const ac = stripLabels(t2.academy || "").trim();
+        const hasSteps5 = t2.steps5 && Object.values(t2.steps5).some(v => (v || "").trim());
+        return hw || ac || hasSteps5;
+      })
+      .sort((a, b) => b.localeCompare(a));
+    const todayStr = getTodayStr();
+    const allDatesFull = filterTodoDatesForReveal(allDatesRaw, todayStr, new Date().getHours());
+    return pickDefaultTodoDate(allDatesFull, todayStr) || "";
+  } catch (e) { return ""; }
+};
+
 const buildStepGroups = (todo) => {
   if (!todo) return [];
   const steps5 = normalizeSteps5(todo.steps5 || buildSteps5FromLegacy(todo.homework || "", todo.academy || ""));
@@ -3551,6 +3573,33 @@ export default function App() {
   const [vocaHwTask, setVocaHwTask] = useState(null);     // [숙제 5차수 0818] 홈 카드 → 마플보카 숙제 TEST {book, lecs, date, deadline}. 보내면 비운다
   const [showAttQr, setShowAttQr] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
+  // ─── [0825 5차수] 앱 단어 숙제 완료 도장 읽기 ───
+  // 원장앱 배지(0819 단어숙제 표시)와 같은 워커 기록(/voca/hw-all)을 읽어 내 것만 쓴다.
+  // ① 홈·숙제 탭의 "앱 단어" 줄에 저절로 초록 체크 ② 단어 탭 동작(숙제 남음 = 숙제 TEST 먼저) 판단.
+  // 도장이 있으면 = 그 수업 날짜의 단어 숙제를 통과한 것. 못 읽으면 null(표시만 안 할 뿐 오류 없음).
+  const [vocaHwRec, setVocaHwRec] = useState(null);
+  const vocaHwLoadRef = useRef(null);
+  const vocaHwDate = computeActiveTodoDateEarly(todos, studentId, selectedDate);
+  useEffect(() => {
+    let dead = false;
+    setVocaHwRec(null);
+    if (!WORKER_ORIGIN || !vocaHwDate || !studentId) { vocaHwLoadRef.current = null; return undefined; }
+    const load = async () => {
+      try {
+        const headers = {};
+        if (VIDEO_WATCH_API_KEY) headers.Authorization = `Bearer ${VIDEO_WATCH_API_KEY}`;
+        const r = await fetch(`${WORKER_ORIGIN}/voca/hw-all?date=${encodeURIComponent(vocaHwDate)}`, { headers, cache: "no-store" });
+        const j = await r.json().catch(() => null);
+        if (!dead && r.ok && j && j.success) setVocaHwRec(((j.records || {})[String(studentId)]) || null);
+      } catch (e) {}
+    };
+    vocaHwLoadRef.current = load;
+    load();
+    const iv = setInterval(load, 60000);   // 등원 시간대에 저절로 갱신되게 1분마다
+    return () => { dead = true; clearInterval(iv); vocaHwLoadRef.current = null; };
+  }, [vocaHwDate, studentId]);
+  // 단어 탭에서 나오면 곧바로 한 번 더 읽는다 — 방금 통과한 숙제가 1분을 기다리지 않고 표시되게
+  useEffect(() => { if (tab !== "voca" && vocaHwLoadRef.current) vocaHwLoadRef.current(); }, [tab]);
   const [viewingVideo, setViewingVideo] = useState(null);
   const [viewStartTime, setViewStartTime] = useState(null);
   const [videoWatch, setVideoWatch] = useState({});
@@ -4319,13 +4368,26 @@ export default function App() {
   };
   const isChecked = (itemOrType, idx) => getCheckStatus(itemOrType, idx) === "done";
   const isFailed = (itemOrType, idx) => getCheckStatus(itemOrType, idx) === "fail";
+  // [0825 5차수] "앱 단어" 줄 자동 완료 표시 — 원장앱 0819 자동체크와 같은 규칙.
+  // 조건: ①숙제검사 칸의 "앱 단어" 줄 · 이 날짜 도장 있음 · 선생님이 손댄 값 없음(있으면 그 값이 이긴다).
+  const isAutoVocaDone = (itemOrType) => {
+    if (!vocaHwRec || !itemOrType || typeof itemOrType !== "object") return false;
+    if (itemOrType.type !== "hw") return false;
+    if (!/앱\s*단어/.test(String(itemOrType.text || ""))) return false;
+    // 선생님이 일부러 끈 흔적(__todo_clear__)이 있으면 자동도 물러난다 — 원장앱과 같은 규칙
+    const keys = [itemOrType.stableKey, itemOrType.key, itemOrType.legacyKey,
+      (itemOrType.type !== undefined && itemOrType.idx !== undefined) ? `${itemOrType.type}_${itemOrType.idx}` : null].filter(Boolean);
+    if (keys.some(k => chk[k] === TODO_CHECK_CLEAR_VALUE)) return false;
+    return getCheckValue(itemOrType) === undefined;
+  };
+  const isCheckedView = (itemOrType, idx) => isChecked(itemOrType, idx) || isAutoVocaDone(itemOrType);
 
   // 진행률: 모든 step의 모든 item 합산
   const allItems = stepGroups.flatMap(s => s.items);
   // 미완료(fail) 항목은 진행률 계산에서 완전히 제외 (분모/분자 둘 다 빠짐)
   const countableItems = allItems.filter(item => !isFailed(item));
   const totalTasks = countableItems.length;
-  const doneTasks = countableItems.filter(item => isChecked(item)).length;
+  const doneTasks = countableItems.filter(item => isCheckedView(item)).length;   // [0825 5차수] 앱 단어 자동 완료 포함
   const pct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
 
   const studentVideos = videos.filter(v => !v.studentId || String(v.studentId) === String(studentId));
@@ -4340,6 +4402,29 @@ export default function App() {
   // [0814] 원장앱 교재명·별칭 표(진도 맵에서 뽑음)를 같이 넘긴다 — 새 훅 없이 그때그때 계산(교재 수십 개라 가볍다)
   const vocaAliasIndex = buildVocaAliasIndex(progressTree);
   const taskVoca = findTaskVocaRange(stepGroups.flatMap(s => s.items), vocaAliasIndex);
+  // [0825 5차수] 숙제 TEST 바로 시작 — 예전 홈 2번 카드 안에 있던 코드를 밖으로 꺼내 단어 탭과 같이 쓴다.
+  // date = 이 숙제의 수업 날짜(activeDate) — 전날 미리 해도 그 수업 칸에 도장이 찍힌다.
+  // deadline = 그 수업 날짜의 등원 시각. 등원 정보가 없으면 빈 값(서버는 그 경우 늦음 판정 안 함).
+  const startVocaHwTest = () => {
+    if (!taskVoca) return false;
+    let deadline = "";
+    try {
+      const allHol = { ...HOLIDAYS, ...(customHolidays || {}) };
+      const mks = (makeups || []).filter(m => String(m.studentId) === String(student.id));
+      const dObj = new Date(activeDate + "T00:00:00");
+      const ent = attEntryForDay(student, mks, allHol, dObj);
+      if (ent && ent.time) {
+        const [hh, mm] = String(ent.time).split(":");
+        const dl = new Date(dObj);
+        dl.setHours(academyHour24(hh), parseInt(mm, 10) || 0, 0, 0);   // [0819 늦음판정 보정] "4:00" = 오후 4시
+        deadline = dl.toISOString();
+      }
+    } catch (e) { deadline = ""; }
+    setVocaHwTask(taskVoca.ns
+      ? { ns: true, lessons: taskVoca.lessons, date: activeDate, deadline }   // [내신 4차수]
+      : { book: taskVoca.book, lecs: taskVoca.lecs, date: activeDate, deadline });
+    return true;
+  };
 
   // 다가올 등원일 텍스트 (헤더 표시용)
   const upcomingAtt = computeUpcomingAttendance(student, makeups, customHolidays);
@@ -4562,7 +4647,11 @@ export default function App() {
           ...((progressTree?.lanes || []).length ? [{ key: "progress", label: "진도" }] : []),
         ].map((t) => (
           <button key={t.key} onClick={() => {
-            if (t.key === "voca") setVocaOpenLast(true);   // [0824 2차수] 단어 탭도 홈 카드처럼 마지막 책부터(원장 요청) — 숙제 시작(openTask)이 걸려 있으면 그쪽이 먼저다
+            if (t.key === "voca") {
+              // [0825 5차수] 단어 숙제가 남아 있으면 숙제 TEST부터, 통과했거나 숙제가 없으면 예전처럼 책장(마지막 책)
+              if (taskVoca && !vocaHwRec) startVocaHwTest();
+              else setVocaOpenLast(true);
+            }
             setTab(t.key);
           }} style={{
             // [0819] 한 칸을 화면 너비의 23%로 고정한다 — 넷이 꽉 차고 다섯째가 조금 보여서
@@ -4672,7 +4761,7 @@ export default function App() {
                 ) : (
                   <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 7 }}>
                     {step1Items.map((item, i) => {
-                      const done = isChecked(item); const fail = isFailed(item);
+                      const done = isCheckedView(item); const fail = isFailed(item);   // [0825 5차수] 앱 단어 자동 완료 포함
                       return (
                         <div key={item.key || i} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
                           <span style={{ flexShrink: 0, width: 17, height: 17, marginTop: 1, borderRadius: 5, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, border: done ? "1px solid #1B8A5A" : fail ? "1px solid #e74c3c" : "1.5px solid #d4d7de", background: done ? "#1B8A5A" : fail ? "#fdecea" : "#fff", color: done ? "#fff" : fail ? "#e74c3c" : "transparent" }}>{done ? "✓" : fail ? "✗" : "·"}</span>
@@ -4690,26 +4779,8 @@ export default function App() {
                   // [숙제 5차수 0818] 숙제에 단어장 범위가 있으면 숙제 TEST(객관식 클리어)를 바로 시작.
                   // date = 이 숙제의 수업 날짜(activeDate) — 전날 미리 해도 그 수업 칸에 도장이 찍힌다.
                   // deadline = 그 수업 날짜의 등원 시각. 등원 정보가 없으면 빈 값(서버는 그 경우 늦음 판정 안 함).
-                  if (taskVoca) {
-                    let deadline = "";
-                    try {
-                      const allHol = { ...HOLIDAYS, ...(customHolidays || {}) };
-                      const mks = (makeups || []).filter(m => String(m.studentId) === String(student.id));
-                      const dObj = new Date(activeDate + "T00:00:00");
-                      const ent = attEntryForDay(student, mks, allHol, dObj);
-                      if (ent && ent.time) {
-                        const [hh, mm] = String(ent.time).split(":");
-                        const dl = new Date(dObj);
-                        dl.setHours(academyHour24(hh), parseInt(mm, 10) || 0, 0, 0);   // [0819 늦음판정 보정] "4:00" = 오후 4시
-                        deadline = dl.toISOString();
-                      }
-                    } catch (e) { deadline = ""; }
-                    setVocaHwTask(taskVoca.ns
-                      ? { ns: true, lessons: taskVoca.lessons, date: activeDate, deadline }   // [내신 4차수]
-                      : { book: taskVoca.book, lecs: taskVoca.lecs, date: activeDate, deadline });
-                    setTab("voca");
-                    return;
-                  }
+                  // [0825 5차수] 이미 통과한 날은 숙제 TEST를 다시 열지 않고 책장으로 — 단어 탭과 같은 동작
+                  if (taskVoca && !vocaHwRec) { startVocaHwTest(); setTab("voca"); return; }
                   setVocaOpenLast(true); setTab("voca");
                 }} style={cardBox}>
                   <div style={cardLabel}>📚 2. 단어 숙제</div>
@@ -4718,7 +4789,9 @@ export default function App() {
                         ? `내신 단어 ${fmtLecRange(taskVoca.lessons)}과`                          /* [내신 4차수] */
                         : `${vocaShortLabel(taskVoca.book)} ${VOCA_UNIT_WORDS[taskVoca.book] || "DAY"} ${fmtLecRange(taskVoca.lecs)}`)
                     : vocaTitle}</div>
-                  <div style={cardSub}>{taskVoca ? "숙제 TEST 바로 시작 — 전부 맞히면 완료" : vocaLastName ? "이어서 공부하기" : "공부하러 가기"}</div>
+                  <div style={cardSub}>{taskVoca
+                    ? (vocaHwRec ? "오늘 단어 숙제 통과 ✓ — 이어서 공부하기" : "숙제 TEST 바로 시작 — 전부 맞히면 완료")
+                    : vocaLastName ? "이어서 공부하기" : "공부하러 가기"}</div>
                 </button>
                 {studentVideos.length > 0 && (
                   <button onClick={openVideosFromCard} style={cardBox}>
@@ -4825,7 +4898,7 @@ export default function App() {
                 step={step}
                 displayNum={idx + 1}
                 stampDate={(() => { const q = String(activeDate || "").split("-"); return q.length === 3 ? `${Number(q[1])}/${Number(q[2])}` : ""; })()}
-                isChecked={isChecked}
+                isChecked={isCheckedView}
                 isFailed={isFailed}
                 getFailReason={getFailReason}
                 studentVideos={studentVideos}
