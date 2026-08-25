@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import QRCodeLib from "qrcode";
 // [0824 3차수] 배포 확인용 차수 표시 — 원장앱 APP_BUILD와 같은 장치. 학생 화면에는 안 띄우고
 //   마스터 홈(원장 전용) 머리글에만 뜬다(원장 결정). 새 차수 파일을 만들 때마다 이 글자를 같이 바꿀 것.
-const STUDENT_APP_BUILD = "학생앱 7차수 · 2026-08-25";
+const STUDENT_APP_BUILD = "학생앱 8차수 · 2026-08-25";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -4652,15 +4652,20 @@ export default function App() {
               else setVocaOpenLast(true);
             }
             setTab(t.key);
-          }} style={{
-            // [0819] 한 칸을 화면 너비의 23%로 고정한다 — 넷이 꽉 차고 다섯째가 조금 보여서
-            //        "옆으로 밀면 더 있다"는 것이 눈에 띈다. 글자를 꾸겨 넣지 않아 크게 보인다.
-            flex: "0 0 23%", whiteSpace: "nowrap", textAlign: "center",
-            padding: "15px 4px", border: "none", cursor: "pointer",
-            background: "transparent", fontSize: 15, fontWeight: tab === t.key ? 700 : 500,
-            color: tab === t.key ? "#182848" : "#9aa0ab",
-            borderBottom: tab === t.key ? "2.5px solid #182848" : "2.5px solid transparent",
-          }}>{t.label}</button>
+          }} style={(() => {
+            // [0825 8차수] 단어 숙제가 남아 있는 동안 "단어" 탭도 빨간 칸 — 누르면 바로 숙제 TEST가 시작된다
+            const vocaAlert = t.key === "voca" && taskVoca && !vocaHwRec;
+            return {
+              // [0819] 한 칸을 화면 너비의 23%로 고정한다 — 넷이 꽉 차고 다섯째가 조금 보여서
+              //        "옆으로 밀면 더 있다"는 것이 눈에 띈다. 글자를 꾸겨 넣지 않아 크게 보인다.
+              flex: "0 0 23%", whiteSpace: "nowrap", textAlign: "center",
+              padding: "15px 4px", border: "none", cursor: "pointer",
+              background: vocaAlert ? "#fdecea" : "transparent", fontSize: 15,
+              fontWeight: vocaAlert ? 800 : tab === t.key ? 700 : 500,
+              color: vocaAlert ? "#b03a2e" : tab === t.key ? "#182848" : "#9aa0ab",
+              borderBottom: tab === t.key ? (vocaAlert ? "2.5px solid #b03a2e" : "2.5px solid #182848") : "2.5px solid transparent",
+            };
+          })()}>{t.label}</button>
         ))}
         </div>
       </div>
