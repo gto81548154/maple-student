@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import QRCodeLib from "qrcode";
 // [0824 3차수] 배포 확인용 차수 표시 — 원장앱 APP_BUILD와 같은 장치. 학생 화면에는 안 띄우고
 //   마스터 홈(원장 전용) 머리글에만 뜬다(원장 결정). 새 차수 파일을 만들 때마다 이 글자를 같이 바꿀 것.
-const STUDENT_APP_BUILD = "학생앱 5차수 · 2026-08-25";
+const STUDENT_APP_BUILD = "학생앱 6차수 · 2026-08-25";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -3573,9 +3573,10 @@ export default function App() {
   const [vocaHwTask, setVocaHwTask] = useState(null);     // [숙제 5차수 0818] 홈 카드 → 마플보카 숙제 TEST {book, lecs, date, deadline}. 보내면 비운다
   const [showAttQr, setShowAttQr] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
-  // ─── [0825 5차수] 앱 단어 숙제 완료 도장 읽기 ───
-  // 원장앱 배지(0819 단어숙제 표시)와 같은 워커 기록(/voca/hw-all)을 읽어 내 것만 쓴다.
-  // ① 홈·숙제 탭의 "앱 단어" 줄에 저절로 초록 체크 ② 단어 탭 동작(숙제 남음 = 숙제 TEST 먼저) 판단.
+  // ─── [0825 5차수 → 6차수 고침] 앱 단어 숙제 완료 도장 읽기 ───
+  // 5차수는 원장앱 문(/voca/hw-all)을 썼는데 그 문은 관리자 열쇠 전용이라 401로 거절당했다(그래서 표시가 안 떴음).
+  // 6차수 = 학생 본인 문 /voca/hw-status?id=&t=&date= 로 바꿈 — 내 열쇠(주소의 t, 마스터로 볼 때도 학생 t가 실려 온다)로
+  // 내 도장 하나만 받아온다. ① 홈·숙제 탭 "앱 단어" 줄 초록 체크 ② 단어 탭 동작(숙제 남음 = 숙제 TEST 먼저) 판단.
   // 도장이 있으면 = 그 수업 날짜의 단어 숙제를 통과한 것. 못 읽으면 null(표시만 안 할 뿐 오류 없음).
   const [vocaHwRec, setVocaHwRec] = useState(null);
   const vocaHwLoadRef = useRef(null);
@@ -3586,11 +3587,9 @@ export default function App() {
     if (!WORKER_ORIGIN || !vocaHwDate || !studentId) { vocaHwLoadRef.current = null; return undefined; }
     const load = async () => {
       try {
-        const headers = {};
-        if (VIDEO_WATCH_API_KEY) headers.Authorization = `Bearer ${VIDEO_WATCH_API_KEY}`;
-        const r = await fetch(`${WORKER_ORIGIN}/voca/hw-all?date=${encodeURIComponent(vocaHwDate)}`, { headers, cache: "no-store" });
+        const r = await fetch(`${WORKER_ORIGIN}/voca/hw-status?id=${encodeURIComponent(String(studentId))}&t=${encodeURIComponent(getSelfAccessToken())}&date=${encodeURIComponent(vocaHwDate)}`, { cache: "no-store" });
         const j = await r.json().catch(() => null);
-        if (!dead && r.ok && j && j.success) setVocaHwRec(((j.records || {})[String(studentId)]) || null);
+        if (!dead && r.ok && j && j.success) setVocaHwRec(j.record || null);
       } catch (e) {}
     };
     vocaHwLoadRef.current = load;
