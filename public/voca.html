@@ -6,24 +6,24 @@
 <title>마플보카 — 보카바이블 A·B</title>
 <style>
 :root{
-  --paper:#F7F8FA; --card:#FFFFFF; --ink:#182848; --ink-soft:#6B7280;
-  --line:#E5E7EC; --crimson:#E24B4A; --crimson-soft:#FDF0EF;
-  --teal:#2A6FDB; --teal-soft:#EEF3FC; --gold:#E8890C; --gold-soft:#FDF3E3;
-  --focus:#2456A6; --on-fill:#fff;
+  --paper:#F3F2F2; --card:#FFFFFF; --ink:#201E1D; --ink-soft:#6E6A66;
+  --line:#E3E1DE; --crimson:#EC3013; --crimson-soft:#FCE9E4;
+  --teal:#1E7A4E; --teal-soft:#E9F1EC; --gold:#EC3013; --gold-soft:#FCE9E4;
+  --focus:#EC3013; --on-fill:#fff;
 }
 /* [08-06] 블랙홀 모드 — 색 변수만 갈아끼워 화면 전체를 어둡게 한다.
  * 일반 모드 색은 한 곳도 건드리지 않는다(위 :root 그대로). */
 html.bh{
-  --paper:#12181F; --card:#1A222C; --ink:#E8EDF3; --ink-soft:#93A3B5;
-  --line:#2C3A4A; --crimson:#F0999B; --crimson-soft:#3A2226;
-  --teal:#7FB0F0; --teal-soft:#1B2A3E; --gold:#E0B95C; --gold-soft:#332B18;
-  --focus:#7FB0F0; --on-fill:#12181F;
+  --paper:#171514; --card:#211F1E; --ink:#F3F2F2; --ink-soft:#A8A29D;
+  --line:#3C3936; --crimson:#FF7A5C; --crimson-soft:#3D1F15;
+  --teal:#5FBA8C; --teal-soft:#1D2F27; --gold:#FF7A5C; --gold-soft:#3D1F15;
+  --focus:#FF7A5C; --on-fill:#171514;
 }
 html.bh .toggle::after{background:#E8EDF3}
 html.bh .mcbadge,html.bh .book .bhid{color:var(--gold)}
 html.bh .aicard .vd.ok{color:var(--teal)}
 html.bh .aicard .vd.no{color:var(--crimson)}
-html.bh .star{color:#44505F}
+html.bh .star{color:#4A4744}
 *{box-sizing:border-box; margin:0; padding:0}
 html{-webkit-text-size-adjust:100%}
 body{
@@ -35,56 +35,60 @@ body{
 button{font:inherit; cursor:pointer; border:none; background:none; color:inherit}
 button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(--focus); outline-offset:2px}
 input{font:inherit}
+a{color:var(--crimson)} a:hover{color:var(--ink)}
+::selection{background:var(--crimson-soft)}
 .wrap{max-width:580px; margin:0 auto; padding:0 16px 48px}
 
 /* ── 헤더 ── */
 header{position:sticky; top:0; z-index:10; background:var(--paper);
-  border-bottom:1px solid var(--line); padding:12px 0 10px; margin-bottom:16px}
+  border-bottom:2px solid var(--ink); padding:14px 0 12px; margin-bottom:20px}
 .hrow{display:flex; align-items:center; justify-content:space-between; gap:10px}
 .brand{font-weight:800; letter-spacing:-.02em; font-size:19px}
 .brand small{font-weight:500; color:var(--ink-soft); font-size:12px; margin-left:6px}
 .hbtns{display:flex; gap:6px}
-.hbtn{font-size:14.5px; font-weight:800; padding:11px 14px; border:1.5px solid var(--ink); border-radius:11px; background:var(--card); white-space:nowrap}
+.hbtn{font-size:14px; font-weight:700; padding:11px 16px; border:2px solid var(--ink); border-radius:0; background:var(--card); white-space:nowrap; min-height:44px}
 #btnSet{background:var(--ink); color:var(--on-fill); border-color:var(--ink)}
 
 /* 회독 도장 */
 .stamp{
   display:inline-flex; align-items:center; justify-content:center;
-  width:56px; height:56px; border-radius:50%;
-  border:2.5px solid var(--crimson); color:var(--crimson);
-  font-weight:800; font-size:14px; line-height:1.05; text-align:center;
-  transform:rotate(-7deg); background:transparent; flex-direction:column;
+  width:56px; height:56px; border-radius:0;
+  border:2px solid var(--crimson); color:var(--crimson);
+  font-weight:800; font-size:13px; line-height:1.1; text-align:center;
+  transform:rotate(-6deg); background:transparent; flex-direction:column;
   letter-spacing:-.03em; user-select:none;
 }
-.stamp b{font-size:20px}
-.stamp-sm{width:40px;height:40px;border-width:2px;font-size:11px}
-.stamp-sm b{font-size:15px}
+.stamp b{font-size:21px}
+.stamp-sm{width:42px;height:42px;border-width:2px;font-size:10.5px}
+.stamp-sm b{font-size:16px}
 
 /* ── 홈 ── */
-.stat{display:flex; gap:14px; align-items:center; background:var(--card);
-  border:1px solid var(--line); border-radius:14px; padding:18px 16px; margin-bottom:14px}
+.stat{display:flex; gap:16px; align-items:center; background:var(--card);
+  border:1px solid var(--line); border-radius:0; padding:18px 16px; margin-bottom:16px}
 .stat .nums{flex:1}
-.stat .big{font-size:26px; font-weight:800; letter-spacing:-.02em}
+.stat .big{font-size:27px; font-weight:800; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
 .stat .sub{font-size:14px; color:var(--ink-soft); margin-top:2px}
-.bhbtn{flex:none; border:1.5px solid var(--line); background:var(--paper); color:var(--ink-soft);
-  font-size:13px; font-weight:800; border-radius:16px; padding:10px 14px; white-space:nowrap; line-height:1.2}
+.bhbtn{flex:none; border:2px solid var(--line); background:var(--card); color:var(--ink-soft);
+  font-size:13px; font-weight:700; border-radius:0; padding:11px 14px; white-space:nowrap; line-height:1.2; min-height:44px}
 .bhbtn.on{border-color:var(--ink); background:var(--ink); color:var(--on-fill)}
-.bar{height:9px; background:var(--line); border-radius:5px; overflow:hidden; margin-top:8px}
-.bar i{display:block; height:100%; background:var(--teal); border-radius:4px}
+.bar{height:8px; background:var(--line); border-radius:0; overflow:hidden; margin-top:10px}
+.bar i{display:block; height:100%; background:var(--teal); border-radius:0}
 
-.modes{display:grid; grid-template-columns:repeat(4,1fr); gap:7px; margin-bottom:14px}
-.mode{padding:14px 2px; border:1.5px solid var(--line); border-radius:12px;
-  background:var(--card); font-size:15px; font-weight:700; text-align:center; color:var(--ink-soft)}
+.modes{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:14px}
+.mode{padding:13px 2px; border:2px solid var(--line); border-radius:0;
+  background:var(--card); font-size:15px; font-weight:700; text-align:center; color:var(--ink-soft); min-height:62px}
 .mode.on{border-color:var(--ink); color:var(--ink); background:var(--card)}
-.mode .cnt{display:block; font-size:12.5px; font-weight:500; margin-top:2px}
+.mode.on .cnt{color:var(--crimson); font-weight:700}
+.mode .cnt{display:block; font-size:12px; font-weight:600; margin-top:3px; font-variant-numeric:tabular-nums}
 
-.allbtn{width:100%; padding:16px; margin-bottom:8px; border-radius:12px;
-  border:none; background:var(--ink); color:var(--on-fill); font-weight:800; font-size:16px}
-.allbtn:disabled{opacity:.35; cursor:default}
+.allbtn{width:100%; padding:16px; margin-bottom:8px; border-radius:0;
+  border:none; background:var(--crimson); color:var(--on-fill); font-weight:800; font-size:16px; text-align:left; min-height:56px}
+.allbtn:active{background:#C22006}
+.allbtn:disabled{opacity:.45; cursor:default}
 
-.lecgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:9px}
-.lec{border:1px solid var(--line); background:var(--card); border-radius:12px;
-  padding:13px 46px 12px 14px; text-align:left; position:relative}
+.lecgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px}
+.lec{border:1px solid var(--line); background:var(--card); border-radius:0;
+  padding:14px 48px 12px 14px; text-align:left; position:relative}
 .lec:disabled{opacity:.4; cursor:default}
 .lec .t{font-weight:800; font-size:16px}
 .lec .n{font-size:13px; color:var(--ink-soft); margin-bottom:8px}
@@ -94,17 +98,19 @@ header{position:sticky; top:0; z-index:10; background:var(--paper);
 .lec .bar i{border-radius:0}
 .lec.done .t::after{content:"✓"; color:var(--teal); margin-left:4px}
 .lec.disabled{opacity:.4; pointer-events:none}
-.leccheck{position:absolute; top:9px; right:9px; width:30px; height:30px; border-radius:9px;
-  border:1.5px solid var(--line); background:var(--paper); cursor:pointer; z-index:2;
+.leccheck{position:absolute; top:10px; right:10px; width:32px; height:32px; border-radius:0;
+  border:2px solid var(--line); background:var(--card); cursor:pointer; z-index:2;
   display:flex; align-items:center; justify-content:center; transition:border-color .12s, background .12s}
-.leccheck:hover{border-color:var(--teal)}
-.leccheck.on{border-color:var(--teal); background:var(--teal)}
+.leccheck:hover{border-color:var(--ink)}
+.leccheck.on{border-color:var(--ink); background:var(--ink)}
 .leccheck.on::after{content:"✓"; color:var(--on-fill); font-size:16px; font-weight:800; line-height:1}
 .lec.disabled .leccheck{display:none}
 
 /* ── 범위 학습 ── */
-.rangeinfo{font-size:13px; color:var(--ink-soft); margin:-6px 2px 12px}
-.sechead{font-size:13px; font-weight:800; color:var(--ink-soft); margin:0 2px 8px}
+.rangeinfo{font-size:13px; color:var(--ink-soft); margin:-2px 2px 14px}
+.sechead{font-size:13px; font-weight:800; color:var(--ink); margin:0 2px 8px}
+.screen > .sechead{margin:24px 0 10px; padding-top:14px; border-top:2px solid var(--ink)}
+.screen > .sechead:first-child{margin-top:2px; padding-top:0; border-top:none}
 
 /* ── 학습 ── */
 .top{display:flex; align-items:center; justify-content:space-between; margin:4px 0 12px}
@@ -113,84 +119,95 @@ header{position:sticky; top:0; z-index:10; background:var(--paper);
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%}
 .top .prog-unit:empty{display:none}
 .top .prog-num{font-size:15px; color:var(--ink-soft); font-variant-numeric:tabular-nums}
-.top .quit{font-size:14.5px; font-weight:700; color:var(--ink-soft); padding:10px 15px;
-  border:1px solid var(--line); border-radius:10px; background:var(--card); white-space:nowrap}
+.top .quit{font-size:14px; font-weight:700; color:var(--ink-soft); padding:10px 15px; min-height:44px;
+  border:2px solid var(--line); border-radius:0; background:var(--card); white-space:nowrap}
 
-.card{background:var(--card); border:1px solid var(--line); border-radius:16px;
-  padding:26px 20px 20px; position:relative}
-.star{position:absolute; top:14px; right:14px; font-size:24px; color:#D4D7DE; line-height:1}
-.star.on{color:var(--gold)}
+.card{background:var(--card); border:1px solid var(--line); border-radius:0;
+  padding:28px 20px 20px; position:relative}
+.star{position:absolute; top:12px; right:12px; width:44px; height:44px; font-size:24px; color:#C9C5C2;
+  line-height:1; border:2px solid var(--line); background:var(--card); z-index:2;
+  display:flex; align-items:center; justify-content:center; transition:border-color .12s, color .12s, background .12s}
+.star.on{color:var(--crimson); border-color:var(--crimson); background:var(--crimson-soft)}
+.star.pop{animation:starpop .25s ease}
+@keyframes starpop{50%{transform:scale(1.22)}}
+.starhint{position:absolute; top:62px; right:12px; max-width:236px; background:var(--ink); color:var(--on-fill);
+  padding:12px 14px; font-size:12.5px; line-height:1.55; text-align:left; z-index:6; border:none; cursor:pointer}
+.starhint b{display:block; margin-bottom:4px; font-size:13px}
+.starhint::before{content:""; position:absolute; top:-5px; right:16px; width:10px; height:10px; background:var(--ink); transform:rotate(45deg)}
 .senseinfo{position:absolute; top:18px; left:16px; display:flex; gap:4px; align-items:center}
-.sdot{width:9px; height:9px; border-radius:50%; border:1.5px solid var(--ink-soft)}
+.sdot{width:9px; height:9px; border-radius:0; border:1.5px solid var(--ink-soft)}
 .sdot.left{background:var(--ink-soft)}
 .sdot.used{border-color:#C9C5BA; background:repeating-linear-gradient(45deg,#C9C5BA,#C9C5BA 1.5px,transparent 1.5px,transparent 3px)}
 .senseinfo span{font-size:11px; color:var(--ink-soft); margin-left:2px}
 
 .word{font-family:Charter,Georgia,"Times New Roman",serif; font-size:clamp(36px,9.5vw,50px);
-  font-weight:700; text-align:center; letter-spacing:.01em; margin-top:14px;
+  font-weight:700; text-align:center; letter-spacing:.01em; margin-top:26px; padding:0 34px;
   cursor:pointer; -webkit-tap-highlight-color:transparent;
   user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; touch-action:manipulation}
-.word .spk{display:inline-block; font-size:.5em; vertical-align:middle; margin-left:6px; padding:2px 8px;
-  color:var(--teal); opacity:.85}
+.word .spk{display:inline-block; vertical-align:middle; margin-left:8px; color:var(--crimson); opacity:.9}
+.word .spk svg{width:22px; height:22px; display:block}
 .word:active .spk{opacity:1}
 .pron{text-align:center; color:var(--ink-soft); font-size:17px; margin-top:2px; min-height:24px}
 .pron b{color:var(--crimson); font-weight:700}
 
-.hintbtn{display:block; margin:14px auto 0; font-size:13px; color:var(--ink-soft);
-  border:1px dashed var(--line); border-radius:20px; padding:5px 14px; background:var(--paper)}
+.hintbtn{display:block; margin:16px auto 0; font-size:13px; font-weight:600; color:var(--ink-soft); min-height:40px;
+  border:1px dashed var(--ink-soft); border-radius:0; padding:9px 16px; background:var(--paper)}
 .hint{margin-top:12px; display:none}
 .hint.open{display:block}
 .morph{display:flex; flex-wrap:wrap; gap:5px; justify-content:center}
-.morph span{background:var(--gold-soft); border:1px solid #E4D5AC; color:#6B5210;
-  font-size:13px; padding:3px 9px; border-radius:7px; font-weight:600}
+.morph span{background:var(--paper); border:1px solid var(--line); color:var(--ink);
+  font-size:13px; padding:4px 10px; border-radius:0; font-weight:600}
 .morph .plus{background:none; border:none; color:var(--ink-soft); padding:3px 1px}
 .deriv{font-size:13.5px; color:var(--ink-soft); text-align:center; margin-top:9px; line-height:1.6}
 
 .ansrow{display:flex; flex-direction:column; align-items:center; gap:10px; margin-top:20px}
-.ansrow input{width:100%; border:1.5px solid var(--line); border-radius:11px;
-  padding:12px 14px; font-size:16px; background:var(--card)}
+.ansrow input{width:100%; border:2px solid var(--line); border-radius:0;
+  padding:13px 14px; font-size:16px; background:var(--card); min-height:50px}
 .ansrow input:focus{border-color:var(--ink); outline:none}
-.ansrow .go{background:var(--ink); color:var(--on-fill); border-radius:11px; padding:11px 26px; font-size:16px; font-weight:700}
-.passbtn{display:block; margin:10px auto 0; font-size:13px; color:var(--ink-soft); text-decoration:underline}
+.ansrow .go{width:100%; background:var(--crimson); color:var(--on-fill); border-radius:0; padding:14px 16px;
+  font-size:16px; font-weight:800; text-align:left; min-height:52px}
+.ansrow .go:active{background:#C22006}
+.passbtn{display:block; margin:10px auto 0; font-size:13px; color:var(--ink-soft); text-decoration:underline; padding:9px 8px; min-height:40px}
 
 /* 피드백 */
-.fb{margin-top:16px; border-radius:13px; padding:14px 16px; display:none}
+.fb{margin-top:18px; border-radius:0; padding:14px 16px; display:none}
 .fb.show{display:block}
-.fb.ok{background:var(--teal-soft); border:1px solid #BBDDD5}
-.fb.no{background:var(--crimson-soft); border:1px solid #E9C6C1}
+.fb.ok{background:var(--teal-soft); border:1px solid var(--teal)}
+.fb.no{background:var(--crimson-soft); border:1px solid var(--crimson)}
 .fb .head{font-weight:800; font-size:15px; margin-bottom:4px}
 .fb.ok .head{color:var(--teal)} .fb.no .head{color:var(--crimson)}
 .fb .msg{font-size:13.5px; color:var(--ink-soft); margin-bottom:10px}
 .senselist{display:flex; flex-direction:column; gap:7px}
-.sense{font-size:16px; line-height:1.6; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px}
+.sense{font-size:16px; line-height:1.6; background:var(--card); border:1px solid var(--line); border-radius:0; padding:12px 14px}
 .sense.hit{border-color:var(--teal); box-shadow:0 0 0 1px var(--teal) inset}
 .sense.gone{opacity:.55}
 .sense.gone .m{text-decoration:line-through}
 .sense .pos{font-family:Charter,Georgia,serif; font-style:italic; color:var(--crimson);
   font-size:14px; margin-right:6px}
 .sense .tag{float:right; font-size:11px; color:var(--ink-soft); border:1px solid var(--line);
-  border-radius:5px; padding:0 5px; margin-left:6px}
+  border-radius:0; padding:1px 6px; margin-left:6px}
 .sense .tag.now{color:var(--teal); border-color:var(--teal)}
 .sense .syn{display:block; font-size:13.5px; color:var(--ink-soft); margin-top:3px;
   font-family:Charter,Georgia,serif}
-.nextbtn{width:100%; margin-top:14px; padding:12px; border-radius:11px;
-  background:var(--ink); color:var(--on-fill); font-weight:700; font-size:15px}
+.nextbtn{width:100%; margin-top:14px; padding:14px 16px; border-radius:0; min-height:52px; text-align:left;
+  background:var(--crimson); color:var(--on-fill); font-weight:800; font-size:15px}
+.nextbtn:active{background:#C22006}
 .tapnext{margin-top:14px; padding:10px 0; text-align:center; font-size:12.5px;
   font-weight:700; color:var(--ink-soft)}
 
 /* ── 결과 ── */
-.aicard{border:1.5px solid var(--line); border-radius:11px; padding:10px 12px; margin-top:8px; text-align:left; background:var(--card)}
+.aicard{border:1px solid var(--line); border-radius:0; padding:11px 13px; margin-top:8px; text-align:left; background:var(--card)}
 .aicard .w{font-weight:800}
 .aicard .vd{font-size:12px; font-weight:800; float:right}
 .aicard .vd.ok{color:var(--teal)}
 .aicard .vd.no{color:var(--crimson)}
 .aicard .d{font-size:12.5px; color:var(--ink-soft); margin-top:4px; line-height:1.5}
-.sumcard{background:var(--card); border:1px solid var(--line); border-radius:16px;
-  padding:26px 20px; text-align:center}
+.sumcard{background:var(--card); border:1px solid var(--line); border-radius:0;
+  padding:28px 20px; text-align:center}
 .sumcard .score{font-size:44px; font-weight:800; letter-spacing:-.03em}
 .sumcard .score small{font-size:20px; color:var(--ink-soft); font-weight:600}
 .sumbtns{display:flex; gap:8px; margin-top:18px}
-.sumbtns button{flex:1; padding:12px; border-radius:11px; font-weight:700; font-size:14.5px}
+.sumbtns button{flex:1; padding:13px 16px; border-radius:0; font-weight:800; font-size:14.5px; min-height:52px; text-align:left}
 .sumbtns .re{background:var(--crimson); color:var(--on-fill)}
 .sumbtns .home{background:var(--ink); color:var(--on-fill)}
 .wronglist{margin-top:18px; text-align:left}
@@ -201,154 +218,160 @@ header{position:sticky; top:0; z-index:10; background:var(--paper);
 .witem .m{color:var(--ink-soft); font-size:13.5px; text-align:right}
 
 /* ── 모달 ── */
-.modal{position:fixed; inset:0; background:rgba(30,43,60,.45); display:none;
+.modal{position:fixed; inset:0; background:rgba(32,30,29,.5); display:none;
   align-items:flex-end; justify-content:center; z-index:50}
 .modal.show{display:flex}
-.sheet{background:var(--card); border-radius:18px 18px 0 0; width:100%; max-width:580px;
-  padding:20px 18px 30px; max-height:82dvh; overflow-y:auto}
+.sheet{background:var(--card); border-radius:0; border-top:2px solid var(--ink); width:100%; max-width:580px;
+  padding:22px 18px 30px; max-height:82dvh; overflow-y:auto}
 .sheet h2{font-size:16px; margin-bottom:14px}
 .setrow{display:flex; align-items:center; justify-content:space-between; padding:11px 0;
   border-bottom:1px solid var(--line); font-size:14.5px}
 .setrow .d{font-size:12px; color:var(--ink-soft); margin-top:2px}
-.setrow button{border:1px solid var(--line); border-radius:8px; padding:6px 12px;
+.setrow button{border:1px solid var(--line); border-radius:0; padding:9px 14px; min-height:40px;
   background:var(--paper); font-size:13px; font-weight:600}
-.setrow button.danger{color:var(--crimson); border-color:#E9C6C1}
+.setrow button.danger{color:var(--crimson); border-color:var(--crimson)}
 
 /* ── 왕관/확인 모달 ── */
 .stampwrap{display:flex; flex-direction:column; align-items:center; gap:4px}
 .crowns{font-size:12.5px; line-height:1; letter-spacing:1.5px; min-height:13px; text-align:center}
 .confbtns{display:flex; gap:9px; margin-top:18px}
-.confbtns button{flex:1; padding:13px; border-radius:11px; font:inherit; font-weight:700; font-size:14.5px;
-  border:1px solid var(--line); background:var(--paper); color:var(--ink)}
+.confbtns button{flex:1; padding:13px 16px; border-radius:0; font:inherit; font-weight:700; font-size:14.5px; min-height:52px; text-align:left;
+  border:2px solid var(--line); background:var(--card); color:var(--ink)}
 .confbtns .yes{background:var(--ink); color:var(--on-fill); border-color:var(--ink)}
 .confbtns .yes.red{background:var(--crimson); border-color:var(--crimson)}
 
 /* ── 책장 ── */
 .brand{cursor:pointer}
-.shelfhead{font-size:15px; font-weight:800; margin:4px 0 12px}
+.shelfhead{font-size:16px; font-weight:800; margin:2px 0 14px; letter-spacing:-.01em}
 .bookgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(165px,1fr)); gap:10px}
-.book{position:relative; background:var(--card); border:1px solid var(--line); border-radius:14px;
-  padding:14px 13px; cursor:pointer; transition:border-color .12s, transform .12s}
-.book:hover{border-color:var(--teal); transform:translateY(-1px)}
-.book .bt{font-weight:800; font-size:14.5px; line-height:1.35; padding-right:64px}
-.book .bs{font-size:12px; color:var(--ink-soft); margin-top:5px}
-.book .bc{font-size:13px; letter-spacing:1.5px; margin-top:7px; min-height:15px}
-.book .bpriv{position:absolute; top:9px; right:10px; font-size:10.5px; font-weight:700; color:var(--crimson); white-space:nowrap;
-  border:1px solid #E9C6C1; border-radius:6px; padding:2px 5px; background:var(--paper)}
+.book{position:relative; background:var(--card); border:1px solid var(--line); border-radius:0;
+  padding:16px 14px 14px; cursor:pointer; transition:border-color .12s}
+.book:hover{border-color:var(--ink)}
+.book:active{background:var(--paper)}
+.book .bt{font-weight:800; font-size:15px; line-height:1.35; letter-spacing:-.01em}
+.book .bs{font-size:12.5px; color:var(--ink-soft); margin-top:6px}
+.book .bc{font-size:13px; letter-spacing:2px; margin-top:8px; min-height:16px; color:var(--crimson)}
+.book .bpriv{position:absolute; bottom:14px; right:14px; font-size:10.5px; font-weight:700; color:var(--crimson); white-space:nowrap;
+  border:1px solid var(--crimson); border-radius:0; padding:3px 6px; background:var(--card)}
 /* [0814] 난이도 단계 배지 — 자리·크기는 위 '원장 전용' 배지와 같게, 색만 파랑 계열.
  * 색은 변수라서 블랙홀(어두운) 모드에서도 알아서 바뀐다. */
-.book .blv{position:absolute; top:9px; right:10px; font-size:10.5px; font-weight:700; color:var(--teal); white-space:nowrap;
-  border:1px solid var(--teal); border-radius:6px; padding:2px 5px; background:var(--teal-soft)}
+.book .blv{position:absolute; bottom:14px; right:14px; font-size:10.5px; font-weight:700; color:var(--ink-soft); white-space:nowrap;
+  border:1px solid var(--line); border-radius:0; padding:3px 6px; background:var(--card)}
 .book.soon{opacity:.45; cursor:default}
 .shelfempty{grid-column:1/-1; text-align:center; color:var(--ink-soft); font-size:14px;
   line-height:1.6; padding:30px 10px}
 .book.soon:hover{border-color:var(--line); transform:none}
-.book.lockedbook{background:var(--paper); border:1.5px dashed #C9C5BA; text-align:center; cursor:default}
-.book.lockedbook:hover{border-color:#C9C5BA; transform:none}
-.book .lkicon{font-size:19px}
-.book .lkq{font-weight:800; font-size:15px; color:#8A887F; letter-spacing:2px; margin-top:2px}
-.book .lkd{font-size:11.5px; color:#8A887F; margin-top:5px; line-height:1.5}
-.book .bhid{position:absolute; top:9px; right:10px; font-size:10.5px; font-weight:700; color:#6B5210; white-space:nowrap;
-  border:1px solid #E4D5AC; border-radius:6px; padding:2px 5px; background:var(--gold-soft)}
-.shelfnote{margin-top:14px; font-size:12px; color:var(--ink-soft)}
-.toggle{width:44px; height:25px; border-radius:13px; background:var(--line); position:relative; transition:.15s}
-.toggle::after{content:""; position:absolute; top:2.5px; left:3px; width:20px; height:20px;
-  border-radius:50%; background:var(--card); transition:.15s}
+.book.lockedbook{background:var(--paper); border:1px dashed var(--ink-soft); text-align:left; cursor:default}
+.book.lockedbook:hover{border-color:var(--ink-soft); transform:none}
+.book .lkicon{color:var(--ink-soft)}
+.book .lkicon svg{display:block; width:18px; height:18px}
+.book .lkq{font-weight:800; font-size:15px; color:var(--ink-soft); letter-spacing:2px; margin-top:6px}
+.book .lkd{font-size:11.5px; color:var(--ink-soft); margin-top:5px; line-height:1.5}
+.book .bhid{position:absolute; bottom:14px; right:14px; font-size:10.5px; font-weight:700; color:var(--crimson); white-space:nowrap;
+  border:1px solid var(--crimson); border-radius:0; padding:3px 6px; background:var(--card)}
+.shelfnote{margin-top:16px; font-size:12px; color:var(--ink-soft); line-height:1.6; border-top:1px solid var(--line); padding-top:12px}
+.toggle{width:46px; height:26px; border-radius:0; background:var(--line); position:relative; transition:.15s}
+.toggle::after{content:""; position:absolute; top:3px; left:3px; width:20px; height:20px;
+  border-radius:0; background:var(--card); transition:.15s}
 .toggle.on{background:var(--teal)}
-.toggle.on::after{left:21px}
-.closebtn{width:100%; margin-top:16px; padding:11px; border-radius:10px; background:var(--ink);
-  color:var(--on-fill); font-weight:700}
-textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radius:9px;
+.toggle.on::after{left:23px}
+.closebtn{width:100%; margin-top:18px; padding:13px 16px; border-radius:0; background:var(--ink);
+  color:var(--on-fill); font-weight:700; text-align:left; min-height:48px}
+textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radius:0;
   padding:9px; font-size:12px; margin-top:8px; font-family:ui-monospace,monospace}
 
 /* ── 학습 방식 선택 모달 ── */
 .mmhead{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px}
 .mmhead h2{margin:0}
 .mmtogs{display:flex; gap:6px; flex:none}
-.shufbtn{flex:none; border:1.5px solid var(--line); background:var(--paper); color:var(--ink-soft);
-  font-size:12.5px; font-weight:700; border-radius:14px; padding:5px 13px; white-space:nowrap}
+.shufbtn{flex:none; border:2px solid var(--line); background:var(--card); color:var(--ink-soft); min-height:40px;
+  font-size:12.5px; font-weight:700; border-radius:0; padding:5px 13px; white-space:nowrap}
 .shufbtn.on{border-color:var(--ink); background:var(--ink); color:var(--on-fill)}
 .mmsub{font-size:12.5px; color:var(--ink-soft); margin:-8px 0 12px}
-.pickrow{display:flex; align-items:center; gap:11px; width:100%; text-align:left;
-  border:1px solid var(--line); background:var(--card); border-radius:12px; padding:13px 14px; margin-bottom:8px}
-.pickrow .ic{font-size:20px; width:26px; text-align:center; flex:none}
+.pickrow{display:flex; align-items:center; gap:11px; width:100%; text-align:left; min-height:60px;
+  border:2px solid var(--line); background:var(--card); border-radius:0; padding:13px 14px; margin-bottom:8px}
+.pickrow:active{border-color:var(--ink)}
+.pickrow .ic{width:26px; text-align:center; flex:none; color:var(--ink)}
+.pickrow .ic svg{width:22px; height:22px; display:block; margin:0 auto}
 .pickrow .tt{font-weight:800; font-size:14.5px}
 .pickrow .dd{font-size:12px; color:var(--ink-soft); margin-top:1px}
-.pickrow .badge{margin-left:auto; flex:none; font-size:11px; font-weight:700; border-radius:9px; padding:2px 8px; white-space:nowrap}
+.pickrow .badge{margin-left:auto; flex:none; font-size:11px; font-weight:700; border-radius:0; padding:3px 8px; white-space:nowrap}
 .pickrow .badge.go{background:var(--teal-soft); color:var(--teal)}
 .pickrow .badge.free{background:var(--paper); color:var(--ink-soft); border:1px solid var(--line)}
 .pickrow.locked{border-style:dashed; background:var(--paper); cursor:default}
-.pickrow.locked .tt,.pickrow.locked .ic,.pickrow.locked .dd{color:#B9B5AA}
+.pickrow.locked .tt,.pickrow.locked .ic,.pickrow.locked .dd{color:var(--ink-soft); opacity:.6}
 .modetag{font-size:11px; font-weight:700; color:var(--ink-soft); border:1px solid var(--line);
-  border-radius:6px; padding:2px 7px; margin:0 8px; white-space:nowrap; flex:none}
+  border-radius:0; padding:3px 8px; margin:0 8px; white-space:nowrap; flex:none}
 
 /* ── 카드 ── */
 #flCard{cursor:pointer; -webkit-tap-highlight-color:transparent;
   user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; touch-action:manipulation}
-.flipzone{margin-top:18px; border-top:1px dashed var(--line); padding-top:14px}
+.flipzone{margin-top:20px; border-top:1px solid var(--line); padding-top:14px}
 .fliphint{text-align:center; color:var(--ink-soft); font-size:13.5px; padding:34px 0}
 .flnav{display:flex; gap:8px; margin-top:14px}
-.flnav button{flex:1; padding:12px; border-radius:11px; font-weight:700; font-size:14.5px;
-  border:1px solid var(--line); background:var(--card); color:var(--ink)}
-.flnav .nx{background:var(--ink); color:var(--on-fill); border-color:var(--ink)}
+.flnav button{flex:1; padding:13px 16px; border-radius:0; font-weight:700; font-size:14.5px; min-height:52px; text-align:left;
+  border:2px solid var(--line); background:var(--card); color:var(--ink)}
+.flnav .nx{background:var(--crimson); color:var(--on-fill); border-color:var(--crimson)}
+.flnav .nx:active{background:#C22006; border-color:#C22006}
 .flnav button:disabled{opacity:.35; cursor:default}
 
 /* ── 블링크 ── */
 .bkcard{text-align:center; padding-bottom:24px}
 .bkmeans{margin-top:16px; visibility:hidden; text-align:left}
 .bkmeans.show{visibility:visible}
-.bkbar{height:7px; border-radius:4px; background:var(--line); margin-top:16px; overflow:hidden}
+.bkbar{height:7px; border-radius:0; background:var(--line); margin-top:16px; overflow:hidden}
 .bkbar i{display:block; height:100%; width:0; background:var(--teal)}
-.bkctl{margin-top:14px; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px}
+.bkctl{margin-top:14px; background:var(--card); border:1px solid var(--line); border-radius:0; padding:14px}
 .bkctl .bkbar{margin:0 0 12px}
 .bkrow{display:flex; align-items:center; gap:9px}
 .bklabel{font-size:13px; font-weight:800; color:var(--ink-soft); flex:none}
-.bkseg{display:flex; flex:1; background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:4px; gap:4px}
-.bkseg .bkspeed{flex:1; padding:12px 2px; border:none; border-radius:9px; background:none;
+.bkseg{display:flex; flex:1; background:var(--paper); border:1px solid var(--line); border-radius:0; padding:4px; gap:4px}
+.bkseg .bkspeed{flex:1; padding:12px 2px; border:none; border-radius:0; background:none; min-height:44px;
   font-size:14.5px; font-weight:700; color:var(--ink-soft); white-space:nowrap}
 .bkseg .bkspeed.on{background:var(--ink); color:var(--on-fill); font-weight:800}
-.bkctl .bkpause{display:block; width:100%; margin-top:10px; padding:17px; border-radius:12px;
+.bkctl .bkpause{display:block; width:100%; margin-top:10px; padding:16px; border-radius:0; text-align:left; min-height:56px;
   background:var(--ink); color:var(--on-fill); font-size:16px; font-weight:800}
 
 /* ── 객관식 ── */
 .mcops{display:flex; flex-direction:column; gap:8px; margin-top:20px}
-.mcop{text-align:left; border:1.5px solid var(--line); background:var(--card); border-radius:11px;
+.mcop{text-align:left; border:2px solid var(--line); background:var(--card); border-radius:0; min-height:48px;
   padding:12px 14px; font-size:15px; color:var(--ink); line-height:1.45;
   user-select:none; -webkit-user-select:none; touch-action:manipulation}
 .mcop:disabled,.mcop.locked{cursor:default; color:var(--ink)}
 .mcop.right{border-color:var(--teal); background:var(--teal-soft); font-weight:700}
 .mcop.wrongpick{border-color:var(--crimson); background:var(--crimson-soft)}
 .mcop.sel{border-color:var(--teal); background:var(--teal-soft); font-weight:700}
-.mcop.dim{color:#B9B5AA}
+.mcop.dim{color:var(--ink-soft); opacity:.55}
 .mcop .mark{float:right; font-size:11px; font-weight:700; margin-left:8px}
 .mcop .mark.ok{color:var(--teal)}
 .mcop .mark.no{color:var(--crimson)}
-.mcbadge{width:max-content; max-width:100%; margin:12px auto 0; background:var(--gold-soft);
-  border:1px solid #E4D5AC; color:#6B5210; font-size:12px; font-weight:700; padding:3px 12px; border-radius:12px}
-.mcgo{display:block; width:100%; margin-top:14px; padding:12px; border-radius:11px;
-  background:var(--ink); color:var(--on-fill); font-weight:700; font-size:15px}
+.mcbadge{width:max-content; max-width:100%; margin:12px auto 0; background:var(--paper);
+  border:1px solid var(--ink-soft); color:var(--ink); font-size:12px; font-weight:700; padding:4px 12px; border-radius:0}
+.mcgo{display:block; width:100%; margin-top:14px; padding:14px 16px; border-radius:0; text-align:left; min-height:52px;
+  background:var(--crimson); color:var(--on-fill); font-weight:800; font-size:15px}
+.mcgo:active{background:#C22006}
 .mcgo:disabled{opacity:.35; cursor:default}
 
 /* ── 아는 단어 제외 (카드·블링크 전용) ── */
-.exchip{position:absolute; top:12px; left:12px; border:1.5px solid var(--line); background:var(--paper);
-  color:var(--ink-soft); font-size:13.5px; font-weight:700; border-radius:16px; padding:9px 15px; white-space:nowrap}
+.exchip{position:absolute; top:12px; left:12px; border:2px solid var(--line); background:var(--card); min-height:44px;
+  color:var(--ink-soft); font-size:13.5px; font-weight:700; border-radius:0; padding:9px 15px; white-space:nowrap}
 .exchip.on{border-color:var(--ink); background:var(--ink); color:var(--on-fill)}
 .exlink{margin:-6px 0 14px; font-size:13.5px; padding:4px 2px; color:var(--ink-soft); text-decoration:underline; cursor:pointer}
 .exhead{display:flex; align-items:center; justify-content:space-between; margin-bottom:6px}
 .exhead h2{margin:0}
 .exviews{display:flex; gap:5px}
-.exview{border:1.5px solid var(--line); border-radius:7px; padding:2px 8px; font-size:12px; color:var(--ink-soft); background:var(--card)}
+.exview{border:2px solid var(--line); border-radius:0; padding:6px 10px; min-height:36px; font-size:12px; color:var(--ink-soft); background:var(--card)}
 .exview.on{border-color:var(--ink); color:var(--ink); font-weight:700}
 .exrow{display:flex; align-items:center; gap:9px; padding:8px 2px; border-bottom:1px solid var(--line); font-size:14px}
 .exrow .w{font-family:Charter,Georgia,serif; font-weight:700}
 .exrow .m{color:var(--ink-soft); font-size:13px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .exgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(132px,1fr)); gap:7px}
-.excell{border:1px solid var(--line); border-radius:10px; padding:8px 10px; font-size:13px; background:var(--card)}
+.excell{border:1px solid var(--line); border-radius:0; padding:9px 10px; font-size:13px; background:var(--card)}
 .excell .top{display:flex; align-items:center; justify-content:space-between; gap:6px}
 .excell .w{font-family:Charter,Georgia,serif; font-weight:700}
 .excell .m{color:var(--ink-soft); font-size:11.5px; display:block; margin-top:2px;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-.exundo{border:1px solid var(--line); border-radius:8px; padding:3px 9px; font-size:12px; background:var(--paper); color:var(--ink)}
+.exundo{border:1px solid var(--line); border-radius:0; padding:7px 10px; min-height:34px; font-size:12px; background:var(--paper); color:var(--ink)}
 .exall{display:block; margin:12px auto 0; font-size:12.5px; color:var(--ink-soft); text-decoration:underline}
 .exempty{text-align:center; color:var(--ink-soft); font-size:13px; padding:22px 0}
 
@@ -357,36 +380,36 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
 .emb .toast{position:absolute; bottom:auto}
 
 .toast{position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
-  background:var(--ink); color:var(--on-fill); font-size:13.5px; padding:9px 18px; border-radius:20px;
+  background:var(--ink); color:var(--on-fill); font-size:13.5px; padding:11px 18px; border-radius:0;
   opacity:0; pointer-events:none; transition:opacity .2s; z-index:60}
 .toast.show{opacity:1}
 .screen{display:none} .screen.show{display:block}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 /* ── [숙제 2차수] 단어 선별하기 (마스터 전용) ── */
-.pickbtn{display:none; width:100%; margin:10px 0 2px; padding:12px; border:1.5px dashed var(--line-strong,#c9c4b8); border-radius:12px;
-  background:var(--card,#fff); color:var(--ink,#222); font-size:14.5px; font-weight:700; cursor:pointer; text-align:center}
-.pickbtn small{display:block; margin-top:3px; font-weight:400; font-size:12px; color:var(--ink-soft,#777)}
+.pickbtn{display:none; width:100%; margin:10px 0 2px; padding:12px 14px; border:1px dashed var(--ink-soft); border-radius:0;
+  background:var(--card); color:var(--ink); font-size:14.5px; font-weight:700; cursor:pointer; text-align:left}
+.pickbtn small{display:block; margin-top:3px; font-weight:400; font-size:12px; color:var(--ink-soft)}
 .pkbar{display:flex; align-items:center; gap:8px; margin:2px 0 10px}
-.pkbar .cnt{margin-left:auto; font-size:13px; font-weight:800; padding:4px 10px; border-radius:999px; background:var(--teal-bg,#e1f5ee); color:var(--teal,#0f6e56)}
-.pkinfo{font-size:12.5px; color:var(--ink-soft,#777); margin:0 0 10px; line-height:1.5}
+.pkbar .cnt{margin-left:auto; font-size:13px; font-weight:800; padding:5px 10px; border-radius:0; background:var(--teal-soft); color:var(--teal); font-variant-numeric:tabular-nums}
+.pkinfo{font-size:12.5px; color:var(--ink-soft); margin:0 0 10px; line-height:1.5}
 .pklist{display:flex; flex-direction:column; gap:6px; margin-bottom:12px}
-.pkrow{display:flex; align-items:center; gap:10px; padding:10px 12px; border:1px solid var(--line,#e3ded2); border-radius:10px;
-  background:var(--card,#fff); cursor:pointer; user-select:none}
-.pkrow .chk{width:20px; height:20px; flex:none; border:2px solid var(--line-strong,#c9c4b8); border-radius:6px; position:relative}
-.pkrow.on{border-color:var(--teal,#0f6e56); background:var(--teal-bg,#e1f5ee)}
-.pkrow.on .chk{border-color:var(--teal,#0f6e56); background:var(--teal,#0f6e56)}
+.pkrow{display:flex; align-items:center; gap:10px; padding:11px 12px; min-height:48px; border:1px solid var(--line); border-radius:0;
+  background:var(--card); cursor:pointer; user-select:none}
+.pkrow .chk{width:20px; height:20px; flex:none; border:2px solid var(--line); border-radius:0; position:relative}
+.pkrow.on{border-color:var(--ink); background:var(--paper)}
+.pkrow.on .chk{border-color:var(--ink); background:var(--ink)}
 .pkrow.on .chk::after{content:''; position:absolute; left:5px; top:1px; width:5px; height:10px; border:solid #fff; border-width:0 2.5px 2.5px 0; transform:rotate(45deg)}
 .pkrow .w{font-size:15px; font-weight:700; flex:none}
-.pkrow .m{color:var(--ink-soft,#777); font-size:12.5px; flex:1; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-.pkrow.on .w{color:var(--teal-ink,#04342c)}
-.pksave{position:sticky; bottom:8px; display:flex; gap:8px; padding:8px; background:var(--bg,#faf9f5); border-radius:12px}
-.pksave button{flex:1; padding:13px; border:0; border-radius:10px; font-size:15px; font-weight:800; cursor:pointer;
-  background:var(--teal,#0f6e56); color:#fff}
+.pkrow .m{color:var(--ink-soft); font-size:12.5px; flex:1; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.pkrow.on .w{color:var(--ink)}
+.pksave{position:sticky; bottom:8px; display:flex; gap:8px; padding:8px; background:var(--paper); border-radius:0}
+.pksave button{flex:1; padding:13px 16px; border:0; border-radius:0; font-size:15px; font-weight:800; cursor:pointer; min-height:52px; text-align:left;
+  background:var(--crimson); color:var(--on-fill)}
 .pksave button:disabled{opacity:.45; cursor:default}
-.pksave .pkclear{flex:none; background:transparent; color:var(--ink-soft,#777); border:1px solid var(--line,#e3ded2); font-weight:600; padding:13px 14px}
-.lec .pk{position:absolute; top:6px; right:8px; font-size:10px; font-weight:800; padding:2px 7px; border-radius:999px;
-  background:var(--teal-bg,#e1f5ee); color:var(--teal,#0f6e56)}
-.lec .pk.no{background:transparent; color:var(--ink-soft,#999); border:1px dashed var(--line-strong,#c9c4b8)}
+.pksave .pkclear{flex:none; background:var(--card); color:var(--ink-soft); border:2px solid var(--line); font-weight:600; padding:13px 14px}
+.lec .pk{position:absolute; top:8px; right:8px; font-size:10px; font-weight:800; padding:3px 7px; border-radius:0;
+  background:var(--teal-soft); color:var(--teal)}
+.lec .pk.no{background:transparent; color:var(--ink-soft); border:1px dashed var(--ink-soft)}
 .lec{position:relative}
 </style>
 </head>
@@ -407,7 +430,7 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
   <section class="screen show" id="scrShelf">
     <div class="shelfhead" id="shelfHead">단어장을 선택하세요</div>
     <div class="bookgrid" id="bookGrid"></div>
-    <div class="shelfnote">👑 왕관은 회독을 완주할 때마다 얻어요 — 책마다 최대 3개, 초기화해도 사라지지 않습니다</div>
+    <div class="shelfnote">♛ 왕관은 회독을 완주할 때마다 얻어요 — 책마다 최대 3개, 초기화해도 사라지지 않습니다</div>
   </section>
 
   <!-- 홈 -->
@@ -432,8 +455,8 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
       <button class="mode" data-m="wrong">오답<span class="cnt"></span></button>
       <button class="mode" data-m="star">별표<span class="cnt"></span></button>
     </div>
-    <div class="exlink" id="exLink" style="display:none">🚫 제외한 단어 <b id="exCount">0</b>개 보기</div>
-    <button class="pickbtn" id="btnPick" type="button">🎯 단어 선별하기<small>유닛마다 숙제로 낼 어려운 단어 10개를 고릅니다</small></button>
+    <div class="exlink" id="exLink" style="display:none">제외한 단어 <b id="exCount">0</b>개 보기</div>
+    <button class="pickbtn" id="btnPick" type="button">단어 선별하기<small>유닛마다 숙제로 낼 어려운 단어 10개를 고릅니다</small></button>
     <button class="allbtn" id="btnAll" disabled>선택 범위에서 학습 시작</button>
     <div class="rangeinfo" id="rangePick">아래 단원 목록에서 체크하세요</div>
     <div class="sechead">단원 목록 — 체크하면 범위에 담겨요</div>
@@ -470,7 +493,7 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
     <div class="card">
       <div class="senseinfo" id="senseInfo"></div>
       <button class="star" id="btnStar" aria-label="별표">★</button>
-      <div class="word" id="word" title="발음 듣기">abandon<span class="spk">🔊</span></div>
+      <div class="word" id="word" title="발음 듣기">abandon<span class="spk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg></span></div>
       <div class="pron" id="pron"></div>
       <button class="hintbtn" id="btnHint">어원 힌트 보기</button>
       <div class="hint" id="hint">
@@ -522,9 +545,9 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
       <button class="quit" id="flQuit">종료</button>
     </div>
     <div class="card" id="flCard">
-      <button class="exchip" id="flEx">🚫 제외</button>
+      <button class="exchip" id="flEx">제외</button>
       <button class="star" id="flStar" aria-label="별표">★</button>
-      <div class="word" id="flWord" title="발음 듣기">abandon<span class="spk">🔊</span></div>
+      <div class="word" id="flWord" title="발음 듣기">abandon<span class="spk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg></span></div>
       <div class="pron" id="flPron"></div>
       <div class="flipzone">
         <div class="fliphint" id="flHint">카드를 누르면 뜻이 보여요</div>
@@ -549,8 +572,8 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
       <button class="quit" id="bkQuit">종료</button>
     </div>
     <div class="card bkcard">
-      <button class="exchip" id="bkEx">🚫 제외</button>
-      <div class="word" id="bkWord" title="발음 듣기">abandon<span class="spk">🔊</span></div>
+      <button class="exchip" id="bkEx">제외</button>
+      <div class="word" id="bkWord" title="발음 듣기">abandon<span class="spk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg></span></div>
       <div class="pron" id="bkPron"></div>
       <div class="bkmeans senselist" id="bkMeans"></div>
     </div>
@@ -564,7 +587,7 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
           <button class="bkspeed" data-s="fast">빠르게</button>
         </div>
       </div>
-      <button class="bkpause" id="bkPause">⏸ 일시정지</button>
+      <button class="bkpause" id="bkPause">일시정지</button>
     </div>
   </section>
 
@@ -580,7 +603,7 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
     </div>
     <div class="card">
       <button class="star" id="mcStar" aria-label="별표">★</button>
-      <div class="word" id="mcWord" title="발음 듣기">abandon<span class="spk">🔊</span></div>
+      <div class="word" id="mcWord" title="발음 듣기">abandon<span class="spk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg></span></div>
       <div class="pron" id="mcPron"></div>
       <div class="mcbadge" id="mcBadge" style="display:none">정답 2개 — 모두 고르세요</div>
       <div class="mcops" id="mcOps"></div>
@@ -601,12 +624,12 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
   <div id="syncSecTitle" style="font-size:13px;font-weight:700;color:var(--ink-soft);margin:2px 0 4px">서버 동기화</div>
   <div class="setrow" id="syncSec" style="display:block">
     <input id="syncUrl" type="url" placeholder="Worker 주소 (https://…workers.dev)"
-      style="width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:13.5px;margin-bottom:7px">
+      style="width:100%;border:1px solid var(--line);border-radius:0;padding:9px 11px;font-size:13.5px;margin-bottom:7px">
     <input id="syncToken" type="password" placeholder="비밀 토큰"
-      style="width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:13.5px">
+      style="width:100%;border:1px solid var(--line);border-radius:0;padding:9px 11px;font-size:13.5px">
     <div style="display:flex;gap:7px;margin-top:8px">
-      <button id="btnSyncTest" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--paper);font-size:13px;font-weight:600">연결 저장·테스트</button>
-      <button id="btnSyncNow" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--paper);font-size:13px;font-weight:600">지금 동기화</button>
+      <button id="btnSyncTest" style="flex:1;border:1px solid var(--line);border-radius:0;padding:8px;background:var(--paper);font-size:13px;font-weight:600">연결 저장·테스트</button>
+      <button id="btnSyncNow" style="flex:1;border:1px solid var(--line);border-radius:0;padding:8px;background:var(--paper);font-size:13px;font-weight:600">지금 동기화</button>
     </div>
     <div id="syncStat" style="font-size:12px;color:var(--ink-soft);margin-top:7px">동기화 미설정 — 이 기기에만 저장됩니다</div>
   </div>
@@ -642,20 +665,20 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
     <h2>어떻게 공부할까요?</h2>
     <span class="mmtogs">
       <button class="shufbtn" id="tg20" type="button" aria-pressed="false">20개씩</button>
-      <button class="shufbtn on" id="tgShuf" type="button" aria-pressed="true">🔀 랜덤</button>
+      <button class="shufbtn on" id="tgShuf" type="button" aria-pressed="true">랜덤</button>
     </span>
   </div>
   <div class="mmsub" id="mmSub"></div>
-  <button class="pickrow" id="pickCard"><span class="ic">📇</span>
+  <button class="pickrow" id="pickCard"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="13" height="15"></rect><path d="M20 8v13H7"></path></svg></span>
     <span><span class="tt">카드</span><div class="dd">넘기면서 외워요 — 카드를 누르면 뜻이 보여요</div></span>
     <span class="badge free">공부용</span></button>
-  <button class="pickrow" id="pickBlink"><span class="ic">⚡</span>
+  <button class="pickrow" id="pickBlink"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></span>
     <span><span class="tt">블링크</span><div class="dd">단어와 뜻이 자동으로 흘러가요 · 발음 자동 재생</div></span>
     <span class="badge free">공부용</span></button>
-  <button class="pickrow" id="pickMc"><span class="ic">☑️</span>
+  <button class="pickrow" id="pickMc"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6l2 2 3.5-3.5"></path><path d="M3 16l2 2 3.5-3.5"></path><line x1="13" y1="7" x2="21" y2="7"></line><line x1="13" y1="17" x2="21" y2="17"></line></svg></span>
     <span><span class="tt">객관식</span><div class="dd" id="pickMcDesc">보기에서 뜻을 골라요 — 다의어는 답이 2개</div></span>
     <span class="badge go" id="pickMcBadge">진도 반영</span></button>
-  <button class="pickrow" id="pickTest"><span class="ic">✍️</span>
+  <button class="pickrow" id="pickTest"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path></svg></span>
     <span><span class="tt">시험</span><div class="dd">한글 뜻을 직접 써요</div></span>
     <span class="badge go">진도 반영</span></button>
   <button class="closebtn" data-close>닫기</button>
@@ -679,7 +702,7 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
 <!-- 확인 모달: 바깥을 눌러도 닫히지 않음 (locked) -->
 <!-- [숙제 3차수] 숙제 클리어 완료 창 -->
 <div class="modal locked" id="mHwDone"><div class="sheet">
-  <h2 id="hwDoneTitle">🎉 오늘 단어 숙제 클리어!</h2>
+  <h2 id="hwDoneTitle">오늘 단어 숙제 클리어!</h2>
   <p id="hwDoneBody" style="font-size:14px; line-height:1.6; color:var(--ink-soft,#777); margin:8px 0 14px"></p>
   <div class="btnrow" style="display:flex; gap:8px">
     <button id="hwRetrySend" style="display:none">기록 다시 보내기</button>
@@ -727,7 +750,7 @@ const STU = (() => {
 })();
 
 /* ───────── 저장소 (window.storage → localStorage → 메모리) ───────── */
-/* [0818 4차수] 선별 전용 모드 — 마스터 홈의 [🎯 단어 선별] 탭이 ?pick=1 로 연다.
+/* [0818 4차수] 선별 전용 모드 — 마스터 홈의 [단어 선별] 탭이 ?pick=1 로 연다.
  * 책장에서 책을 고르면 학습 홈을 건너뛰고 곧장 유닛 목록(선별 화면)으로 간다. 원장만 켜진다. */
 const PICKMODE = (() => {
   const q = new URLSearchParams(location.search);
@@ -1087,7 +1110,7 @@ function renderShelf(){
     if (state === 'locked'){                                 // ??? 잠금 카드 — 아직 열 수 없음
       const card = document.createElement('div');
       card.className = 'book lockedbook';
-      card.innerHTML = `<div class="lkicon">🔒</div><div class="lkq">???</div><div class="lkd">${BOSS_TEASER[b.id] || ''}</div>`;
+      card.innerHTML = `<div class="lkicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg></div><div class="lkq">???</div><div class="lkd">${BOSS_TEASER[b.id] || ''}</div>`;
       g.appendChild(card); shown++;
       continue;
     }
@@ -1105,7 +1128,7 @@ function renderShelf(){
     card.innerHTML =
       `<div class="bt">${b.title}</div>` +
       `<div class="bs">${ready ? (bs ? `${bs.round}회독 진행 중${total ? ` · ${total}단어` : ''}` : `시작 전 · ${b.sub}${total ? ` · ${total}단어` : ''}`) : '자료 준비 중'}</div>` +
-      `<div class="bc">${crowns ? '👑'.repeat(crowns) : ''}</div>` + badge;
+      `<div class="bc">${crowns ? '♛'.repeat(crowns) : ''}</div>` + badge;
     if (ready) card.onclick = () => openBook(b.id);
     g.appendChild(card); shown++;
   }
@@ -1124,7 +1147,7 @@ function maybeBossToast(states){
   ROOT.bossSeen ||= {};
   if (states.vocabible === 'normal' && crownsOf('wm_hi') >= 3 && !ROOT.bossSeen.vocabible){
     ROOT.bossSeen.vocabible = 1;
-    store.save(); toast('🎉 숨겨진 단어장이 열렸어요!');
+    store.save(); toast('숨겨진 단어장이 열렸어요!');
   }
 }
 /* 준비된 책 중 단어 개수(total)를 아직 모르는 것들을 백그라운드로 세어 카드에 반영 */
@@ -1295,18 +1318,18 @@ function applyStudentMode(){                        // 학생 모드: 이름 표
 function showWithdrawnScreen(){
   document.body.innerHTML =
     '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;'
-    + 'background:#f6f7fb;font-family:\'Pretendard Variable\',-apple-system,sans-serif;box-sizing:border-box">'
-    + '<div style="text-align:center;max-width:340px;background:#fff;border-radius:18px;padding:36px 24px;'
-    + 'box-shadow:0 8px 30px rgba(15,23,42,.08)">'
-    + '<div style="font-size:44px;margin-bottom:14px">🌱</div>'
-    + '<div style="font-size:18px;font-weight:800;color:#1a1a2e;margin-bottom:10px;line-height:1.5">'
+    + 'background:#F3F2F2;font-family:\'Pretendard Variable\',-apple-system,sans-serif;box-sizing:border-box">'
+    + '<div style="text-align:center;max-width:340px;background:#fff;border-radius:0;border:1px solid #E3E1DE;padding:36px 24px;'
+    + 'border-top:2px solid #201E1D">'
+    + ''
+    + '<div style="font-size:18px;font-weight:800;color:#201E1D;margin-bottom:10px;line-height:1.5">'
     + (STU && STU.name ? STU.name + ' 학생, ' : '') + '지금은 수업이 멈춰 있어요</div>'
-    + '<div style="font-size:14px;color:#5a6076;line-height:1.75">다시 등록하면 '
-    + '<b style="color:#1C66A5">바로 이어서</b> 쓸 수 있어요.<br>그동안 공부한 기록은 그대로 남아 있습니다.</div>'
-    + '<div style="margin-top:12px;padding:12px 14px;background:#eef2ff;border-radius:12px;font-size:13px;'
-    + 'color:#3552d4;font-weight:700;line-height:1.6">다시 시작하고 싶으면<br>원장님께 연락해 주세요</div>'
-    + '<div style="font-size:11.5px;color:#a0a8c0;margin-top:14px;line-height:1.6">링크가 잘못됐을 수도 있어요</div>'
-    + '<div style="font-size:11.5px;color:#a0a8c0;margin-top:6px">마플영어</div>'
+    + '<div style="font-size:14px;color:#6E6A66;line-height:1.75">다시 등록하면 '
+    + '<b style="color:#C22006">바로 이어서</b> 쓸 수 있어요.<br>그동안 공부한 기록은 그대로 남아 있습니다.</div>'
+    + '<div style="margin-top:12px;padding:12px 14px;background:#FCE9E4;border-radius:0;font-size:13px;'
+    + 'color:#C22006;font-weight:700;line-height:1.6">다시 시작하고 싶으면<br>원장님께 연락해 주세요</div>'
+    + '<div style="font-size:11.5px;color:#A8A29D;margin-top:14px;line-height:1.6">링크가 잘못됐을 수도 있어요</div>'
+    + '<div style="font-size:11.5px;color:#A8A29D;margin-top:6px">마플영어</div>'
     + '</div></div>';
   document.title = '마플영어';
 }
@@ -1485,7 +1508,7 @@ function renderHome(){
   $('#statMain').textContent = `${correct} / ${DATA.length}`;
   $('#statBar').style.width = (correct/DATA.length*100).toFixed(1) + '%';
   $('#stampHome').innerHTML = `<b>${S.round}</b>회독`;
-  $('#crownHome').textContent = S.crowns > 0 ? '👑'.repeat(S.crowns) : '';
+  $('#crownHome').textContent = S.crowns > 0 ? '♛'.repeat(S.crowns) : '';
   const pb = $('#btnPick');                                   // [숙제 2차수] 단어 선별하기 — 마스터(원장)만
   if (pb) pb.style.display = (STU && STU.master) ? 'block' : 'none';
   const exN = DATA.filter(w => S.words[w.id]?.x).length;      // 아는 단어 제외(카드·블링크) 개수
@@ -1621,7 +1644,7 @@ function renderCard(){
   $('#progUnit').textContent = lecFull(w.lec);
   $('#stampStudy').innerHTML = `<b>${S.round}</b>회독`;
   $('#btnStar').classList.toggle('on', !!p.s);
-  $('#word').innerHTML = `${w.w}<span class="spk">🔊</span>`;
+  $('#word').innerHTML = `${w.w}<span class="spk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg></span>`;
   // 발음 + 강세
   $('#pron').innerHTML = pronHtml(w);
   // sense 점
@@ -1831,7 +1854,7 @@ function openModePicker(list, label){
   const mcOk = S.round === 1;
   $('#pickMc').classList.toggle('locked', !mcOk);
   $('#pickMc').disabled = !mcOk;
-  $('#pickMcDesc').textContent = mcOk ? '보기에서 뜻을 골라요 — 다의어는 답이 2개' : '🔒 1회독에서만 쓸 수 있어요';
+  $('#pickMcDesc').textContent = mcOk ? '보기에서 뜻을 골라요 — 다의어는 답이 2개' : '1회독에서만 쓸 수 있어요';
   $('#pickMcBadge').style.display = mcOk ? '' : 'none';
   paintShuf(); paint20();
   openModal('#mMode');
@@ -1886,7 +1909,7 @@ function renderFlash(){
   $('#flProgUnit').textContent = lecFull(w.lec);
   $('#flStar').classList.toggle('on', !!p.s);
   $('#flEx').classList.toggle('on', !!p.x);
-  $('#flWord').innerHTML = `${w.w}<span class="spk">🔊</span>`;
+  $('#flWord').innerHTML = `${w.w}<span class="spk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg></span>`;
   $('#flPron').innerHTML = pronHtml(w);
   flOpen = false; flPaint(w);
   $('#flPrev').disabled = qi === 0;
@@ -1912,7 +1935,7 @@ $('#flStar').onclick = (e) => {
 };
 $('#flPrev').onclick = () => { if (qi > 0){ qi--; renderFlash(); } };
 $('#flNext').onclick = () => {
-  if (qi === Q.length-1){ toast('카드 끝! 수고했어요 👏'); renderHome(); show('home'); return; }
+  if (qi === Q.length-1){ toast('카드 끝! 수고했어요'); renderHome(); show('home'); return; }
   qi++; renderFlash();
 };
 $('#flQuit').onclick = () => { renderHome(); show('home'); };
@@ -1924,7 +1947,7 @@ const BLINK_SPEED = { slow:{ w:2000, m:3000 }, mid:{ w:1500, m:1500 }, fast:{ w:
 let bkSpeed = 'mid', bkTick = null, bkElapsed = 0, bkPhase = 0, bkPaused = false;
 function startBlink(){
   bkPaused = false;
-  $('#bkPause').textContent = '⏸ 일시정지';
+  $('#bkPause').textContent = '일시정지';
   bkShowWord();
   if (!bkTick) bkTick = setInterval(bkStep, 100);
 }
@@ -1934,7 +1957,7 @@ function bkShowWord(){
   mark20(W(w.id));
   $('#bkProgNum').textContent = `${qi+1} / ${Q.length}`;
   $('#bkProgUnit').textContent = lecFull(w.lec);
-  $('#bkWord').innerHTML = `${w.w}<span class="spk">🔊</span>`;
+  $('#bkWord').innerHTML = `${w.w}<span class="spk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg></span>`;
   $('#bkPron').innerHTML = pronHtml(w);
   const bx = S.words[w.id];
   $('#bkEx').classList.toggle('on', !!(bx && bx.x));
@@ -1950,7 +1973,7 @@ function bkStep(){
   bkElapsed += 100;
   if (bkPhase === 0 && bkElapsed >= sp.w){ bkPhase = 1; $('#bkMeans').classList.add('show'); }
   if (bkElapsed >= total){
-    if (qi === Q.length-1){ stopBlink(); toast('블링크 끝! 수고했어요 👏'); renderHome(); show('home'); return; }
+    if (qi === Q.length-1){ stopBlink(); toast('블링크 끝! 수고했어요'); renderHome(); show('home'); return; }
     qi++; bkShowWord(); return;
   }
   $('#bkBar').style.width = Math.min(100, bkElapsed/total*100) + '%';
@@ -1964,7 +1987,7 @@ function stopBlink(){
 }
 function bkTogglePause(){
   bkPaused = !bkPaused;
-  $('#bkPause').textContent = bkPaused ? '▶ 재생' : '⏸ 일시정지';
+  $('#bkPause').textContent = bkPaused ? '재생' : '일시정지';
   if (bkPaused){ try{ if ('speechSynthesis' in window) speechSynthesis.cancel(); }catch(e){} }
 }
 $('#bkPause').onclick = bkTogglePause;
@@ -2063,7 +2086,7 @@ function renderMc(){
   $('#mcProgUnit').textContent = lecFull(w.lec);
   $('#stampMc').innerHTML = HW ? `숙제` : `<b>${S.round}</b>회독`;
   $('#mcStar').classList.toggle('on', !!p.s);
-  $('#mcWord').innerHTML = `${w.w}<span class="spk">🔊</span>`;
+  $('#mcWord').innerHTML = `${w.w}<span class="spk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg></span>`;
   $('#mcPron').innerHTML = pronHtml(w);
   $('#mcFb').classList.remove('show','ok','no');
   mcDone = false; mcDoneAt = 0;
@@ -2388,7 +2411,7 @@ async function finishHw(){
       if (changed){ bs.hwAsk = a; bs.hwDates = dt; store.save(); }
     }
   }catch(e){}
-  $('#hwDoneTitle').textContent = '🎉 오늘 단어 숙제 클리어!';
+  $('#hwDoneTitle').textContent = '오늘 단어 숙제 클리어!';
   $('#hwDoneBody').textContent = '완료 기록을 저장하는 중이에요…';
   $('#hwRetrySend').style.display = 'none';
   openModal('#mHwDone');
@@ -2836,7 +2859,7 @@ $('#btnImp').onclick = () => {
 };
 /* ───────── 확인 모달(Y/N) · 왕관 · 회독 완주 ───────── */
 const MAX_ROUND = 3;
-const crownStr = n => n > 0 ? '👑'.repeat(n) : '';
+const crownStr = n => n > 0 ? '♛'.repeat(n) : '';
 let cfOnYes = null;
 function askConfirm({ title, body, yes = '네', no = '아니요', danger = false }, onYes){
   $('#cfTitle').textContent = title;
@@ -2869,7 +2892,7 @@ function confirmFullReset(){
   askConfirm({
     title: `${BOOK.title} 초기화`,
     body: `이 버튼을 누르면 이 단어장의 <b>모든 단어가 초기화</b>됩니다.<br>1회독부터 진행합니다. 계속할까요?<br>` +
-          `<span style="font-size:12.5px">회독·기록·별표가 삭제됩니다. 획득한 왕관(👑)은 사라지지 않아요. 다른 단어장에는 영향이 없습니다.</span>`,
+          `<span style="font-size:12.5px">회독·기록·별표가 삭제됩니다. 획득한 왕관(♛)은 사라지지 않아요. 다른 단어장에는 영향이 없습니다.</span>`,
     yes: '네, 초기화', no: '아니요', danger: true
   }, () => {
     fullReset();
@@ -2889,8 +2912,8 @@ function maybeCelebrate(){
   store.save(); renderHome();
   if (S.round >= MAX_ROUND){
     askConfirm({
-      title: '🎉 3회독 완주!',
-      body: `모든 왕관을 획득했어요! <b style="font-size:18px">👑👑👑</b><br><br>` +
+      title: '3회독 완주!',
+      body: `모든 왕관을 획득했어요! <b style="font-size:18px">♛♛♛</b><br><br>` +
             `[네, 초기화]를 누르면 이 단어장의 <b>모든 단어가 초기화</b>됩니다.<br>1회독부터 진행합니다. 초기화할까요?<br>` +
             `<span style="font-size:12.5px">획득한 왕관은 사라지지 않아요. 나중에 하려면 상단 [회독] 메뉴에서 초기화할 수 있어요.</span>`,
       yes: '네, 초기화', no: '나중에'
@@ -2898,7 +2921,7 @@ function maybeCelebrate(){
   } else {
     const next = S.round + 1;
     askConfirm({
-      title: `🎉 ${S.round}회독 완주!`,
+      title: `${S.round}회독 완주!`,
       body: `왕관을 획득했어요! <b style="font-size:18px">${crownStr(S.crowns)}</b><br><br>` +
             `${next}회독을 시작할까요?<br>` +
             `<span style="font-size:12.5px">이번 회독에서 쓴 뜻은 다음 회독에서 오답 처리됩니다.</span>`,
@@ -2999,6 +3022,44 @@ async function prefetchBooks(){
       } else { CFG.last = Date.now(); cfgSave(); }
     }
   }
+})();
+</script>
+<script>
+/* [리디자인 추가] 별표 가시성 — 기존 로직 무수정, 표시 전용.
+ * 1) 별표를 누르면 팝 + "저장됐어요" 토스트 (기존 onclick이 먼저 실행돼 상태 토글 후 읽음)
+ * 2) 처음 학습 화면에 들어온 학생에게 한 번만 별표 안내 말풍선 (localStorage 새 키) */
+(function(){
+  var HK = 'maplevoca_starhint_v1';
+  function seen(){ try{ return localStorage.getItem(HK) === '1'; }catch(e){ return true; } }
+  function mark(){ try{ localStorage.setItem(HK, '1'); }catch(e){} }
+  var tipEl = null;
+  function hideHint(){ if (tipEl){ tipEl.remove(); tipEl = null; } }
+  ['btnStar','flStar','mcStar'].forEach(function(id){
+    var b = document.getElementById(id);
+    if (!b) return;
+    b.addEventListener('click', function(){
+      b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop');
+      var on = b.classList.contains('on');
+      if (typeof toast === 'function') toast(on ? '별표에 저장했어요 — 홈의 [별표]에서 모아 볼 수 있어요' : '별표를 해제했어요');
+      hideHint();
+    });
+  });
+  function showHint(scr){
+    if (seen() || tipEl) return;
+    var card = scr.querySelector('.card'); if (!card) return;
+    mark();
+    tipEl = document.createElement('button');
+    tipEl.type = 'button';
+    tipEl.className = 'starhint';
+    tipEl.innerHTML = '<b>★ 별표로 나만의 단어장</b>모르는 단어는 별표를 눌러 두면,<br>나중에 별표만 모아서 볼 수 있어요';
+    tipEl.onclick = hideHint;
+    card.appendChild(tipEl);
+    setTimeout(hideHint, 9000);
+  }
+  ['scrStudy','scrFlash','scrMc'].forEach(function(id){
+    var s = document.getElementById(id); if (!s) return;
+    new MutationObserver(function(){ if (s.classList.contains('show')) showHint(s); }).observe(s, { attributes:true, attributeFilter:['class'] });
+  });
 })();
 </script>
 </body>
