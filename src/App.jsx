@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import QRCodeLib from "qrcode";
 // [0824 3차수] 배포 확인용 차수 표시 — 원장앱 APP_BUILD와 같은 장치. 학생 화면에는 안 띄우고
 //   마스터 홈(원장 전용) 머리글에만 뜬다(원장 결정). 새 차수 파일을 만들 때마다 이 글자를 같이 바꿀 것.
-const STUDENT_APP_BUILD = "학생앱 6차수 · 2026-08-25";
+const STUDENT_APP_BUILD = "학생앱 7차수 · 2026-08-25";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -4781,15 +4781,20 @@ export default function App() {
                   // [0825 5차수] 이미 통과한 날은 숙제 TEST를 다시 열지 않고 책장으로 — 단어 탭과 같은 동작
                   if (taskVoca && !vocaHwRec) { startVocaHwTest(); setTab("voca"); return; }
                   setVocaOpenLast(true); setTab("voca");
-                }} style={cardBox}>
-                  <div style={cardLabel}>📚 2. 단어 숙제</div>
-                  <div style={cardMain}>{taskVoca
+                }} style={{ ...cardBox,
+                  /* [0825 7차수] 글이 아니라 색으로 — 통과=초록 칸, 숙제 남음=빨간 칸, 숙제 없는 날=흰 칸 (4번 오답 카드와 같은 말투) */
+                  background: taskVoca ? (vocaHwRec ? "#e8f7ee" : "#fdecea") : "#fff",
+                  border: taskVoca ? (vocaHwRec ? "1px solid #a8dcbd" : "1px solid #f5c2bd") : "1px solid #e8eaef" }}>
+                  <div style={{ ...cardLabel, color: taskVoca ? (vocaHwRec ? "#1B8A5A" : "#b03a2e") : cardLabel.color }}>
+                    📚 2. 단어 숙제{taskVoca ? (vocaHwRec ? " · 통과 ✓" : " · 아직 안 봄") : ""}
+                  </div>
+                  <div style={{ ...cardMain, color: taskVoca ? (vocaHwRec ? "#14603f" : "#b03a2e") : cardMain.color }}>{taskVoca
                     ? (taskVoca.ns
                         ? `내신 단어 ${fmtLecRange(taskVoca.lessons)}과`                          /* [내신 4차수] */
                         : `${vocaShortLabel(taskVoca.book)} ${VOCA_UNIT_WORDS[taskVoca.book] || "DAY"} ${fmtLecRange(taskVoca.lecs)}`)
                     : vocaTitle}</div>
-                  <div style={cardSub}>{taskVoca
-                    ? (vocaHwRec ? "오늘 단어 숙제 통과 ✓ — 이어서 공부하기" : "숙제 TEST 바로 시작 — 전부 맞히면 완료")
+                  <div style={{ ...cardSub, color: taskVoca ? (vocaHwRec ? "#3e8f66" : "#c0655c") : cardSub.color, fontWeight: taskVoca ? 700 : cardSub.fontWeight }}>{taskVoca
+                    ? (vocaHwRec ? "통과 완료! 누르면 단어장" : "누르면 숙제 TEST 시작")
                     : vocaLastName ? "이어서 공부하기" : "공부하러 가기"}</div>
                 </button>
                 {studentVideos.length > 0 && (
