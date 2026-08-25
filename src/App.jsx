@@ -2,6 +2,9 @@ import { useState, useEffect, useRef, useMemo } from "react";
 // [4차] QR 만드는 라이브러리. 앱 안에 같이 들어가므로 인터넷 없이도 QR이 그려진다.
 //       설치: npm install qrcode   (예전에 쓰던 cdnjs qrcodejs와는 다른 물건이다)
 import QRCodeLib from "qrcode";
+// [0824 3차수] 배포 확인용 차수 표시 — 원장앱 APP_BUILD와 같은 장치. 학생 화면에는 안 띄우고
+//   마스터 홈(원장 전용) 머리글에만 뜬다(원장 결정). 새 차수 파일을 만들 때마다 이 글자를 같이 바꿀 것.
+const STUDENT_APP_BUILD = "학생앱 4차수 · 2026-08-25";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -3378,7 +3381,7 @@ function MasterHome({ mk }) {
             <span style={{ marginLeft: "auto", fontSize: 11.5, color: "rgba(255,255,255,0.5)" }}>원장 전용</span>
           </div>
           <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.6)", marginTop: 6 }}>
-            학생 {students.length}명 · 교재 {bookCount}권 · 강의 {videoCount}개
+            학생 {students.length}명 · 교재 {bookCount}권 · 강의 {videoCount}개 · {STUDENT_APP_BUILD}{/* [0824 3차수] 차수는 원장만 본다 */}
           </div>
         </div>
       </div>
@@ -4243,7 +4246,7 @@ export default function App() {
 
   // allDates: homework/academy 또는 steps5 중 하나라도 데이터가 있는 날짜
   // [0813] 전체 목록(allDatesFull)을 먼저 만들고, 기본 날짜를 정한 뒤 단추 3개를 뽑는다.
-  const allDatesFull = Object.keys(todos)
+  const allDatesRaw = Object.keys(todos)
     .filter((d) => {
       const t = todos[d]?.[studentId] || todos[d]?.[Number(studentId)];
       if (!t) return false;
@@ -4253,11 +4256,17 @@ export default function App() {
       return hw || ac || hasSteps5;
     })
     .sort((a, b) => b.localeCompare(a));
+  // [0824 2차수] 밤 10시 숙제 공개(원장 확정 08-21) — 수업날에는 수업 중에 쓴 다음 투두가
+  //   학생 폰에 바로 떠서 아이가 다음 숙제를 미리 보는 문제가 있었다. 학원이 밤 10시에 끝나므로
+  //   오늘이 수업날이면 22시 전까지 앞으로 날짜를 숨긴다. 날짜 단추·기본 날짜·홈 카드가 전부 이 목록을 쓴다.
+  const todayStrForTab = getTodayStr();
+  const allDatesFull = filterTodoDatesForReveal(allDatesRaw, todayStrForTab, new Date().getHours());
+  // [0825 4차수] 지금 다음 숙제를 숨기고 있는 중인지 — 그냥 안 보이면 "숙제 없네?"로 오해해서 안내 한 줄을 띄운다
+  const todoRevealHeld = Array.isArray(allDatesRaw) && allDatesRaw.length > allDatesFull.length;
 
   // [0813] 앱을 열었을 때 기본으로 보여줄 날짜 — 원장 결정:
   // ① 오늘 기록이 있으면 오늘 ② 없으면 오늘 이후 가장 가까운 기록(=다음 숙제)
   // ③ 미래 기록도 없으면 가장 최근 지난 기록. 학생이 단추로 고른 날짜(selectedDate)가 언제나 먼저다.
-  const todayStrForTab = getTodayStr();
   const defaultDate = pickDefaultTodoDate(allDatesFull, todayStrForTab);
   // 날짜 단추는 3개 유지. 기본 날짜가 최신 3개 밖이면, 기본 날짜와 그보다 가까운 날짜 2개로 채운다.
   // [0813 검토수정] 예전에는 최신(=가장 먼) 2개를 데려와서 정작 가까운 날짜가 안 보였다.
@@ -4552,7 +4561,10 @@ export default function App() {
           { key: "mock", label: "모의" },
           ...((progressTree?.lanes || []).length ? [{ key: "progress", label: "진도" }] : []),
         ].map((t) => (
-          <button key={t.key} onClick={() => setTab(t.key)} style={{
+          <button key={t.key} onClick={() => {
+            if (t.key === "voca") setVocaOpenLast(true);   // [0824 2차수] 단어 탭도 홈 카드처럼 마지막 책부터(원장 요청) — 숙제 시작(openTask)이 걸려 있으면 그쪽이 먼저다
+            setTab(t.key);
+          }} style={{
             // [0819] 한 칸을 화면 너비의 23%로 고정한다 — 넷이 꽉 차고 다섯째가 조금 보여서
             //        "옆으로 밀면 더 있다"는 것이 눈에 띈다. 글자를 꾸겨 넣지 않아 크게 보인다.
             flex: "0 0 23%", whiteSpace: "nowrap", textAlign: "center",
@@ -4774,6 +4786,12 @@ export default function App() {
                     whiteSpace: "nowrap",
                   }}>{isToday(d) ? "오늘" : fmtDateShort(d)}</button>
                 ))}
+              </div>
+            )}
+            {/* [0825 4차수] 밤 10시 공개 안내 — 수업날 낮에는 다음 숙제가 안 보이는 이유를 알려준다 */}
+            {todoRevealHeld && (
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#8a6d1a", background: "#FFF7E0", borderRadius: 9, padding: "8px 12px", margin: "0 0 4px", lineHeight: 1.5 }}>
+                다음 숙제는 오늘 밤 10시에 열려요
               </div>
             )}
             {allDates.length > 0 && (
@@ -5832,6 +5850,17 @@ function pickDefaultTodoDate(allDatesFull, todayStr) {
   const upcoming = list.filter(d => d > todayStr).sort()[0];
   if (upcoming) return upcoming;
   return list[0] || todayStr;
+}
+
+// ─── [0824 2차수] 밤 10시 숙제 공개 — 원장 확정(08-21) ───
+// 오늘이 수업날(오늘 투두가 있는 날)이면 밤 10시(22시) 전까지 앞으로 날짜의 투두를 숨긴다.
+// 수업 없는 날은 하루 종일 보인다 — 집에서 숙제하러 들어온 학생은 다음 수업 숙제를 봐야 하므로.
+// 밤 10시가 지나면(또는 다음 날부터) 예전과 똑같이 전부 보인다.
+function filterTodoDatesForReveal(allDates, todayStr, hour) {
+  const list = Array.isArray(allDates) ? allDates : [];
+  if (!list.includes(todayStr)) return list;   // 오늘 수업이 없으면 예전 그대로
+  if (Number(hour) >= 22) return list;         // 밤 10시부터는 전부 공개
+  return list.filter(d => d <= todayStr);      // 수업날 10시 전 = 오늘까지만
 }
 
 // ─── [0813] 홈 강의 고르기 창: 시작 강의 하나 + 추가 강의(앞뒤 2개씩) ───
