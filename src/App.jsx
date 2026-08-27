@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import QRCodeLib from "qrcode";
 // [0824 3차수] 배포 확인용 차수 표시 — 원장앱 APP_BUILD와 같은 장치. 학생 화면에는 안 띄우고
 //   마스터 홈(원장 전용) 머리글에만 뜬다(원장 결정). 새 차수 파일을 만들 때마다 이 글자를 같이 바꿀 것.
-const STUDENT_APP_BUILD = "학생앱 8차수 · 2026-08-25";
+const STUDENT_APP_BUILD = "학생앱 9차수 · 2026-08-27";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -302,6 +302,22 @@ const clearMasterMk = () => { try { localStorage.removeItem(MASTER_MK_KEY); } ca
 
 // 설치형 PWA가 쿼리 없이 실행될 때를 대비해 마지막 학생 링크(id/t)를 저장·복원한다.
 // (일부 브라우저가 manifest start_url의 쿼리를 버리는 문제 대응 — URL을 복원하면 이후 파싱 로직이 전부 그대로 동작)
+// ─── [교사 열람 모드 2026-08-27] 선생님 전용 진입 ───────────────────
+// 선생님은 계정관리에서 받은 개인 링크 `?tid={계정id}&tk={교사토큰}` 으로 들어온다.
+//   · 학생 링크(?id=&t=)와 열쇠 이름이 아예 다르므로 두 모드가 절대 섞이지 않는다.
+//   · 원장이 계정관리에서 [재발급]을 누르면 워커의 토큰이 바뀌어 옛 링크는 그 자리에서 죽는다.
+//   · 학생 화면을 열어볼 때는 `?tid=&tk=&id={학생id}` — 학생 열쇠(t) 없이 워커가 통과시키고,
+//     "앱 접속" 배지도 안 찍히며, 이 앱에서도 읽기 전용으로 동작한다(아래 IS_STAFF_VIEW).
+const TEACHER_LINK_KEY = "mapl_teacher_link_v1";
+const getSavedTeacherLink = () => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(TEACHER_LINK_KEY) || "null");
+    return saved && saved.tid && saved.tk ? saved : null;
+  } catch (e) { return null; }
+};
+const saveTeacherLink = (tid, tk) => { try { localStorage.setItem(TEACHER_LINK_KEY, JSON.stringify({ tid: String(tid), tk: String(tk) })); } catch (e) {} };
+const clearTeacherLink = () => { try { localStorage.removeItem(TEACHER_LINK_KEY); } catch (e) {} };
+
 const LINK_STORE_KEY = "mapl_student_link_v1";
 const restoreStudentLink = () => {
   try {
@@ -309,6 +325,9 @@ const restoreStudentLink = () => {
     // [마스터] 마스터 모드에서는 학생 링크를 저장하지 않는다.
     // 저장하면 다음 실행 때 아래 복원 로직이 그 학생 화면을 띄워 마스터 진입로가 막힌다.
     if (sp.has("master")) return;
+    // [교사] 선생님 링크(tid·tk)가 실려 오면 그것부터 저장한다. 학생 화면을 열어보는 중이라
+    //   id가 함께 있어도 학생 링크로 저장하면 안 된다(다음에 열 때 학생 화면이 떠 교사 진입로가 막힌다).
+    if (sp.get("tid") && sp.get("tk")) { saveTeacherLink(sp.get("tid"), sp.get("tk")); return; }
     if (sp.get("id")) {
       localStorage.setItem(LINK_STORE_KEY, JSON.stringify({ id: sp.get("id"), t: sp.get("t") || "" }));
       return;
@@ -317,6 +336,13 @@ const restoreStudentLink = () => {
     // 학생 링크 복원보다 우선 — 원장 폰에 학생 링크가 남아 있어도 마스터가 열린다.
     if (getMasterMk()) {
       sp.set("master", "1");
+      window.history.replaceState(null, "", window.location.pathname + "?" + sp.toString());
+      return;
+    }
+    // [교사] 쿼리 없이 열렸고 폰에 선생님 열쇠가 있으면 선생님 홈으로 되돌린다(설치형 PWA 대응).
+    const savedT = getSavedTeacherLink();
+    if (savedT) {
+      sp.set("tid", savedT.tid); sp.set("tk", savedT.tk);
       window.history.replaceState(null, "", window.location.pathname + "?" + sp.toString());
       return;
     }
@@ -340,13 +366,42 @@ const MASTER_MK = (() => {
 })();
 const IS_MASTER_MODE = !!MASTER_MK;
 
+// [교사] 지금 화면이 교사 모드인지 — restoreStudentLink()가 주소를 고친 뒤에 계산해야 한다.
+// 주소에 tid·tk가 둘 다 있어야 하고, 진짜인지는 워커가 판정한다(틀리면 403 → 아래에서 열쇠를 지우고 안내 화면).
+const TEACHER_AUTH = (() => {
+  try {
+    const sp = new URLSearchParams(window.location.search);
+    const tid = sp.get("tid") || "";
+    const tk = sp.get("tk") || "";
+    return tid && tk ? { tid, tk } : null;
+  } catch (e) { return null; }
+})();
+const IS_TEACHER_MODE = !!TEACHER_AUTH;
+// [교사] 학생 화면을 "직원(원장·선생님)이 열어보는 중"인지 — 기록을 남기면 안 되는 자리에 함께 쓴다.
+//   (출석 QR 숨김·푸시 끔·PWA 시작주소 안 건드림·학생 시청 통계 오염 방지·PASS 축하 안 띄움)
+const IS_STAFF_VIEW = IS_MASTER_MODE || IS_TEACHER_MODE;
+// [교사] 교사 문 주소 만들기 — 항상 tid·tk를 달고 나간다.
+const teacherUrl = (path, extra = {}) => {
+  const u = new URL(String(WORKER_ORIGIN || "") + path, window.location.origin);
+  u.searchParams.set("tid", TEACHER_AUTH ? TEACHER_AUTH.tid : "");
+  u.searchParams.set("tk", TEACHER_AUTH ? TEACHER_AUTH.tk : "");
+  Object.entries(extra).forEach(([k, v]) => u.searchParams.set(k, String(v)));
+  return u.toString();
+};
+// [교사] 링크가 죽었을 때(재발급·계정 삭제) 폰의 열쇠를 지우고 안내 화면으로 돌린다.
+const teacherLinkDead = () => {
+  clearTeacherLink();
+  try { window.location.href = window.location.pathname + "?teacher_dead=1"; } catch (e) {}
+};
+
 // manifest(학생별 start_url 포함)와 아이콘 메타를 런타임 주입한다.
 // index.html을 안 건드리기 위한 방식 — 설치된 아이콘을 누르면 "그 학생 링크"로 열린다.
 const setupStudentPwa = () => {
   try {
     if (!PWA_ICON_BASE) return;
     // [마스터] 마스터 모드 주소(?master=1, 학생 id 포함 가능)를 설치 아이콘의 시작 주소로 심으면 안 된다.
-    if (IS_MASTER_MODE) return;
+    // [교사 08-27] 선생님 폰도 같다 — 설치 아이콘이 학생 링크로 굳어지면 안 된다.
+    if (IS_STAFF_VIEW) return;
     const head = document.head;
     const ensure = (sel, make) => { if (!head.querySelector(sel)) head.appendChild(make()); };
     const u = new URL(window.location.href);
@@ -407,7 +462,7 @@ const subscribeMaplPush = async (student) => {
 const PUSH_BANNER_DISMISS_KEY = "mapl_push_banner_dismissed_v1";
 function PushEnableBanner({ student }) {
   const [state, setState] = useState(() => {
-    if (IS_MASTER_MODE || pushSupport() === "unsupported") return "hidden";
+    if (IS_STAFF_VIEW || pushSupport() === "unsupported") return "hidden";   // [교사] 선생님에게는 학생 푸시 안내를 띄우지 않는다
     if (Notification.permission === "granted") return "hidden"; // 허용된 폰은 앱이 알아서 구독을 갱신한다
     // [수정 07-30] 차단(denied)은 앱에서 되돌릴 수 없어 배너가 영구히 남았다 → 아예 띄우지 않는다.
     if (Notification.permission === "denied") return "hidden";
@@ -543,6 +598,9 @@ const resolveStudentSyncUrl = (studentId) => {
   if (accessToken) u.searchParams.set("t", accessToken);
   // [마스터] 워커가 "앱 접속" 배지를 갱신하지 않게 한다(학생 토큰 검사는 그대로 통과).
   if (IS_MASTER_MODE) u.searchParams.set("mk", MASTER_MK);
+  // [교사] 선생님이 학생 화면을 열 때 — 학생 열쇠(t) 대신 교사 열쇠로 통과한다.
+  //   워커가 이 조합이면 학생 토큰 검사를 건너뛰고, "앱 접속" 배지도 안 찍는다.
+  if (TEACHER_AUTH) { u.searchParams.set("tid", TEACHER_AUTH.tid); u.searchParams.set("tk", TEACHER_AUTH.tk); }
   u.searchParams.set("ts", String(Date.now()));
   return u.toString();
 };
@@ -649,7 +707,8 @@ const loadStudentBundleFromWorker = async (studentId) => {
     // [08-07] "서버가 거절한 것"과 "서버가 아픈 것"을 가른다.
     //  401·403·404 = 토큰이 죽었거나 그런 학생이 없다는 뜻 → 폰 저장본으로 우회하면 안 된다.
     //  500대·429  = 서버 장애 → 멀쩡한 학생이 막히면 안 되므로 예전처럼 폰 저장본을 쓴다.
-    if (!IS_MASTER_MODE && (resp.status === 401 || resp.status === 403 || resp.status === 404)) {
+    if (IS_TEACHER_MODE && (resp.status === 401 || resp.status === 403)) { teacherLinkDead(); throw new Error("교사 링크가 유효하지 않습니다"); }
+    if (!IS_STAFF_VIEW && (resp.status === 401 || resp.status === 403 || resp.status === 404)) {
       throw makeWithdrawnError(null, `학생 동기화 API 거절: ${resp.status}`);
     }
     throw new Error(`학생 동기화 API 오류: ${resp.status}`);
@@ -660,8 +719,8 @@ const loadStudentBundleFromWorker = async (studentId) => {
   const anyState = findStudentAnyState(payload, studentId);
   let withdrawnFlag = false;
 
-  if (IS_MASTER_MODE) {
-    // [08-07] 원장이 학생앱을 열어보는 경우 — 그만둔 학생도 그대로 보여주고, 화면 위에 띠로만 알린다.
+  if (IS_STAFF_VIEW) {
+    // [08-07] 원장(·[08-27] 선생님)이 학생앱을 열어보는 경우 — 그만둔 학생도 그대로 보여주고, 화면 위에 띠로만 알린다.
     if (!student && anyState) student = anyState;
     withdrawnFlag = isWithdrawnStudent(student);
     if (!student) throw new Error("학생 정보를 찾을 수 없습니다");
@@ -867,6 +926,62 @@ const fmtAttDay = (d) => `${d.getMonth() + 1}월 ${d.getDate()}일 ${DK[d.getDay
 
 // YYYY-MM-DD
 const fmtYMD = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+// ─── [교사 열람 모드] 그날 수업하는 학생 뽑기 (원장앱 To-Do와 같은 규칙) ───
+// ① 그 요일 시간표에 자리가 있고 ② 등록일 이후이고 ③ 그날 숨김 처리(isHidden)가 안 된 학생
+// + 보강·시간변경으로 그날만 오는 학생. 원장앱 getStudentsForDate를 그대로 옮긴 것이라
+// 원장님 화면과 인원이 어긋나지 않는다. (순수 계산 — 시험도 이 함수를 그대로 돌린다)
+const ymdToDayEn = (ymd) => {
+  const d = new Date(String(ymd || "").slice(0, 10) + "T00:00:00");
+  if (Number.isNaN(d.getTime())) return "";
+  return DAYS_EN[(d.getDay() + 6) % 7];
+};
+const shiftYmd = (ymd, n) => {
+  const d = new Date(String(ymd || "").slice(0, 10) + "T00:00:00");
+  if (Number.isNaN(d.getTime())) return ymd;
+  d.setDate(d.getDate() + n);
+  return fmtYMD(d);
+};
+const isEnrolledOnDate = (student, ymd) => {
+  const sd = String((student && student.startDate) || "").slice(0, 10);
+  const ds = String(ymd || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(sd) || !/^\d{4}-\d{2}-\d{2}$/.test(ds)) return true;
+  return ds >= sd;
+};
+const computeTeacherDayRoster = (students = [], makeups = [], ymd = "") => {
+  const dk = ymdToDayEn(ymd);
+  if (!dk) return [];
+  const ds = String(ymd).slice(0, 10);
+  const rows = (Array.isArray(makeups) ? makeups : []).filter(m => m && String(m.date || "").slice(0, 10) === ds);
+  const hidden = new Set(rows.filter(m => m.isHidden).map(m => String(m.studentId)));
+  const byId = new Map((Array.isArray(students) ? students : []).map(s => [String(s.id), s]));
+
+  const reg = (Array.isArray(students) ? students : [])
+    .filter(s => s && s.id != null && !String(s.name || "").includes("결원"))
+    .filter(s => {
+      const eff = getEffectiveSchedule(s, ds);
+      return !!(eff.schedule || {})[dk] && !hidden.has(String(s.id)) && isEnrolledOnDate(s, ds);
+    })
+    .map(s => ({ student: s, time: (getEffectiveSchedule(s, ds).schedule || {})[dk] || "", kind: "정규" }));
+
+  // 같은 학생이 그날 여러 줄이어도 카드는 하나 — 마지막 줄을 채택(원장앱과 같은 처리)
+  const mkById = new Map();
+  rows.filter(m => !m.isHidden).forEach(m => { if (byId.has(String(m.studentId))) mkById.set(String(m.studentId), m); });
+  const regIds = new Set(reg.map(r => String(r.student.id)));
+  const mk = [...mkById.entries()]
+    .filter(([sid]) => !regIds.has(sid))
+    .map(([sid, m]) => ({ student: byId.get(sid), time: m.time || "", kind: m.mkType === "change" ? "시간변경" : "보강" }))
+    .filter(r => r.student && !String(r.student.name || "").includes("결원"));
+
+  const timeVal = (t) => {
+    const m = String(t || "").match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return 9999;
+    const h = Number(m[1]);
+    // 학원 시간표는 1:00~9:30 전부 오후다 — 1:00을 13시, 9:30을 21시 30분으로 읽는다.
+    return (h < 12 ? h + 12 : h) * 60 + Number(m[2]);
+  };
+  return [...reg, ...mk].sort((a, b) => (timeVal(a.time) - timeVal(b.time)) || String(a.student.name || "").localeCompare(String(b.student.name || ""), "ko"));
+};
 
 // ─── 다가올 등원일 계산 ───
 // 오늘 ~ 이번 주 일요일까지. 비어있으면 다음 주(월~일)로 자동 전환.
@@ -1925,7 +2040,7 @@ const setPendingVideoWatch = (items) => {
 
 const queuePendingVideoWatch = (payload) => {
   // [마스터] 대기열에 넣으면 나중에 원장 폰에서 재전송돼 결국 그 학생 기록으로 들어간다. 넣지 않는다.
-  if (IS_MASTER_MODE) return;
+  if (IS_STAFF_VIEW) return;   // [교사] 선생님이 본 것이 나중에 학생 기록으로 나가면 안 된다
   const pending = getPendingVideoWatch();
   const sid = payload?.sessionId || `${payload?.studentId || ""}_${payload?.videoId || ""}_${payload?.timestamp || Date.now()}`;
   if (!pending.some(x => (x.sessionId || "") === sid)) {
@@ -1938,6 +2053,14 @@ const postVideoWatchToWorker = async (payload) => {
   // [마스터] 원장 검수 기록이 학생 시청 통계에 섞이면 안 되므로 전송하지 않는다.
   // 호출부가 실패로 보고 대기열에 넣지 않도록 성공 형태로 반환한다.
   if (IS_MASTER_MODE) return { success: true, master: true, skipped: true };
+  // [교사] 선생님이 학생 화면에서 강의를 본 경우 — 학생 통계가 아니라 교사 전용 칸(teacher_vwatch3)으로 보낸다.
+  if (IS_TEACHER_MODE) {
+    const r = await fetch(teacherUrl("/teacher/video-watch"), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    });
+    if (!r.ok) throw new Error(`teacher video-watch 저장 실패: ${r.status}`);
+    return r.json().catch(() => ({ success: true }));
+  }
   if (!VIDEO_WATCH_API_URL) throw new Error("VITE_VIDEO_WATCH_API_URL이 설정되지 않았습니다");
   const headers = { "Content-Type": "application/json" };
   if (VIDEO_WATCH_API_KEY) headers.Authorization = `Bearer ${VIDEO_WATCH_API_KEY}`;
@@ -2328,7 +2451,7 @@ function StudentSurveyCard({ survey, myResponse, student, onSubmitted }) {
 
   const post = async (choicesArr) => {
     // [마스터] 원장이 학생 화면에서 눌러도 그 학생 응답으로 제출되면 안 된다.
-    if (IS_MASTER_MODE) { setMsg("마스터 모드에서는 설문이 제출되지 않습니다."); return; }
+    if (IS_STAFF_VIEW) { setMsg(IS_TEACHER_MODE ? "선생님 화면에서는 설문이 제출되지 않습니다." : "마스터 모드에서는 설문이 제출되지 않습니다."); return; }
     setBusy(true); setMsg("");
     try {
       const t = new URLSearchParams(window.location.search).get("t") || "";
@@ -3527,6 +3650,363 @@ function MasterHome({ mk }) {
   );
 }
 
+// ─── [교사 열람 모드 2026-08-27] 선생님 전용 홈 ─────────────────────────
+// 탭 4개 = 내 할일 · 학생 · 강의 · 단어장
+//   내 할일 : 원장앱 "직원 할일"의 내 카드 그대로 (체크는 여기서 할 수 있다) + 오늘의 숙제단어
+//   학생    : 그날 수업하는 학생 목록 (◀▶ 로 다른 날도 미리 볼 수 있음) → 누르면 그 학생 화면(읽기 전용)
+//   강의    : 커리큘럼에 등록된 전 교재 강의 (배정과 무관) — 수업 준비용 PDF 모음집은 다음 차수
+//   단어장  : 마플보카 — 진도는 __teacher__{계정id}로 저장돼 학생 진도와 절대 안 섞인다
+// 열쇠(tid·tk)는 주소에 있고, 진짜인지는 워커가 판정한다. 403이 오면 폰의 열쇠를 지우고 안내 화면으로 나간다.
+function TeacherHome({ auth }) {
+  const [tab, setTab] = useState("todo");
+  const [home, setHome] = useState(null);
+  const [roster, setRoster] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+  const [dateStr, setDateStr] = useState(getTodayStr());
+  const [openBook, setOpenBook] = useState(null);
+  const [playing, setPlaying] = useState(null);
+  const [busyItem, setBusyItem] = useState("");
+  const [vocaTask, setVocaTask] = useState(null);   // 숙제단어 → 마플보카로 보낼 {book, lecs}
+
+  // [교사] 강의 열람 기록 — 교사 전용 칸(teacher_vwatch3)에만 쌓인다. 학생 시청 통계와는 키부터 다르다.
+  //   ※ 지금 재는 것은 "카드를 열어둔 시간"이다(유튜브 재생 상태를 읽지 않음).
+  //     학생 화면 쪽 재생 측정기와 값의 뜻이 다르므로, 다음 차수에서 화면에 보일 때 그렇게 적어야 한다.
+  const openedAtRef = useRef(0);
+  const openedVideoRef = useRef(null);
+  const sendTeacherWatch = (video, seconds) => {
+    const sec = Math.max(0, Math.round(Number(seconds) || 0));
+    if (!video || sec < 5) return;   // 잘못 눌러 바로 닫은 것은 기록하지 않는다
+    try {
+      fetch(teacherUrl("/teacher/video-watch"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          videoId: String(video.id || ""), title: video.title || "", subject: video.subject || "",
+          url: video.url || video.playlistUrl || "", videoType: video.type || "video",
+          seconds: sec, openSec: sec, durSec: 720,
+          durationSource: "teacher_open_timer", source: "teacher_app",
+        }),
+        keepalive: true,
+      }).catch(() => {});
+    } catch (e) {}
+  };
+  const openVideo = (video) => {
+    const prev = openedVideoRef.current;
+    if (prev) sendTeacherWatch(prev, (Date.now() - openedAtRef.current) / 1000);
+    if (!video || (prev && String(prev.id) === String(video.id))) {
+      openedVideoRef.current = null; openedAtRef.current = 0; setPlaying(null); return;
+    }
+    openedVideoRef.current = video; openedAtRef.current = Date.now(); setPlaying(video.id);
+  };
+  useEffect(() => () => {
+    const prev = openedVideoRef.current;
+    if (prev) sendTeacherWatch(prev, (Date.now() - openedAtRef.current) / 1000);
+  }, []);
+
+  useEffect(() => {
+    let dead = false;
+    (async () => {
+      try {
+        const [rh, rs] = await Promise.all([
+          fetch(teacherUrl("/teacher/home"), { cache: "no-store" }),
+          fetch(teacherUrl("/teacher/students"), { cache: "no-store" }),
+        ]);
+        if (rh.status === 403 || rs.status === 403) { teacherLinkDead(); return; }
+        const dh = await rh.json().catch(() => null);
+        const dsx = await rs.json().catch(() => null);
+        if (dead) return;
+        setHome(dh && dh.success ? dh : null);
+        setRoster(dsx && dsx.success ? dsx : null);
+        if (dh && dh.today) setDateStr(dh.today);
+        if (!dh?.success || !dsx?.success) setErr("일부 자료를 불러오지 못했습니다.");
+      } catch (e) {
+        if (!dead) setErr("불러오지 못했습니다. 인터넷 연결을 확인해주세요.");
+      } finally {
+        if (!dead) setLoading(false);
+      }
+    })();
+    return () => { dead = true; };
+  }, []);
+
+  const F = "'Pretendard Variable', -apple-system, sans-serif";
+  const teacher = home?.teacher || {};
+  const today = home?.today || getTodayStr();
+  const session = home?.stafftodo?.sessions?.[today] || null;
+  const areas = Array.isArray(home?.areas) ? home.areas : [];
+  const bookCount = areas.reduce((n, a) => n + (a.books || []).length, 0);
+  const videoCount = areas.reduce((n, a) => n + (a.books || []).reduce((m, b) => m + (b.videos || []).length, 0), 0);
+  const roll = useMemo(
+    () => computeTeacherDayRoster(roster?.students || [], roster?.makeups || [], dateStr),
+    [roster, dateStr]
+  );
+  const isWorkday = !!(home && home.stafftodo && home.stafftodo.sessions && home.stafftodo.sessions[today]);
+
+  // 내 할일 체크 — 워커에 보내고 화면도 그 자리에서 바꾼다(응답을 기다리는 동안 잠깐 잠금).
+  const toggleTodo = async (sectionKey, item) => {
+    if (!session || busyItem) return;
+    const next = !item.done;
+    setBusyItem(item.id);
+    try {
+      const r = await fetch(teacherUrl("/teacher/stafftodo-check"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dateKey: today, section: sectionKey, itemId: item.id, done: next }),
+      });
+      if (r.status === 403) { teacherLinkDead(); return; }
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j || !j.success) throw new Error((j && j.error) || "저장 실패");
+      setHome(prev => {
+        if (!prev) return prev;
+        const sess = prev.stafftodo.sessions[today];
+        const sections = { ...sess.sections };
+        sections[sectionKey] = (sections[sectionKey] || []).map(x => x.id === item.id ? { ...x, done: next } : x);
+        return { ...prev, stafftodo: { ...prev.stafftodo, sessions: { ...prev.stafftodo.sessions, [today]: { ...sess, sections } } } };
+      });
+    } catch (e) {
+      setErr("체크를 저장하지 못했습니다. 잠시 뒤 다시 눌러 주세요.");
+      setTimeout(() => setErr(""), 3000);
+    } finally { setBusyItem(""); }
+  };
+
+  const openStudent = (s) => {
+    const sp = new URLSearchParams();
+    sp.set("tid", auth.tid); sp.set("tk", auth.tk);
+    sp.set("id", String(s.id));
+    window.location.href = window.location.pathname + "?" + sp.toString();
+  };
+
+  // 마플보카 — 교사 본인 진도. mk=1은 보카바이블까지 책장에 올리는 표시(선생님은 원장이 직접 배정한다).
+  const vocaSrc = (() => {
+    const p = new URLSearchParams();
+    p.set("id", home?.vocaId || `__teacher__${auth.tid}`);
+    p.set("t", auth.tk);
+    p.set("n", `${teacher.name || "선생님"} 선생님`);
+    if (WORKER_ORIGIN) p.set("api", WORKER_ORIGIN);
+    p.set("mk", "1");
+    return `${VOCA_APP_URL}?${p.toString()}`;
+  })();
+
+  const card = { width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 10, padding: "13px 14px", marginBottom: 8, borderRadius: 12, border: "1px solid #eceef4", background: "#fff", cursor: "pointer", fontFamily: "inherit" };
+  const busyBox = <div style={{ padding: 40, textAlign: "center", color: "#999", fontSize: 14 }}>불러오는 중...</div>;
+
+  const todoRow = (sectionKey, item) => (
+    <button key={item.id} onClick={() => toggleTodo(sectionKey, item)} disabled={!!busyItem}
+      style={{ width: "100%", textAlign: "left", display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 13px", marginBottom: 7, borderRadius: 11,
+        border: `1px solid ${item.done ? "#cfe9df" : "#eceef4"}`, background: item.done ? "#f2fbf7" : "#fff",
+        cursor: busyItem ? "wait" : "pointer", fontFamily: "inherit", opacity: busyItem === item.id ? 0.55 : 1 }}>
+      <span style={{ flexShrink: 0, width: 21, height: 21, borderRadius: 6, marginTop: 1, border: `1.5px solid ${item.done ? "#00b894" : "#cfd4de"}`, background: item.done ? "#00b894" : "#fff", color: "#fff", fontSize: 13, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center" }}>{item.done ? "✓" : ""}</span>
+      <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, lineHeight: 1.5, color: item.done ? "#8b9aa5" : "#2A2A28", textDecoration: item.done ? "line-through" : "none" }}>{item.text}</span>
+    </button>
+  );
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#f6f7fb", fontFamily: F }}>
+      <div style={{ background: "linear-gradient(135deg, #182848 0%, #1C66A5 100%)", padding: "18px 24px 20px", color: "#fff" }}>
+        <div style={{ maxWidth: MAX_W, margin: "0 auto" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 18 }}>🧑‍🏫</span>
+            <span style={{ fontSize: 17, fontWeight: 800 }}>{teacher.name ? `${teacher.name} 선생님` : "선생님"}</span>
+            {teacher.role && <span style={{ fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 999, background: "rgba(255,255,255,0.18)" }}>{teacher.role}</span>}
+            <span style={{ marginLeft: "auto", fontSize: 11.5, color: "rgba(255,255,255,0.55)" }}>선생님 전용</span>
+          </div>
+          <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.7)", marginTop: 6 }}>
+            {fmtDateKR(today)} · 오늘 수업 {computeTeacherDayRoster(roster?.students || [], roster?.makeups || [], today).length}명 · 강의 {videoCount}개
+          </div>
+        </div>
+      </div>
+
+      <div style={{ background: "#fff", borderBottom: "1px solid #eee", position: "sticky", top: 0, zIndex: 10 }}>
+        <style>{`.mplTabScroll::-webkit-scrollbar{display:none}`}</style>
+        <div className="mplTabScroll" style={{ maxWidth: MAX_W, margin: "0 auto", display: "flex", overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
+          {[
+            { key: "todo", label: "📋 내 할일" },
+            { key: "students", label: "👥 학생" },
+            { key: "videos", label: "강의" },
+            { key: "voca", label: "단어장" },
+          ].map((t) => (
+            <button key={t.key} onClick={() => setTab(t.key)} style={{
+              flex: "1 0 auto", whiteSpace: "nowrap", padding: "14px 12px", border: "none", cursor: "pointer", background: "transparent",
+              fontSize: 14, fontWeight: tab === t.key ? 700 : 500,
+              color: tab === t.key ? "#182848" : "#9aa0ab",
+              borderBottom: tab === t.key ? "2.5px solid #182848" : "2.5px solid transparent",
+              fontFamily: "inherit",
+            }}>{t.label}</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ maxWidth: MAX_W, margin: "0 auto", padding: 16 }}>
+        {err && <div style={{ marginBottom: 12, padding: "9px 12px", borderRadius: 10, background: "#fff7ed", border: "1px solid #fed7aa", color: "#c2410c", fontSize: 12, fontWeight: 700 }}>⚠️ {err}</div>}
+
+        {/* ── 내 할일 + 숙제단어 ── */}
+        {tab === "todo" && (loading ? busyBox : (
+          <div>
+            {home?.hw ? (
+              <div style={{ background: "#fff", border: "1px solid #e6dcf7", borderRadius: 14, padding: "15px 16px", marginBottom: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 9 }}>
+                  <span style={{ fontSize: 15 }}>📚</span>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: "#7c3aed" }}>오늘의 숙제단어</span>
+                  {home.hw.atEnd && <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 800, color: "#c2410c", background: "#fff7ed", padding: "3px 8px", borderRadius: 999 }}>책 끝</span>}
+                </div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: "#2A2A28", marginBottom: 3 }}>{home.hw.title}</div>
+                <div style={{ fontSize: 20, fontWeight: 900, color: "#7c3aed", letterSpacing: -0.5, marginBottom: 12 }}>
+                  {home.hw.unit} {home.hw.range.join(", ")}
+                </div>
+                <button onClick={() => { setVocaTask({ book: home.hw.bookId, lecs: home.hw.range }); setTab("voca"); }}
+                  style={{ width: "100%", padding: "12px 14px", borderRadius: 11, border: "none", background: "#7c3aed", color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+                  단어장에서 외우기 →
+                </button>
+              </div>
+            ) : (
+              <div style={{ background: "#fff", border: "1px solid #eceef4", borderRadius: 14, padding: "15px 16px", marginBottom: 14, fontSize: 13, color: "#8b909a", lineHeight: 1.6 }}>
+                📚 지금은 받은 단어 숙제가 없습니다. 원장님이 계정관리에서 책을 정해 주시면 여기에 뜹니다.
+              </div>
+            )}
+
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#8b909a", margin: "0 2px 9px" }}>오늘 할 일 · {fmtDateKR(today)}</div>
+            {!isWorkday ? (
+              <div style={{ background: "#fff", border: "1px solid #eceef4", borderRadius: 14, padding: "22px 16px", textAlign: "center", fontSize: 13.5, color: "#9aa0ab", lineHeight: 1.7 }}>
+                오늘은 근무일이 아닙니다.<br />출근하는 날에 할일 카드가 만들어집니다.
+              </div>
+            ) : (
+              <>
+                {(session?.sections?.always || []).length > 0 && (
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "#1C66A5", marginBottom: 7 }}>① 항상 할일</div>
+                    {(session.sections.always || []).map(it => todoRow("always", it))}
+                  </div>
+                )}
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "#1C66A5", marginBottom: 7 }}>② 오늘 할일</div>
+                  {(session?.sections?.today || []).length === 0
+                    ? <div style={{ background: "#fff", border: "1px dashed #dfe3ef", borderRadius: 12, padding: "18px 14px", textAlign: "center", fontSize: 13, color: "#aab0bb" }}>아직 등록된 할일이 없습니다</div>
+                    : (session.sections.today || []).map(it => todoRow("today", it))}
+                </div>
+                <div style={{ fontSize: 11.5, color: "#aab0bb", textAlign: "center", lineHeight: 1.7 }}>
+                  할일은 원장님이 원장앱에서 적습니다. 여기서는 다 한 것을 체크만 합니다.
+                </div>
+              </>
+            )}
+          </div>
+        ))}
+
+        {/* ── 그날 수업하는 학생 ── */}
+        {tab === "students" && (loading ? busyBox : (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <button onClick={() => setDateStr(d => shiftYmd(d, -1))} style={{ flexShrink: 0, padding: "9px 13px", borderRadius: 10, border: "1px solid #dfe3ef", background: "#fff", color: "#555", fontSize: 15, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>◀</button>
+              <div style={{ flex: 1, textAlign: "center" }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: "#2A2A28" }}>{fmtDateKR(dateStr)}</div>
+                <div style={{ fontSize: 11.5, color: "#9aa0ab", marginTop: 2 }}>
+                  {dateStr === today ? "오늘" : dateStr < today ? "지난 날" : "앞으로"} · {roll.length}명
+                  {HOLIDAYS[dateStr] ? ` · ${HOLIDAYS[dateStr]}` : ""}
+                </div>
+              </div>
+              <button onClick={() => setDateStr(d => shiftYmd(d, 1))} style={{ flexShrink: 0, padding: "9px 13px", borderRadius: 10, border: "1px solid #dfe3ef", background: "#fff", color: "#555", fontSize: 15, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>▶</button>
+            </div>
+            {dateStr !== today && (
+              <button onClick={() => setDateStr(today)} style={{ width: "100%", marginBottom: 12, padding: "9px 12px", borderRadius: 10, border: "1px solid #cfe0f5", background: "#eaf2fb", color: "#1C66A5", fontSize: 12.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>오늘로 돌아가기</button>
+            )}
+            <div style={{ fontSize: 12.5, color: "#999", marginBottom: 10 }}>이름을 누르면 그 학생의 앱 화면이 열립니다 (보기 전용).</div>
+            {roll.length === 0
+              ? <div style={{ padding: 34, textAlign: "center", color: "#aab0bb", fontSize: 13.5 }}>이 날 수업하는 학생이 없습니다.</div>
+              : roll.map(({ student: s, time, kind }) => (
+                <button key={s.id} onClick={() => openStudent(s)} style={card}>
+                  <span style={{ width: 34, height: 34, flexShrink: 0, borderRadius: 10, background: "#eef1f8", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, color: "#5a6a85" }}>{String(s.name || "?")[0]}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: "block", fontSize: 14.5, fontWeight: 700, color: "#2A2A28" }}>
+                      {s.name}
+                      {kind !== "정규" && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 800, color: "#b45309", background: "#fef3e7", padding: "2px 7px", borderRadius: 999 }}>{kind}</span>}
+                    </span>
+                    <span style={{ display: "block", fontSize: 11.5, color: "#9aa0ab", marginTop: 2 }}>{[s.school || s.schoolName, s.grade].filter(Boolean).join(" ")}</span>
+                  </span>
+                  {time && <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 800, color: "#1C66A5", background: "#eaf2fb", padding: "4px 9px", borderRadius: 8 }}>{time}</span>}
+                  <span style={{ flexShrink: 0, color: "#c8cdd8", fontSize: 15 }}>›</span>
+                </button>
+              ))}
+          </div>
+        ))}
+
+        {/* ── 강의 (커리큘럼 전체) ── */}
+        {tab === "videos" && (loading ? busyBox : openBook ? (
+          <div>
+            <button onClick={() => { openVideo(null); setOpenBook(null); }} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "8px 12px", marginBottom: 12, borderRadius: 9, border: "1px solid #dfe3ef", background: "#fff", color: "#555", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>← 교재 목록</button>
+            <div style={{ fontSize: 17, fontWeight: 800, color: "#2A2A28", marginBottom: 3 }}>{openBook.name}</div>
+            <div style={{ fontSize: 12.5, color: "#999", marginBottom: 14 }}>{openBook.areaLabel} · 강의 {(openBook.videos || []).length}개</div>
+            {(openBook.videos || []).map((v) => {
+              const isOpen = playing === v.id;
+              const ytId = v.type === "playlist" ? "" : extractYoutubeId(v.url || "");
+              const plId = v.type === "playlist" ? extractPlaylistId(v.playlistUrl || v.url || "") : "";
+              return (
+                <div key={v.id} style={{ background: "#fff", borderRadius: 14, marginBottom: 10, border: isOpen ? "2px solid #1C66A5" : "2px solid transparent", boxShadow: "0 1px 4px rgba(0,0,0,0.04)", overflow: "hidden" }}>
+                  <div onClick={() => openVideo(v)} style={{ padding: 14, cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: 10, flexShrink: 0, background: v.type === "playlist" ? "linear-gradient(135deg,#e74c3c,#e67e22)" : "linear-gradient(135deg,#667eea,#764ba2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>{v.type === "playlist" ? "📋" : "▶️"}</div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 14.5, fontWeight: 600, color: "#2A2A28" }}>{v.title}</div>
+                      {v.type === "playlist" && <div style={{ fontSize: 11.5, color: "#bbb", marginTop: 2 }}>재생목록 전체 보기</div>}
+                    </div>
+                    <span style={{ flexShrink: 0, color: "#c8cdd8", fontSize: 15 }}>{isOpen ? "▲" : "▼"}</span>
+                  </div>
+                  {isOpen && (
+                    <div style={{ padding: "0 14px 14px" }}>
+                      {plId ? (
+                        <iframe title={v.title} src={`https://www.youtube.com/embed/videoseries?list=${plId}&rel=0`} allowFullScreen style={{ width: "100%", aspectRatio: "16/9", border: "none", borderRadius: 10, background: "#000" }} />
+                      ) : ytId ? (
+                        <iframe title={v.title} src={`https://www.youtube.com/embed/${ytId}?rel=0`} allowFullScreen style={{ width: "100%", aspectRatio: "16/9", border: "none", borderRadius: 10, background: "#000" }} />
+                      ) : (v.url || v.playlistUrl) ? (
+                        <a href={v.url || v.playlistUrl} target="_blank" rel="noreferrer" style={{ display: "inline-block", background: "#ff0033", color: "#fff", padding: "10px 20px", borderRadius: 9, textDecoration: "none", fontSize: 13.5, fontWeight: 700 }}>▶ 영상 보기</a>
+                      ) : (
+                        <div style={{ fontSize: 12.5, color: "#c0392b" }}>영상 주소가 없습니다.</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div>
+            <div style={{ fontSize: 12.5, color: "#999", marginBottom: 12 }}>교재를 누르면 그 안의 강의가 나옵니다. 배정과 상관없이 전 교재가 보입니다. (교재 {bookCount}권)</div>
+            {areas.length === 0 && <div style={{ padding: 40, textAlign: "center", color: "#aaa", fontSize: 13.5 }}>등록된 강의가 없습니다.</div>}
+            {areas.map((a) => (
+              <div key={a.areaId} style={{ marginBottom: 18 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: "#8b909a", marginBottom: 8, letterSpacing: 0.3 }}>{a.areaLabel}</div>
+                {(a.books || []).map((b) => (
+                  <button key={b.bookId} onClick={() => { openVideo(null); setOpenBook(b); }} style={card}>
+                    <span style={{ fontSize: 17 }}>📘</span>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: 700, color: "#2A2A28" }}>{b.name}</span>
+                    <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 700, color: "#1C66A5", background: "#eaf2fb", padding: "3px 8px", borderRadius: 8 }}>{(b.videos || []).length}</span>
+                    <span style={{ flexShrink: 0, color: "#c8cdd8", fontSize: 15 }}>›</span>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+        ))}
+
+        {/* ── 단어장 (교사 본인 진도) ── */}
+        {tab === "voca" && (
+          <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden", border: "1px solid #eceef2" }}>
+            <VocaFrame title="선생님 단어장" src={vocaSrc} openTask={vocaTask} onOpenTaskDone={() => setVocaTask(null)} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// [교사] 링크가 죽었을 때(원장이 재발급했거나 계정이 지워짐)
+function TeacherLinkDeadScreen() {
+  return (
+    <div style={{ minHeight: "100vh", background: "#f6f7fb", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, fontFamily: "'Pretendard Variable', -apple-system, sans-serif" }}>
+      <div style={{ textAlign: "center", maxWidth: 340, background: "#fff", borderRadius: 18, padding: "36px 24px", boxShadow: "0 8px 30px rgba(15,23,42,.08)" }}>
+        <div style={{ fontSize: 42, marginBottom: 14 }}>🔒</div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: "#1a1a2e", marginBottom: 10, lineHeight: 1.5 }}>이 링크는 더 이상 쓸 수 없어요</div>
+        <div style={{ fontSize: 13.5, color: "#7b8494", lineHeight: 1.75 }}>원장님이 링크를 새로 만들었거나<br />계정이 정리된 경우입니다.<br />원장님께 새 링크를 요청해 주세요.</div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const params = new URLSearchParams(window.location.search);
   const studentId = params.get("id");
@@ -3584,7 +4064,8 @@ export default function App() {
   useEffect(() => {
     let dead = false;
     setVocaHwRec(null);
-    if (!WORKER_ORIGIN || !vocaHwDate || !studentId) { vocaHwLoadRef.current = null; return undefined; }
+    // [교사 08-27] 선생님이 학생 화면을 열어본 것은 학생 본인 문(t가 필요)이라 부를 수 없다 — 아예 건너뛴다.
+    if (!WORKER_ORIGIN || !vocaHwDate || !studentId || IS_TEACHER_MODE) { vocaHwLoadRef.current = null; return undefined; }
     const load = async () => {
       try {
         const r = await fetch(`${WORKER_ORIGIN}/voca/hw-status?id=${encodeURIComponent(String(studentId))}&t=${encodeURIComponent(getSelfAccessToken())}&date=${encodeURIComponent(vocaHwDate)}`, { cache: "no-store" });
@@ -3625,7 +4106,7 @@ export default function App() {
   const [passQueue, setPassQueue] = useState([]);
   const passCheckedRef = useRef(false);
   useEffect(() => {
-    if (passCheckedRef.current || !student?.id || IS_MASTER_MODE) return;
+    if (passCheckedRef.current || !student?.id || IS_STAFF_VIEW) return;   // [교사] 축하 화면은 학생 것
     if (!progressTree || !Array.isArray(progressTree.lanes) || !Object.keys(todos || {}).length) return;
     passCheckedRef.current = true;
     try {
@@ -3646,7 +4127,7 @@ export default function App() {
   }, [student?.id, todos, progressTree]);
   const pushSyncedRef = useRef(false);
   useEffect(() => {
-    if (!student?.id || IS_MASTER_MODE || pushSupport() === "unsupported" || pushSyncedRef.current) return;
+    if (!student?.id || IS_STAFF_VIEW || pushSupport() === "unsupported" || pushSyncedRef.current) return;
     pushSyncedRef.current = true;
     (async () => {
       const reg = await registerMaplSw();
@@ -3690,8 +4171,8 @@ export default function App() {
   const applyBundle = (bundle) => {
     if (!bundle?.student) return;
     setStudent(bundle.student);
-    // [08-07] 마스터가 그만둔 학생 화면을 열었을 때만 켜진다. 학생 화면에서는 항상 꺼져 있다.
-    setMasterWithdrawn(!!bundle.withdrawnFlag && IS_MASTER_MODE);
+    // [08-07] 마스터(·[08-27] 선생님)가 그만둔 학생 화면을 열었을 때만 켜진다. 학생 화면에서는 항상 꺼져 있다.
+    setMasterWithdrawn(!!bundle.withdrawnFlag && IS_STAFF_VIEW);
     setProgressTree(bundle.progressTree || null);
     setTodos(prev => keepPrevIfUnexpectedEmpty(prev, bundle.todos || {}, "todos"));
     setChecklistData(prev => keepPrevIfUnexpectedEmpty(prev, bundle.checklistData || {}, "checklistData"));
@@ -4105,7 +4586,7 @@ export default function App() {
     const flush = async () => {
       // [마스터] 부팅 직후 도는 재전송. 원장 폰에 남아 있던 대기 기록이
       // 마스터 홈이 뜨기도 전에 학생 기록으로 나가는 것을 막는다.
-      if (IS_MASTER_MODE) return;
+      if (IS_STAFF_VIEW) return;
       // [08-07] 차단된 링크에서는 남은 기록을 더 보내지 않는다(서버를 계속 두드리지 않게).
       if (withdrawnRef.current) return;
       // [3차 ④] 문지기. 인터넷 복귀와 화면 복귀가 거의 동시에 오면 flush가 두 번 겹칠 수 있고,
@@ -4207,6 +4688,15 @@ export default function App() {
   // [마스터] 열쇠는 있고 학생 id는 없음 → 원장 전용 홈. 학생 데이터 로딩은 이미 건너뛴 상태.
   if (IS_MASTER_MODE && !studentId) {
     return <MasterHome mk={MASTER_MK} />;
+  }
+
+  // [교사] 죽은 링크 안내 (teacherLinkDead가 이 주소로 보낸다)
+  if (params.has("teacher_dead")) {
+    return <TeacherLinkDeadScreen />;
+  }
+  // [교사] 선생님 열쇠는 있고 학생 id는 없음 → 선생님 홈.
+  if (IS_TEACHER_MODE && !studentId) {
+    return <TeacherHome auth={TEACHER_AUTH} />;
   }
 
   if (loading) {
@@ -4450,8 +4940,19 @@ export default function App() {
           </div>
         </div>
       )}
+      {/* [교사] 선생님이 학생 화면을 열어본 상태 — 보기 전용이고, 여기서 한 것은 학생 기록에 남지 않는다. */}
+      {IS_TEACHER_MODE && (
+        <div style={{ background: "#182848", borderBottom: "1px solid #1C66A5", padding: "9px 24px" }}>
+          <div style={{ maxWidth: MAX_W, margin: "0 auto", display: "flex", alignItems: "center", gap: 7 }}>
+            <span style={{ fontSize: 13, fontWeight: 800, color: "#7fc4ff", flexShrink: 0 }}>🧑‍🏫 보기 전용</span>
+            <span style={{ fontSize: 12.5, color: "rgba(255,255,255,0.85)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>· {student.name}</span>
+            <button onClick={() => { const sp = new URLSearchParams(); sp.set("tid", TEACHER_AUTH.tid); sp.set("tk", TEACHER_AUTH.tk); window.location.href = window.location.pathname + "?" + sp.toString(); }}
+              style={{ marginLeft: "auto", flexShrink: 0, padding: "5px 11px", borderRadius: 8, border: "1px solid rgba(127,196,255,0.5)", background: "rgba(127,196,255,0.14)", color: "#7fc4ff", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>선생님 홈</button>
+          </div>
+        </div>
+      )}
       {/* [08-07] 원장은 그만둔 학생 화면도 볼 수 있게 통과시키되, 지금 보는 게 그만둔 학생임을 알린다. */}
-      {IS_MASTER_MODE && masterWithdrawn && (
+      {masterWithdrawn && (
         <div style={{ background: "#fff5f5", borderBottom: "1px solid #f7c9cd", padding: "9px 24px" }}>
           <div style={{ maxWidth: MAX_W, margin: "0 auto", fontSize: 12.5, fontWeight: 700, color: "#b03a2e" }}>
             ⏸ 그만둔 학생입니다 — 학생 본인에게는 이 화면이 열리지 않습니다
@@ -4465,7 +4966,7 @@ export default function App() {
           <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 19, border: "2px solid rgba(255,255,255,0.6)", borderRadius: 4, fontSize: 11, fontWeight: 700, letterSpacing: -0.5 }}>MP</span>
           <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: -0.3 }}>마플영어</span>
           {/* [마스터] 원장이 학생 화면에서 출석 QR을 띄워 잘못 찍히는 일이 없도록 숨긴다. */}
-          {IS_MASTER_MODE ? (
+          {IS_STAFF_VIEW ? (
             <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.45)" }}>출석 QR 숨김</span>
           ) : !attToken ? (
             /* [4차] 열쇠값 없는 링크 — QR을 만들어도 데스크에서 안 읽힌다. 미리 안내로 바꾼다. */
