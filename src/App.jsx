@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import QRCodeLib from "qrcode";
 // [0824 3차수] 배포 확인용 차수 표시 — 원장앱 APP_BUILD와 같은 장치. 학생 화면에는 안 띄우고
 //   마스터 홈(원장 전용) 머리글에만 뜬다(원장 결정). 새 차수 파일을 만들 때마다 이 글자를 같이 바꿀 것.
-const STUDENT_APP_BUILD = "학생앱 9차수 · 2026-08-27";
+const STUDENT_APP_BUILD = "학생앱 11차수 · 2026-08-27";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -981,6 +981,24 @@ const computeTeacherDayRoster = (students = [], makeups = [], ymd = "") => {
     return (h < 12 ? h + 12 : h) * 60 + Number(m[2]);
   };
   return [...reg, ...mk].sort((a, b) => (timeVal(a.time) - timeVal(b.time)) || String(a.student.name || "").localeCompare(String(b.student.name || ""), "ko"));
+};
+
+
+// ─── [교사 열람 모드 10차수] 선생님 근무 달력 재료 ───
+// 그날이 근무일인지(요일 근무 + 추가 근무 날짜), 몇 시 출근인지, 학생이 몇 명인지.
+// 순수 계산 — 시험도 이 함수를 그대로 돌린다.
+const TEACHER_DK_KO = ["일", "월", "화", "수", "목", "금", "토"];
+const teacherWorkOn = (teacher, ymd) => {
+  const ds = String(ymd || "").slice(0, 10);
+  const d = new Date(ds + "T00:00:00");
+  if (Number.isNaN(d.getTime())) return null;
+  const extra = (Array.isArray(teacher && teacher.extraWorkDates) ? teacher.extraWorkDates : [])
+    .find(x => x && String(x.date || "").slice(0, 10) === ds);
+  if (extra) return { time: extra.time || "", kind: "추가" };
+  const wd = (teacher && teacher.workDays) || {};
+  const t = wd[TEACHER_DK_KO[d.getDay()]];
+  if (t === undefined || t === null || t === false) return null;
+  return { time: t || "", kind: "근무" };
 };
 
 // ─── 다가올 등원일 계산 ───
@@ -3658,7 +3676,7 @@ function MasterHome({ mk }) {
 //   단어장  : 마플보카 — 진도는 __teacher__{계정id}로 저장돼 학생 진도와 절대 안 섞인다
 // 열쇠(tid·tk)는 주소에 있고, 진짜인지는 워커가 판정한다. 403이 오면 폰의 열쇠를 지우고 안내 화면으로 나간다.
 function TeacherHome({ auth }) {
-  const [tab, setTab] = useState("todo");
+  const [tab, setTab] = useState("home");
   const [home, setHome] = useState(null);
   const [roster, setRoster] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -3668,6 +3686,11 @@ function TeacherHome({ auth }) {
   const [playing, setPlaying] = useState(null);
   const [busyItem, setBusyItem] = useState("");
   const [vocaTask, setVocaTask] = useState(null);   // 숙제단어 → 마플보카로 보낼 {book, lecs}
+  // [10차수] 캘린더 탭 — 보고 있는 달과 고른 날
+  const [calYm, setCalYm] = useState(() => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() }; });
+  const [calSel, setCalSel] = useState(getTodayStr());
+  // [11차수] 단어장 탭 안 전환 — "내 단어장"(외우기) / "단어 선별"(숙제로 낼 어려운 단어 고르기)
+  const [vocaMode, setVocaMode] = useState("study");
 
   // [교사] 강의 열람 기록 — 교사 전용 칸(teacher_vwatch3)에만 쌓인다. 학생 시청 통계와는 키부터 다르다.
   //   ※ 지금 재는 것은 "카드를 열어둔 시간"이다(유튜브 재생 상태를 읽지 않음).
@@ -3767,26 +3790,47 @@ function TeacherHome({ auth }) {
     } finally { setBusyItem(""); }
   };
 
+  // [10차수 원장 지시] 학생 화면은 새 창에서 연다 — 선생님 홈을 그대로 두고 학생만 확인하고 닫는다.
   const openStudent = (s) => {
     const sp = new URLSearchParams();
     sp.set("tid", auth.tid); sp.set("tk", auth.tk);
     sp.set("id", String(s.id));
-    window.location.href = window.location.pathname + "?" + sp.toString();
+    const url = window.location.pathname + "?" + sp.toString();
+    const w = window.open(url, "_blank", "noopener");
+    if (!w) window.location.href = url;   // 팝업이 막힌 폰에서는 예전처럼 이 창에서 연다
   };
 
-  // 마플보카 — 교사 본인 진도. mk=1은 보카바이블까지 책장에 올리는 표시(선생님은 원장이 직접 배정한다).
+  // 마플보카 — 본인 진도.
+  // [10차수 원장 지시] 선생님에게는 mk=1을 붙이지 않는다 → 원장 전용 책(보카바이블)이 안 뜬다.
+  // [11차수 원장 지시] 원장 본인이 링크로 들어온 경우에는 붙인다 → 보카바이블까지 책장에 진열된다.
+  //   (mk 값은 그냥 "1"이라 열쇠가 아니다. 진짜 열쇠는 주소에 실리지 않는다.)
   const vocaSrc = (() => {
     const p = new URLSearchParams();
     p.set("id", home?.vocaId || `__teacher__${auth.tid}`);
     p.set("t", auth.tk);
-    p.set("n", `${teacher.name || "선생님"} 선생님`);
+    p.set("n", home?.isOwner ? "원장" : `${teacher.name || "선생님"} 선생님`);
     if (WORKER_ORIGIN) p.set("api", WORKER_ORIGIN);
-    p.set("mk", "1");
+    if (home?.isOwner) p.set("mk", "1");
     return `${VOCA_APP_URL}?${p.toString()}`;
+  })();
+  // [교사 선별 11차수] 같은 마플보카를 "선별 전용"으로 연다.
+  //   pk=1  = 선별 화면을 쓸 수 있다(원장 mk=1과 별개 — 선생님도 켜진다)
+  //   pkid  = 선별본 이름표. 선생님은 t_{계정id}, 원장은 없음(정본).
+  //   저장 위치는 워커가 열쇠로 다시 판별하므로 주소를 손대도 남의 선별본은 못 덮는다.
+  const vocaPickSrc = (() => {
+    const extra = new URLSearchParams();
+    extra.set("pick", "1");
+    extra.set("pk", "1");
+    if (home?.pickPrefix) extra.set("pkid", home.pickPrefix);
+    return `${vocaSrc}&${extra.toString()}`;
   })();
 
   const card = { width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 10, padding: "13px 14px", marginBottom: 8, borderRadius: 12, border: "1px solid #eceef4", background: "#fff", cursor: "pointer", fontFamily: "inherit" };
   const busyBox = <div style={{ padding: 40, textAlign: "center", color: "#999", fontSize: 14 }}>불러오는 중...</div>;
+  // [10차수] 홈 카드 — 학생앱 홈과 같은 모양·같은 글자 크기로 맞춘다.
+  const cardBox = { background: "#fff", border: "1px solid #e8eaef", borderRadius: 14, padding: "13px 14px", cursor: "pointer", textAlign: "left", fontFamily: "inherit", display: "block", width: "100%" };
+  const cardMain = { fontSize: 14.5, fontWeight: 800, color: "#1a1a2e", marginTop: 6, lineHeight: 1.35 };
+  const cardSub = { fontSize: 11.5, color: "#9aa0ab", marginTop: 4, fontWeight: 600 };
 
   const todoRow = (sectionKey, item) => (
     <button key={item.id} onClick={() => toggleTodo(sectionKey, item)} disabled={!!busyItem}
@@ -3803,10 +3847,9 @@ function TeacherHome({ auth }) {
       <div style={{ background: "linear-gradient(135deg, #182848 0%, #1C66A5 100%)", padding: "18px 24px 20px", color: "#fff" }}>
         <div style={{ maxWidth: MAX_W, margin: "0 auto" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 18 }}>🧑‍🏫</span>
-            <span style={{ fontSize: 17, fontWeight: 800 }}>{teacher.name ? `${teacher.name} 선생님` : "선생님"}</span>
+            <span style={{ fontSize: 17, fontWeight: 800 }}>{home?.isOwner ? "원장" : (teacher.name ? `${teacher.name} 선생님` : "선생님")}</span>
             {teacher.role && <span style={{ fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 999, background: "rgba(255,255,255,0.18)" }}>{teacher.role}</span>}
-            <span style={{ marginLeft: "auto", fontSize: 11.5, color: "rgba(255,255,255,0.55)" }}>선생님 전용</span>
+            <span style={{ marginLeft: "auto", fontSize: 11.5, color: "rgba(255,255,255,0.55)" }}>{home?.isOwner ? "원장 전용" : "선생님 전용"}</span>
           </div>
           <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.7)", marginTop: 6 }}>
             {fmtDateKR(today)} · 오늘 수업 {computeTeacherDayRoster(roster?.students || [], roster?.makeups || [], today).length}명 · 강의 {videoCount}개
@@ -3818,10 +3861,11 @@ function TeacherHome({ auth }) {
         <style>{`.mplTabScroll::-webkit-scrollbar{display:none}`}</style>
         <div className="mplTabScroll" style={{ maxWidth: MAX_W, margin: "0 auto", display: "flex", overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
           {[
-            { key: "todo", label: "📋 내 할일" },
-            { key: "students", label: "👥 학생" },
-            { key: "videos", label: "강의" },
+            { key: "home", label: "홈" },
+            { key: "cal", label: "캘린더" },
             { key: "voca", label: "단어장" },
+            { key: "videos", label: "강의" },
+            { key: "students", label: "학생" },
           ].map((t) => (
             <button key={t.key} onClick={() => setTab(t.key)} style={{
               flex: "1 0 auto", whiteSpace: "nowrap", padding: "14px 12px", border: "none", cursor: "pointer", background: "transparent",
@@ -3837,57 +3881,197 @@ function TeacherHome({ auth }) {
       <div style={{ maxWidth: MAX_W, margin: "0 auto", padding: 16 }}>
         {err && <div style={{ marginBottom: 12, padding: "9px 12px", borderRadius: 10, background: "#fff7ed", border: "1px solid #fed7aa", color: "#c2410c", fontSize: 12, fontWeight: 700 }}>⚠️ {err}</div>}
 
-        {/* ── 내 할일 + 숙제단어 ── */}
-        {tab === "todo" && (loading ? busyBox : (
-          <div>
-            {home?.hw ? (
-              <div style={{ background: "#fff", border: "1px solid #e6dcf7", borderRadius: 14, padding: "15px 16px", marginBottom: 14 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 9 }}>
-                  <span style={{ fontSize: 15 }}>📚</span>
-                  <span style={{ fontSize: 13, fontWeight: 800, color: "#7c3aed" }}>오늘의 숙제단어</span>
-                  {home.hw.atEnd && <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 800, color: "#c2410c", background: "#fff7ed", padding: "3px 8px", borderRadius: 999 }}>책 끝</span>}
+        {/* ── 홈 (대시보드) ── */}
+        {tab === "home" && (loading ? busyBox : (() => {
+          const work = teacherWorkOn(teacher, today);
+          // 다음 출근일 — 오늘 이후 30일 안에서 처음 걸리는 날
+          let nextWork = null;
+          for (let i = 1; i <= 30 && !nextWork; i++) {
+            const d = shiftYmd(today, i);
+            const w = teacherWorkOn(teacher, d);
+            if (w) nextWork = { date: d, ...w };
+          }
+          const todayRoll = computeTeacherDayRoster(roster?.students || [], roster?.makeups || [], today);
+          const todos = [
+            ...(session?.sections?.always || []).map(x => ({ ...x, sec: "always" })),
+            ...(session?.sections?.today || []).map(x => ({ ...x, sec: "today" })),
+          ];
+          const doneCount = todos.filter(x => x.done).length;
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {/* 출근 안내 띠 — 학생 홈의 등원 안내와 같은 자리·같은 모양 */}
+              {work ? (
+                <div style={{ background: "#e8f1fd", border: "1px solid #c5dcf6", borderRadius: 14, padding: "12px 15px" }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: "#0c447c", lineHeight: 1.4 }}>
+                    오늘은 {work.time ? `${fmtTime(work.time)}까지 ` : ""}출근입니다
+                    {work.kind === "추가" && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: "#B45309", background: "#FEF3E7", borderRadius: 999, padding: "2px 8px" }}>추가 근무</span>}
+                  </div>
+                  {nextWork && (
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: "#3a72b0", marginTop: 4 }}>
+                      다음 출근 · {fmtDateShort(nextWork.date)} {nextWork.time ? fmtTime(nextWork.time) : ""}
+                    </div>
+                  )}
                 </div>
-                <div style={{ fontSize: 15, fontWeight: 800, color: "#2A2A28", marginBottom: 3 }}>{home.hw.title}</div>
-                <div style={{ fontSize: 20, fontWeight: 900, color: "#7c3aed", letterSpacing: -0.5, marginBottom: 12 }}>
-                  {home.hw.unit} {home.hw.range.join(", ")}
+              ) : nextWork ? (
+                <div style={{ background: "#fff", border: "1px solid #e8eaef", borderRadius: 14, padding: "11px 15px", fontSize: 12.5, fontWeight: 700, color: "#5c6470", lineHeight: 1.4 }}>
+                  오늘은 근무일이 아닙니다 · 다음 출근은 {fmtDateShort(nextWork.date)} {nextWork.time ? fmtTime(nextWork.time) : ""}입니다
                 </div>
-                <button onClick={() => { setVocaTask({ book: home.hw.bookId, lecs: home.hw.range }); setTab("voca"); }}
-                  style={{ width: "100%", padding: "12px 14px", borderRadius: 11, border: "none", background: "#7c3aed", color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
-                  단어장에서 외우기 →
-                </button>
-              </div>
-            ) : (
-              <div style={{ background: "#fff", border: "1px solid #eceef4", borderRadius: 14, padding: "15px 16px", marginBottom: 14, fontSize: 13, color: "#8b909a", lineHeight: 1.6 }}>
-                📚 지금은 받은 단어 숙제가 없습니다. 원장님이 계정관리에서 책을 정해 주시면 여기에 뜹니다.
-              </div>
-            )}
+              ) : null}
 
-            <div style={{ fontSize: 13, fontWeight: 800, color: "#8b909a", margin: "0 2px 9px" }}>오늘 할 일 · {fmtDateKR(today)}</div>
-            {!isWorkday ? (
-              <div style={{ background: "#fff", border: "1px solid #eceef4", borderRadius: 14, padding: "22px 16px", textAlign: "center", fontSize: 13.5, color: "#9aa0ab", lineHeight: 1.7 }}>
-                오늘은 근무일이 아닙니다.<br />출근하는 날에 할일 카드가 만들어집니다.
+              {/* 1. 오늘 할일 — 홈에서 바로 체크한다 */}
+              <div style={{ ...cardBox, cursor: "default" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: todos.length ? 10 : 0 }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: "#e84393" }}>1. 오늘 할일</span>
+                  <span style={{ marginLeft: "auto", fontSize: 11.5, color: "#9aa0ab", fontWeight: 600 }}>
+                    {todos.length ? `${doneCount}/${todos.length} 완료` : fmtDateKR(today)}
+                  </span>
+                </div>
+                {!isWorkday ? (
+                  <div style={{ fontSize: 13, color: "#9aa0ab", lineHeight: 1.6, paddingTop: 8 }}>오늘은 근무일이 아니라 할일 카드가 없습니다.</div>
+                ) : todos.length === 0 ? (
+                  <div style={{ fontSize: 13, color: "#9aa0ab", lineHeight: 1.6, paddingTop: 8 }}>아직 등록된 할일이 없습니다.</div>
+                ) : (
+                  <>
+                    {todos.map(it => todoRow(it.sec, it))}
+                    <div style={{ fontSize: 11, color: "#b6bcc6", fontWeight: 600, marginTop: 2 }}>할일은 원장님이 적습니다. 여기서는 다 한 것을 체크만 합니다.</div>
+                  </>
+                )}
               </div>
-            ) : (
-              <>
-                {(session?.sections?.always || []).length > 0 && (
-                  <div style={{ marginBottom: 14 }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "#1C66A5", marginBottom: 7 }}>① 항상 할일</div>
-                    {(session.sections.always || []).map(it => todoRow("always", it))}
+
+              {/* 2. 숙제단어 */}
+              {home?.hw ? (
+                <button onClick={() => { setVocaTask({ book: home.hw.bookId, lecs: home.hw.range }); setVocaMode("study"); setTab("voca"); }} style={cardBox}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: "#7c3aed" }}>2. 숙제단어</span>
+                    {home.hw.atEnd && <span style={{ marginLeft: "auto", fontSize: 10.5, fontWeight: 800, color: "#c2410c", background: "#fff7ed", padding: "2px 8px", borderRadius: 999 }}>책 끝</span>}
+                  </div>
+                  <div style={cardMain}>{home.hw.title}</div>
+                  <div style={{ fontSize: 17, fontWeight: 900, color: "#7c3aed", letterSpacing: -0.3, marginTop: 5 }}>{home.hw.unit} {home.hw.range.join(", ")}</div>
+                  <div style={cardSub}>눌러서 단어장에서 외우기 ›</div>
+                </button>
+              ) : (
+                <div style={{ ...cardBox, cursor: "default" }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "#7c3aed" }}>2. 숙제단어</div>
+                  <div style={{ fontSize: 13, color: "#9aa0ab", marginTop: 7, lineHeight: 1.6 }}>지금은 받은 단어 숙제가 없습니다.<br />원장님이 계정관리에서 책을 정해 주시면 여기에 뜹니다.</div>
+                </div>
+              )}
+
+              {/* 3. 오늘 수업 학생 */}
+              <button onClick={() => { setDateStr(today); setTab("students"); }} style={cardBox}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: "#1C66A5" }}>3. 오늘 수업</span>
+                  <span style={{ marginLeft: "auto", fontSize: 11.5, color: "#9aa0ab", fontWeight: 600 }}>{fmtDateKR(today)}</span>
+                </div>
+                <div style={cardMain}>{todayRoll.length ? `학생 ${todayRoll.length}명` : "오늘 수업하는 학생이 없습니다"}</div>
+                {todayRoll.length > 0 && (
+                  <div style={cardSub}>
+                    {todayRoll.slice(0, 4).map(r => r.student.name).join(" · ")}{todayRoll.length > 4 ? ` 외 ${todayRoll.length - 4}명` : ""}
                   </div>
                 )}
-                <div style={{ marginBottom: 14 }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "#1C66A5", marginBottom: 7 }}>② 오늘 할일</div>
-                  {(session?.sections?.today || []).length === 0
-                    ? <div style={{ background: "#fff", border: "1px dashed #dfe3ef", borderRadius: 12, padding: "18px 14px", textAlign: "center", fontSize: 13, color: "#aab0bb" }}>아직 등록된 할일이 없습니다</div>
-                    : (session.sections.today || []).map(it => todoRow("today", it))}
+              </button>
+
+              {/* 4. 강의 */}
+              <button onClick={() => setTab("videos")} style={cardBox}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: "#00997a" }}>4. 강의</div>
+                <div style={cardMain}>교재 {bookCount}권 · 강의 {videoCount}개</div>
+                <div style={cardSub}>수업 준비용으로 아무 교재나 볼 수 있습니다 ›</div>
+              </button>
+            </div>
+          );
+        })())}
+
+        {/* ── 캘린더 (내 근무 달력) ── */}
+        {tab === "cal" && (loading ? busyBox : (() => {
+          const first = new Date(calYm.y, calYm.m, 1);
+          const firstDow = first.getDay();
+          const daysInMonth = new Date(calYm.y, calYm.m + 1, 0).getDate();
+          const cells = [];
+          for (let i = 0; i < firstDow; i++) cells.push(null);
+          for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(calYm.y, calYm.m, d));
+          const move = (diff) => setCalYm(p => { const d = new Date(p.y, p.m + diff, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
+          const allHol = { ...HOLIDAYS, ...((roster && roster.holidays) || {}) };
+          const holName = (v) => (typeof v === "string" ? v : (v && v.name) || "휴원");
+          const navBtn = { width: 34, height: 34, borderRadius: 9, border: "1px solid #e5e0d8", background: "#faf9f7", cursor: "pointer", fontSize: 13, fontWeight: 800, color: "#555" };
+          const selWork = teacherWorkOn(teacher, calSel);
+          const selRoll = computeTeacherDayRoster(roster?.students || [], roster?.makeups || [], calSel);
+          const selHol = allHol[calSel];
+          return (
+            <div>
+              <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #eee", padding: "14px 12px", boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, padding: "0 4px" }}>
+                  <button onClick={() => move(-1)} style={navBtn}>◀</button>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: "#2A2A28" }}>{calYm.y}년 {calYm.m + 1}월</div>
+                  <button onClick={() => move(1)} style={navBtn}>▶</button>
                 </div>
-                <div style={{ fontSize: 11.5, color: "#aab0bb", textAlign: "center", lineHeight: 1.7 }}>
-                  할일은 원장님이 원장앱에서 적습니다. 여기서는 다 한 것을 체크만 합니다.
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", marginBottom: 4 }}>
+                  {TEACHER_DK_KO.map((w, i) => (
+                    <div key={w} style={{ textAlign: "center", fontSize: 11.5, fontWeight: 700, color: i === 0 ? "#D2402E" : i === 6 ? "#2A6FDB" : "#999", padding: "4px 0" }}>{w}</div>
+                  ))}
                 </div>
-              </>
-            )}
-          </div>
-        ))}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3 }}>
+                  {cells.map((dObj, idx) => {
+                    if (!dObj) return <div key={"e" + idx} />;
+                    const ds = fmtYMD(dObj);
+                    const w = teacherWorkOn(teacher, ds);
+                    const hol = allHol[ds];
+                    const n = computeTeacherDayRoster(roster?.students || [], roster?.makeups || [], ds).length;
+                    const isSel = ds === calSel;
+                    const isToday = ds === today;
+                    return (
+                      <button key={ds} onClick={() => setCalSel(ds)} style={{
+                        minHeight: 52, padding: "5px 2px 4px", borderRadius: 9, cursor: "pointer",
+                        border: isSel ? "1.8px solid #2A6FDB" : isToday ? "1.5px solid #b9cff2" : w && w.kind === "추가" ? "1.5px solid #F2C14E" : "1px solid transparent",
+                        background: hol ? "#FDF0EE" : w ? "#F0F6FF" : "#fff",
+                        display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+                      }}>
+                        <span style={{ fontSize: 12.5, fontWeight: isToday ? 800 : 600, color: hol ? "#D2402E" : dObj.getDay() === 0 ? "#D2402E" : dObj.getDay() === 6 ? "#2A6FDB" : "#333" }}>{dObj.getDate()}</span>
+                        <span style={{ minHeight: 11, fontSize: 9.5, fontWeight: 800, color: w ? "#2A6FDB" : "#c8cdd8", lineHeight: 1 }}>{w ? (n > 0 ? `${n}명` : "출근") : ""}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 10, padding: "8px 4px 0", borderTop: "1px solid #f2efe9" }}>
+                  {[["#F0F6FF", "근무일"], ["#FDF0EE", "휴원"]].map(([c, label]) => (
+                    <span key={label} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "#777", fontWeight: 600 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: 3, background: c, border: "1px solid #e0dcd4", display: "inline-block" }} />{label}
+                    </span>
+                  ))}
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "#777", fontWeight: 600 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 3, background: "#fff", border: "1.5px solid #F2C14E", display: "inline-block" }} />추가 근무
+                  </span>
+                  <span style={{ fontSize: 11, color: "#777", fontWeight: 600 }}>숫자 = 그날 수업 학생 수</span>
+                </div>
+              </div>
+
+              <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #eee", padding: "14px 16px", marginTop: 12, boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
+                  <div style={{ fontSize: 14.5, fontWeight: 800, color: "#2A2A28" }}>{fmtDateKR(calSel)}</div>
+                  {calSel === today && <span style={{ fontSize: 10.5, fontWeight: 800, color: "#0c5a9e", background: "#e8f2fc", borderRadius: 999, padding: "2px 8px" }}>오늘</span>}
+                </div>
+                {selHol && <div style={{ fontSize: 13, fontWeight: 700, color: "#D2402E", marginBottom: 7 }}>휴원 · {holName(selHol)}</div>}
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: selWork ? "#2A6FDB" : "#9aa0ab", marginBottom: 10 }}>
+                  {selWork ? `${selWork.kind === "추가" ? "추가 근무" : "근무"} · ${selWork.time ? `${fmtTime(selWork.time)} 출근` : "시간 미정"}` : "근무일이 아닙니다"}
+                </div>
+                {selRoll.length === 0 ? (
+                  <div style={{ fontSize: 13, color: "#9aa0ab" }}>이 날 수업하는 학생이 없습니다.</div>
+                ) : (
+                  <>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "#7f8fa6", marginBottom: 7 }}>수업 학생 {selRoll.length}명</div>
+                    {selRoll.map(({ student: s, time, kind }) => (
+                      <button key={s.id} onClick={() => openStudent(s)} style={{ ...card, marginBottom: 6, padding: "10px 12px" }}>
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, color: "#2A2A28" }}>
+                          {s.name}
+                          {kind !== "정규" && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: "#b45309", background: "#fef3e7", padding: "2px 6px", borderRadius: 999 }}>{kind}</span>}
+                        </span>
+                        {time && <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: "#1C66A5", background: "#eaf2fb", padding: "3px 8px", borderRadius: 8 }}>{time}</span>}
+                      </button>
+                    ))}
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })())}
 
         {/* ── 그날 수업하는 학생 ── */}
         {tab === "students" && (loading ? busyBox : (
@@ -3983,10 +4167,37 @@ function TeacherHome({ auth }) {
           </div>
         ))}
 
-        {/* ── 단어장 (교사 본인 진도) ── */}
+        {/* ── 단어장 (본인 진도) + 단어 선별 ── */}
         {tab === "voca" && (
-          <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden", border: "1px solid #eceef2" }}>
-            <VocaFrame title="선생님 단어장" src={vocaSrc} openTask={vocaTask} onOpenTaskDone={() => setVocaTask(null)} />
+          <div>
+            <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+              {[
+                { key: "study", label: "내 단어장" },
+                { key: "pick", label: "단어 선별" },
+              ].map(m => (
+                <button key={m.key} onClick={() => { setVocaMode(m.key); if (m.key === "pick") setVocaTask(null); }}
+                  style={{
+                    flex: 1, padding: "10px 12px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit",
+                    border: `1px solid ${vocaMode === m.key ? "#182848" : "#dfe3ef"}`,
+                    background: vocaMode === m.key ? "#182848" : "#fff",
+                    color: vocaMode === m.key ? "#fff" : "#7b8494",
+                    fontSize: 13.5, fontWeight: 800,
+                  }}>{m.label}</button>
+              ))}
+            </div>
+            {vocaMode === "pick" && (
+              <div style={{ background: "#f3e8ff", border: "1px solid #e0cffc", borderRadius: 12, padding: "11px 13px", marginBottom: 10, fontSize: 12.5, color: "#5b21b6", lineHeight: 1.65 }}>
+                유닛마다 <b>숙제로 낼 어려운 단어 10개</b>를 고릅니다.
+                {home?.isOwner
+                  ? <> 원장님이 고른 것이 <b>학생 숙제에 실제로 나갑니다.</b></>
+                  : <> 선생님이 고른 것은 <b>따로 저장</b>되고, 학생 숙제에는 영향을 주지 않습니다.</>}
+              </div>
+            )}
+            <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden", border: "1px solid #eceef2" }}>
+              {vocaMode === "pick"
+                ? <VocaFrame title="단어 선별" src={vocaPickSrc} />
+                : <VocaFrame title="내 단어장" src={vocaSrc} openTask={vocaTask} onOpenTaskDone={() => setVocaTask(null)} />}
+            </div>
           </div>
         )}
       </div>
@@ -4944,7 +5155,7 @@ export default function App() {
       {IS_TEACHER_MODE && (
         <div style={{ background: "#182848", borderBottom: "1px solid #1C66A5", padding: "9px 24px" }}>
           <div style={{ maxWidth: MAX_W, margin: "0 auto", display: "flex", alignItems: "center", gap: 7 }}>
-            <span style={{ fontSize: 13, fontWeight: 800, color: "#7fc4ff", flexShrink: 0 }}>🧑‍🏫 보기 전용</span>
+            <span style={{ fontSize: 13, fontWeight: 800, color: "#7fc4ff", flexShrink: 0 }}>보기 전용</span>
             <span style={{ fontSize: 12.5, color: "rgba(255,255,255,0.85)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>· {student.name}</span>
             <button onClick={() => { const sp = new URLSearchParams(); sp.set("tid", TEACHER_AUTH.tid); sp.set("tk", TEACHER_AUTH.tk); window.location.href = window.location.pathname + "?" + sp.toString(); }}
               style={{ marginLeft: "auto", flexShrink: 0, padding: "5px 11px", borderRadius: 8, border: "1px solid rgba(127,196,255,0.5)", background: "rgba(127,196,255,0.14)", color: "#7fc4ff", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>선생님 홈</button>
