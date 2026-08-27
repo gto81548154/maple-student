@@ -760,6 +760,9 @@ const STU = (() => {
  * 책장에서 책을 고르면 학습 홈을 건너뛰고 곧장 유닛 목록(선별 화면)으로 간다.
  * [교사 선별 2026-08-27] 원장(mk=1) 또는 선별 권한을 받은 선생님(pk=1)이면 켜진다. */
 const CAN_PICK = !!(STU && (STU.master || STU.pk));
+/* [교사 선별 2026-08-27] 선생님인지 — 선생님 링크는 id가 __teacher__로 시작한다(원장은 __master__).
+ * 원장 전용 책(보카바이블)은 선생님 책장에서 잠금 카드("???")조차 안 뜨게 한다(원장 지시). */
+const IS_TEACHER_VOCA = !!(STU && String(STU.id || '').startsWith('__teacher__'));
 const PICKMODE = (() => {
   const q = new URLSearchParams(location.search);
   return q.get('pick') === '1' && CAN_PICK;
@@ -995,6 +998,8 @@ function shelfStates(){
   const st = {};
   const stu = STU && !STU.master;
   for (const b of BOOKS){
+    // [08-27 원장 지시] 선생님에게는 원장 전용 책을 아예 안 보여준다(잠금 카드도 없음)
+    if (IS_TEACHER_VOCA && b.id === 'vocabible'){ st[b.id] = 'hide'; continue; }
     if (!stu){ st[b.id] = 'normal'; continue; }             // 원장·마스터: 전부 표시(현행)
     if (b.ns){ st[b.id] = 'normal'; continue; }             // [내신 2차수] 내 학교·이번 범위로 이미 걸러진 책
     if (b.id === 'vocabible'){ st[b.id] = 'hide'; continue; }   // 아래에서 재결정
@@ -1002,7 +1007,7 @@ function shelfStates(){
     st[b.id] = 'normal';
   }
   // [08-06] 원장앱에서 보카바이블을 배정했거나, 하이스트 일반 층을 3회독 완주하면 열린다
-  if (stu) st.vocabible = (STU.books.includes('vocabible') || crownsOf('wm_hi') >= 3)
+  if (stu && !IS_TEACHER_VOCA) st.vocabible = (STU.books.includes('vocabible') || crownsOf('wm_hi') >= 3)
     ? 'normal' : (st.wm_hi === 'normal' ? 'locked' : 'hide');
   return st;
 }
@@ -2222,7 +2227,8 @@ $('#mcQuit').onclick = () => {
 /* ───────── [숙제 3차수] 숙제 모드 — 객관식 클리어 (원장 확정 08-18) ─────────
  * 학생앱 홈 "수업 단어 공부" 카드가 maplVocaHwTask{book, lecs, date, deadline} 신호를 보내면
  * 그 책을 열고 곧바로 시작한다. 방식 고르는 창 없음, 범위 못 바꿈.
- * 출제 = 유닛마다 원장이 선별한 단어(picks). 안 고른 유닛은 그 유닛에서 10개를 뽑되,
+ * 출제 = 유닛마다 선별된 단어(picks — 원장 것이 1순위, 선생님 것은 원장이 안 고른 유닛에만).
+ *        안 고른 유닛은 그 유닛에서 10개를 뽑되,
  *        같은 학생·같은 날짜면 항상 같은 10개가 나오게 날짜+학생+유닛으로 섞는다(이어 풀기 공정).
  * 진행 = 객관식 4지선다 답 1개(복수정답 없음). 맞히면 빠지고 틀리면 통 맨 뒤로 다시 — 전부 맞혀야 끝.
  * 회독 = 1~2회독이면 맞힌 단어를 그 회독 정답으로 기록(뜻 소진 없음 — 같은 뜻 인정 방침).
@@ -2382,7 +2388,7 @@ async function tryOpenHwBook(){
 }
 async function startHwSession(req){
   const date = /^\d{4}-\d{2}-\d{2}$/.test(String(req.date || '')) ? String(req.date) : hwToday();
-  PICKS = (await loadPicks(BOOK.id)) || {};   // [0818 검토손질] 못 읽으면 빈 것으로 — 미선별 규칙(랜덤 10개)로 조용히 진행
+  PICKS = (await loadPicks(BOOK.id, true)) || {};   // [0818 검토손질] 못 읽으면 빈 것으로 — 미선별 규칙(랜덤 10개)로 조용히 진행
   const lecs = Array.isArray(req.lecs)
     ? [...new Set(req.lecs.map(Number).filter(x => Number.isFinite(x)))].sort((a, b) => a - b)
     : [];
@@ -2533,11 +2539,16 @@ const pkMainByLec = () => {     // 표제어만, 유닛별로
 };
 /* [0818 검토손질] "아직 아무것도 안 골랐다"({})와 "서버에서 못 읽었다"(null)를 구분한다.
  * 못 읽었는데 조용히 {}를 주면, 골라둔 게 있는데도 전부 "미선별"로 보여서 놀라게 된다. */
-async function loadPicks(bookId){
+/* [교사 선별 2026-08-27] merged=true 면 "합쳐진 목록"을 읽는다.
+ *   합치는 규칙은 워커가 정한다 — 원장 것이 1순위, 원장·선생님이 함께 고른 단어는 앞으로,
+ *   원장이 안 고른 유닛에만 선생님 선별이 들어간다.
+ *   선별 화면(고르는 화면)은 merged 없이 자기 파일을 그대로 읽는다. */
+async function loadPicks(bookId, merged){
   const base = pickBase();
   if (!base) return {};
   try{
-    const r = await fetch(`${base.replace(/\/+$/, '')}/${pickFileName(bookId)}`, { cache:'no-store' });
+    const path = merged ? `-merged/${bookId}.json` : `/${pickFileName(bookId)}`;
+    const r = await fetch(`${base.replace(/\/+$/, '')}${path}`, { cache:'no-store' });
     if (!r.ok) return null;
     const j = await r.json();
     return (j && typeof j === 'object' && !Array.isArray(j)) ? j : {};
