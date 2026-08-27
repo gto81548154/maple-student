@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import QRCodeLib from "qrcode";
 // [0824 3차수] 배포 확인용 차수 표시 — 원장앱 APP_BUILD와 같은 장치. 학생 화면에는 안 띄우고
 //   마스터 홈(원장 전용) 머리글에만 뜬다(원장 결정). 새 차수 파일을 만들 때마다 이 글자를 같이 바꿀 것.
-const STUDENT_APP_BUILD = "학생앱 11차수 · 2026-08-27";
+const STUDENT_APP_BUILD = "학생앱 12차수 · 2026-08-27";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -3851,8 +3851,9 @@ function TeacherHome({ auth }) {
             {teacher.role && <span style={{ fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 999, background: "rgba(255,255,255,0.18)" }}>{teacher.role}</span>}
             <span style={{ marginLeft: "auto", fontSize: 11.5, color: "rgba(255,255,255,0.55)" }}>{home?.isOwner ? "원장 전용" : "선생님 전용"}</span>
           </div>
+          {/* [12차수 원장 지시] 사람 수는 화면에 띄우지 않는다 */}
           <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.7)", marginTop: 6 }}>
-            {fmtDateKR(today)} · 오늘 수업 {computeTeacherDayRoster(roster?.students || [], roster?.makeups || [], today).length}명 · 강의 {videoCount}개
+            {fmtDateKR(today)} · 강의 {videoCount}개
           </div>
         </div>
       </div>
@@ -3962,12 +3963,12 @@ function TeacherHome({ auth }) {
                   <span style={{ fontSize: 12, fontWeight: 800, color: "#1C66A5" }}>3. 오늘 수업</span>
                   <span style={{ marginLeft: "auto", fontSize: 11.5, color: "#9aa0ab", fontWeight: 600 }}>{fmtDateKR(today)}</span>
                 </div>
-                <div style={cardMain}>{todayRoll.length ? `학생 ${todayRoll.length}명` : "오늘 수업하는 학생이 없습니다"}</div>
-                {todayRoll.length > 0 && (
-                  <div style={cardSub}>
-                    {todayRoll.slice(0, 4).map(r => r.student.name).join(" · ")}{todayRoll.length > 4 ? ` 외 ${todayRoll.length - 4}명` : ""}
-                  </div>
-                )}
+                <div style={{ ...cardMain, fontSize: 13.5, fontWeight: 700, lineHeight: 1.55 }}>
+                  {todayRoll.length
+                    ? todayRoll.slice(0, 6).map(r => r.student.name).join(" · ") + (todayRoll.length > 6 ? " …" : "")
+                    : "오늘 수업하는 학생이 없습니다"}
+                </div>
+                {todayRoll.length > 0 && <div style={cardSub}>눌러서 전체 보기 ›</div>}
               </button>
 
               {/* 4. 강의 */}
@@ -4014,7 +4015,6 @@ function TeacherHome({ auth }) {
                     const ds = fmtYMD(dObj);
                     const w = teacherWorkOn(teacher, ds);
                     const hol = allHol[ds];
-                    const n = computeTeacherDayRoster(roster?.students || [], roster?.makeups || [], ds).length;
                     const isSel = ds === calSel;
                     const isToday = ds === today;
                     return (
@@ -4025,7 +4025,8 @@ function TeacherHome({ auth }) {
                         display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
                       }}>
                         <span style={{ fontSize: 12.5, fontWeight: isToday ? 800 : 600, color: hol ? "#D2402E" : dObj.getDay() === 0 ? "#D2402E" : dObj.getDay() === 6 ? "#2A6FDB" : "#333" }}>{dObj.getDate()}</span>
-                        <span style={{ minHeight: 11, fontSize: 9.5, fontWeight: 800, color: w ? "#2A6FDB" : "#c8cdd8", lineHeight: 1 }}>{w ? (n > 0 ? `${n}명` : "출근") : ""}</span>
+                        {/* [12차수 원장 지시] 칸에 사람 수를 적지 않는다 — 근무일이면 "출근"만 */}
+                        <span style={{ minHeight: 11, fontSize: 9.5, fontWeight: 800, color: w ? "#2A6FDB" : "#c8cdd8", lineHeight: 1 }}>{w ? "출근" : ""}</span>
                       </button>
                     );
                   })}
@@ -4039,7 +4040,7 @@ function TeacherHome({ auth }) {
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "#777", fontWeight: 600 }}>
                     <span style={{ width: 10, height: 10, borderRadius: 3, background: "#fff", border: "1.5px solid #F2C14E", display: "inline-block" }} />추가 근무
                   </span>
-                  <span style={{ fontSize: 11, color: "#777", fontWeight: 600 }}>숫자 = 그날 수업 학생 수</span>
+
                 </div>
               </div>
 
@@ -4056,7 +4057,7 @@ function TeacherHome({ auth }) {
                   <div style={{ fontSize: 13, color: "#9aa0ab" }}>이 날 수업하는 학생이 없습니다.</div>
                 ) : (
                   <>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "#7f8fa6", marginBottom: 7 }}>수업 학생 {selRoll.length}명</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "#7f8fa6", marginBottom: 7 }}>수업 학생</div>
                     {selRoll.map(({ student: s, time, kind }) => (
                       <button key={s.id} onClick={() => openStudent(s)} style={{ ...card, marginBottom: 6, padding: "10px 12px" }}>
                         <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, color: "#2A2A28" }}>
@@ -4081,7 +4082,7 @@ function TeacherHome({ auth }) {
               <div style={{ flex: 1, textAlign: "center" }}>
                 <div style={{ fontSize: 15, fontWeight: 800, color: "#2A2A28" }}>{fmtDateKR(dateStr)}</div>
                 <div style={{ fontSize: 11.5, color: "#9aa0ab", marginTop: 2 }}>
-                  {dateStr === today ? "오늘" : dateStr < today ? "지난 날" : "앞으로"} · {roll.length}명
+                  {dateStr === today ? "오늘" : dateStr < today ? "지난 날" : "앞으로"}
                   {HOLIDAYS[dateStr] ? ` · ${HOLIDAYS[dateStr]}` : ""}
                 </div>
               </div>
@@ -4185,14 +4186,6 @@ function TeacherHome({ auth }) {
                   }}>{m.label}</button>
               ))}
             </div>
-            {vocaMode === "pick" && (
-              <div style={{ background: "#f3e8ff", border: "1px solid #e0cffc", borderRadius: 12, padding: "11px 13px", marginBottom: 10, fontSize: 12.5, color: "#5b21b6", lineHeight: 1.65 }}>
-                유닛마다 <b>숙제로 낼 어려운 단어 10개</b>를 고릅니다.
-                {home?.isOwner
-                  ? <> 원장님이 고른 것이 <b>학생 숙제에 실제로 나갑니다.</b></>
-                  : <> 선생님이 고른 것은 <b>따로 저장</b>되고, 학생 숙제에는 영향을 주지 않습니다.</>}
-              </div>
-            )}
             <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden", border: "1px solid #eceef2" }}>
               {vocaMode === "pick"
                 ? <VocaFrame title="단어 선별" src={vocaPickSrc} />
