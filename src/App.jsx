@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import QRCodeLib from "qrcode";
 // [0824 3차수] 배포 확인용 차수 표시 — 원장앱 APP_BUILD와 같은 장치. 학생 화면에는 안 띄우고
 //   마스터 홈(원장 전용) 머리글에만 뜬다(원장 결정). 새 차수 파일을 만들 때마다 이 글자를 같이 바꿀 것.
-const STUDENT_APP_BUILD = "학생앱 13차수 · 2026-08-27";
+const STUDENT_APP_BUILD = "학생앱 15차수 · 2026-08-27";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -988,6 +988,8 @@ const computeTeacherDayRoster = (students = [], makeups = [], ymd = "") => {
 // 그날이 근무일인지(요일 근무 + 추가 근무 날짜), 몇 시 출근인지, 학생이 몇 명인지.
 // 순수 계산 — 시험도 이 함수를 그대로 돌린다.
 const TEACHER_DK_KO = ["일", "월", "화", "수", "목", "금", "토"];
+// [근무표 수정 15차수] 원장이 폰에서 고를 수 있는 출근 시간 — 원장앱 ALL_TIMES와 같은 목록이어야 한다.
+const TEACHER_TIME_CHOICES = ["1:00","1:30","2:00","2:30","3:00","3:30","4:00","4:30","5:00","5:30","6:00","6:30","7:00","7:30","8:00","8:30","9:00","9:30"];
 const teacherWorkOn = (teacher, ymd) => {
   const ds = String(ymd || "").slice(0, 10);
   const d = new Date(ds + "T00:00:00");
@@ -3694,7 +3696,14 @@ function TeacherHome({ auth }) {
   const [openBook, setOpenBook] = useState(null);
   const [playing, setPlaying] = useState(null);
   const [busyItem, setBusyItem] = useState("");
-  const [vocaTask, setVocaTask] = useState(null);   // 숙제단어 → 마플보카로 보낼 {book, lecs}
+  const [vocaTask, setVocaTask] = useState(null);   // 숙제단어 → 마플보카로 보낼 {book, lecs} (그냥 펼쳐 보기)
+  // [14차수 원장 지시] 학생 "앱 단어"와 같은 숙제 TEST — 범위에서 10개가 자동으로 뽑혀 객관식으로 나온다.
+  //   원장 선별본이 있으면 그 단어가, 없으면 그 유닛에서 10개가 나간다(학생과 완전히 같은 규칙).
+  const [vocaHwTask, setVocaHwTask] = useState(null);
+  // [근무표 수정 15차수 · 원장 전용] 캘린더에서 날짜를 길게 누르면 열리는 근무 고치기 창
+  const [schedEdit, setSchedEdit] = useState(null);   // { date, openId }
+  const [schedBusy, setSchedBusy] = useState(false);
+  const [schedMsg, setSchedMsg] = useState(null);
   // [10차수] 캘린더 탭 — 보고 있는 달과 고른 날
   const [calYm, setCalYm] = useState(() => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() }; });
   const [calSel, setCalSel] = useState(getTodayStr());
@@ -3704,6 +3713,7 @@ function TeacherHome({ auth }) {
   // [교사] 강의 열람 기록 — 교사 전용 칸(teacher_vwatch3)에만 쌓인다. 학생 시청 통계와는 키부터 다르다.
   //   ※ 지금 재는 것은 "카드를 열어둔 시간"이다(유튜브 재생 상태를 읽지 않음).
   //     학생 화면 쪽 재생 측정기와 값의 뜻이 다르므로, 다음 차수에서 화면에 보일 때 그렇게 적어야 한다.
+  const schedPressRef = useRef(null);   // [15차수] 캘린더 길게 누르기 타이머
   const openedAtRef = useRef(0);
   const openedVideoRef = useRef(null);
   const sendTeacherWatch = (video, seconds) => {
@@ -3797,6 +3807,60 @@ function TeacherHome({ auth }) {
       setErr("체크를 저장하지 못했습니다. 잠시 뒤 다시 눌러 주세요.");
       setTimeout(() => setErr(""), 3000);
     } finally { setBusyItem(""); }
+  };
+
+  // [근무표 수정 15차수] 원장이 고친 근무표를 워커에 저장하고 화면도 그 자리에서 바꾼다.
+  //   한 번에 통째로 보낸다(그 사람의 요일 근무표 + 추가 근무 날짜 전부) — 워커가 다시 검사해서 저장한다.
+  const saveStaffSchedule = async (st, change) => {
+    if (!st || schedBusy) return;
+    const workDays = { ...(st.workDays || {}) };
+    let extras = [...(st.extraWorkDates || [])];
+    if (change.toggleDay) {
+      if (workDays[change.toggleDay] !== undefined) delete workDays[change.toggleDay];
+      else workDays[change.toggleDay] = "5:30";
+    }
+    if (change.setDayTime) workDays[change.setDayTime.day] = change.setDayTime.time;
+    if (change.addExtra) extras = [...extras.filter(x => x && x.date !== change.addExtra.date), { id: change.addExtra.date, ...change.addExtra }];
+    if (change.removeExtra) extras = extras.filter(x => x && x.date !== change.removeExtra);
+
+    setSchedBusy(true); setSchedMsg(null);
+    try {
+      const r = await fetch(teacherUrl("/teacher/staff-schedule"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teacherId: String(st.id), workDays, extraWorkDates: extras }),
+      });
+      if (r.status === 403) { setSchedMsg({ ok: false, text: "원장님만 근무표를 고칠 수 있습니다." }); return; }
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j || !j.success) throw new Error((j && j.error) || "저장 실패");
+      setHome(prev => prev ? {
+        ...prev,
+        staff: (prev.staff || []).map(x => String(x.id) === String(st.id) ? { ...x, workDays: j.workDays, extraWorkDates: j.extraWorkDates } : x),
+        // 원장 본인 근무표를 고쳤으면 이 화면의 캘린더도 같이 바뀌어야 한다
+        teacher: String(st.id) === "admin" ? { ...prev.teacher, workDays: j.workDays, extraWorkDates: j.extraWorkDates } : prev.teacher,
+      } : prev);
+      setSchedMsg({ ok: true, text: `${st.name} 근무표를 저장했습니다.` });
+      setTimeout(() => setSchedMsg(null), 2500);
+    } catch (e) {
+      setSchedMsg({ ok: false, text: "저장하지 못했습니다. 잠시 뒤 다시 해주세요." });
+    } finally { setSchedBusy(false); }
+  };
+
+  // [14차수] 숙제 TEST 시작 — 학생 startVocaHwTest와 같은 모양의 신호를 보낸다.
+  //   마감(deadline)은 그날 출근 시각. 출근 시각이 없으면 안 보낸다(늦음 판정을 안 한다).
+  const startTeacherHwTest = () => {
+    if (!home || !home.hw) return false;
+    let deadline = "";
+    try {
+      const w = teacherWorkOn(teacher, today);
+      if (w && w.time) {
+        const [hh, mm] = String(w.time).split(":");
+        const dl = new Date(today + "T00:00:00");
+        dl.setHours(academyHour24(hh), parseInt(mm, 10) || 0, 0, 0);
+        deadline = dl.toISOString();
+      }
+    } catch (e) { deadline = ""; }
+    setVocaHwTask({ book: home.hw.bookId, lecs: home.hw.range, date: today, deadline });
+    return true;
   };
 
   // [10차수 원장 지시] 학생 화면은 새 창에서 연다 — 선생님 홈을 그대로 두고 학생만 확인하고 닫는다.
@@ -3950,14 +4014,14 @@ function TeacherHome({ auth }) {
 
               {/* 2. 숙제단어 */}
               {home?.hw ? (
-                <button onClick={() => { setVocaTask({ book: home.hw.bookId, lecs: home.hw.range }); setVocaMode("study"); setTab("voca"); }} style={cardBox}>
+                <button onClick={() => { startTeacherHwTest(); setVocaMode("study"); setTab("voca"); }} style={cardBox}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 12, fontWeight: 800, color: "#7c3aed" }}>2. 숙제단어</span>
                     {home.hw.atEnd && <span style={{ marginLeft: "auto", fontSize: 10.5, fontWeight: 800, color: "#c2410c", background: "#fff7ed", padding: "2px 8px", borderRadius: 999 }}>책 끝</span>}
                   </div>
                   <div style={cardMain}>{home.hw.title}</div>
                   <div style={{ fontSize: 17, fontWeight: 900, color: "#7c3aed", letterSpacing: -0.3, marginTop: 5 }}>{home.hw.unit} {home.hw.range.join(", ")}</div>
-                  <div style={cardSub}>눌러서 단어장에서 외우기 ›</div>
+                  <div style={cardSub}>눌러서 숙제 TEST 시작 ›</div>
                 </button>
               ) : (
                 <div style={{ ...cardBox, cursor: "default" }}>
@@ -4027,7 +4091,13 @@ function TeacherHome({ auth }) {
                     const isSel = ds === calSel;
                     const isToday = ds === today;
                     return (
-                      <button key={ds} onClick={() => setCalSel(ds)} style={{
+                      <button key={ds} onClick={() => setCalSel(ds)}
+                        // [근무표 수정 15차수] 원장만 — 길게 누르기(폰) / 우클릭(PC)으로 근무 고치기 창
+                        onContextMenu={home?.isOwner ? (e) => { e.preventDefault(); setCalSel(ds); setSchedEdit({ date: ds, openId: "" }); } : undefined}
+                        onTouchStart={home?.isOwner ? () => { schedPressRef.current = setTimeout(() => { setCalSel(ds); setSchedEdit({ date: ds, openId: "" }); }, 550); } : undefined}
+                        onTouchEnd={home?.isOwner ? () => { clearTimeout(schedPressRef.current); } : undefined}
+                        onTouchMove={home?.isOwner ? () => { clearTimeout(schedPressRef.current); } : undefined}
+                        style={{
                         minHeight: 52, padding: "5px 2px 4px", borderRadius: 9, cursor: "pointer",
                         border: isSel ? "1.8px solid #2A6FDB" : isToday ? "1.5px solid #b9cff2" : w && w.kind === "추가" ? "1.5px solid #F2C14E" : "1px solid transparent",
                         background: hol ? "#FDF0EE" : w ? "#F0F6FF" : "#fff",
@@ -4049,6 +4119,7 @@ function TeacherHome({ auth }) {
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "#777", fontWeight: 600 }}>
                     <span style={{ width: 10, height: 10, borderRadius: 3, background: "#fff", border: "1.5px solid #F2C14E", display: "inline-block" }} />추가 근무
                   </span>
+                  {home?.isOwner && <span style={{ fontSize: 11, color: "#7f8fa6", fontWeight: 700 }}>날짜를 길게 누르면 근무를 고칠 수 있어요</span>}
 
                 </div>
               </div>
@@ -4177,6 +4248,98 @@ function TeacherHome({ auth }) {
           </div>
         ))}
 
+        {/* ── [근무표 수정 14차수 · 원장 전용] 캘린더에서 고른 날의 근무를 고친다 ──
+            원장만 열 수 있다. 선생님 화면에서는 길게 눌러도 아무 일이 없다(원장 지시).
+            날짜를 길게 누르거나(폰) 우클릭하면(PC) 이 창이 뜬다. */}
+        {schedEdit && (
+          <div onClick={() => setSchedEdit(null)}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 4000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+            <div onClick={(e) => e.stopPropagation()}
+              style={{ width: "100%", maxWidth: MAX_W, maxHeight: "88vh", overflowY: "auto", background: "#fff", borderRadius: "18px 18px 0 0", padding: "18px 18px 26px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <div style={{ fontSize: 16.5, fontWeight: 900, color: "#1a1a2e" }}>근무 고치기</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#1C66A5" }}>{fmtDateKR(schedEdit.date)}</div>
+                <button onClick={() => setSchedEdit(null)} style={{ marginLeft: "auto", border: "none", background: "#f0f2f5", borderRadius: 9, padding: "7px 11px", cursor: "pointer", fontWeight: 900, color: "#7f8fa6", fontFamily: "inherit" }}>✕</button>
+              </div>
+              <div style={{ fontSize: 12, color: "#9aa0ab", marginBottom: 14 }}>원장님만 고칠 수 있습니다. 고치면 그 사람 화면에 바로 반영됩니다.</div>
+
+              {schedBusy && <div style={{ fontSize: 12.5, fontWeight: 800, color: "#1C66A5", marginBottom: 10 }}>저장 중...</div>}
+              {schedMsg && <div style={{ fontSize: 12.5, fontWeight: 800, color: schedMsg.ok ? "#0b7a5c" : "#c2410c", background: schedMsg.ok ? "#e8f8f5" : "#fff7ed", border: `1px solid ${schedMsg.ok ? "#b7ecdf" : "#fed7aa"}`, borderRadius: 10, padding: "9px 11px", marginBottom: 12 }}>{schedMsg.text}</div>}
+
+              {(home?.staff || []).map((st) => {
+                const extra = (st.extraWorkDates || []).find(x => x && x.date === schedEdit.date);
+                const dk = TEACHER_DK_KO[new Date(schedEdit.date + "T00:00:00").getDay()];
+                const regular = (st.workDays || {})[dk];
+                const hasRegular = regular !== undefined && regular !== null && regular !== false;
+                const open = schedEdit.openId === String(st.id);
+                return (
+                  <div key={st.id} style={{ border: `1px solid ${open ? "#1C66A5" : "#eceef4"}`, borderRadius: 13, padding: "12px 13px", marginBottom: 9, background: "#fff" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                      <span style={{ width: 32, height: 32, flexShrink: 0, borderRadius: 9, background: "#eef1f8", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13.5, fontWeight: 800, color: "#5a6a85" }}>{String(st.name || "?")[0]}</span>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: "block", fontSize: 14, fontWeight: 800, color: "#2A2A28" }}>{st.name} <span style={{ fontSize: 10.5, fontWeight: 800, color: "#7f8fa6" }}>{st.role}</span></span>
+                        <span style={{ display: "block", fontSize: 11.5, color: extra ? "#B45309" : hasRegular ? "#2A6FDB" : "#aab0bb", marginTop: 2, fontWeight: 700 }}>
+                          {extra ? `추가 근무 · ${extra.time ? fmtTime(extra.time) : "시간 미정"}` : hasRegular ? `${dk}요일 근무 · ${regular ? fmtTime(regular) : "시간 미정"}` : "이 날 근무 없음"}
+                        </span>
+                      </span>
+                      <button onClick={() => setSchedEdit(p => ({ ...p, openId: open ? "" : String(st.id) }))}
+                        style={{ flexShrink: 0, padding: "8px 11px", borderRadius: 9, border: "1px solid #dfe3ef", background: open ? "#182848" : "#fff", color: open ? "#fff" : "#5c6470", fontSize: 12.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+                        {open ? "닫기" : "고치기"}
+                      </button>
+                    </div>
+
+                    {open && (
+                      <div style={{ marginTop: 12, borderTop: "1px solid #f1f3f7", paddingTop: 12 }}>
+                        {/* 1) 이 날짜 추가 근무 */}
+                        <div style={{ fontSize: 12, fontWeight: 800, color: "#7f8fa6", marginBottom: 7 }}>이 날 추가 근무</div>
+                        {extra ? (
+                          <button onClick={() => saveStaffSchedule(st, { removeExtra: schedEdit.date })} disabled={schedBusy}
+                            style={{ width: "100%", padding: "11px", borderRadius: 10, border: "1px solid #f7c9cd", background: "#fff5f5", color: "#b03a2e", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", marginBottom: 12 }}>
+                            추가 근무 빼기 ({extra.time ? fmtTime(extra.time) : "시간 미정"})
+                          </button>
+                        ) : (
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 6, marginBottom: 12 }}>
+                            {TEACHER_TIME_CHOICES.map(t => (
+                              <button key={t} onClick={() => saveStaffSchedule(st, { addExtra: { date: schedEdit.date, time: t } })} disabled={schedBusy}
+                                style={{ padding: "9px 4px", borderRadius: 8, border: "1px solid #dfe3ef", background: "#fff", color: "#5c6470", fontSize: 12.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>{t}</button>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* 2) 요일 근무표 */}
+                        <div style={{ fontSize: 12, fontWeight: 800, color: "#7f8fa6", marginBottom: 7 }}>요일 근무표 — 요일을 눌러 켜고 끕니다</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,minmax(0,1fr))", gap: 4, marginBottom: 9 }}>
+                          {TEACHER_DK_KO.map(d => {
+                            const on = (st.workDays || {})[d] !== undefined;
+                            return (
+                              <button key={d} onClick={() => saveStaffSchedule(st, { toggleDay: d })} disabled={schedBusy}
+                                style={{ padding: "10px 0", borderRadius: 999, border: `1px solid ${on ? "#182848" : "#dfe3ef"}`, background: on ? "#182848" : "#fff", color: on ? "#fff" : "#9aa0ab", fontSize: 13, fontWeight: 900, cursor: "pointer", fontFamily: "inherit" }}>{d}</button>
+                            );
+                          })}
+                        </div>
+                        {TEACHER_DK_KO.filter(d => (st.workDays || {})[d] !== undefined).map(d => (
+                          <div key={d} style={{ marginBottom: 8 }}>
+                            <div style={{ fontSize: 11.5, fontWeight: 800, color: "#5c6470", marginBottom: 5 }}>{d}요일 출근 시간</div>
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 5 }}>
+                              {TEACHER_TIME_CHOICES.map(t => {
+                                const on = String((st.workDays || {})[d] || "") === t;
+                                return (
+                                  <button key={t} onClick={() => saveStaffSchedule(st, { setDayTime: { day: d, time: t } })} disabled={schedBusy}
+                                    style={{ padding: "8px 4px", borderRadius: 8, border: `1px solid ${on ? "#2A6FDB" : "#dfe3ef"}`, background: on ? "#2A6FDB" : "#fff", color: on ? "#fff" : "#7b8494", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>{t}</button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* ── 단어장 (본인 진도) + 단어 선별 ── */}
         {tab === "voca" && (
           <div>
@@ -4198,7 +4361,8 @@ function TeacherHome({ auth }) {
             <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden", border: "1px solid #eceef2" }}>
               {vocaMode === "pick"
                 ? <VocaFrame title="단어 선별" src={vocaPickSrc} />
-                : <VocaFrame title="내 단어장" src={vocaSrc} openTask={vocaTask} onOpenTaskDone={() => setVocaTask(null)} />}
+                : <VocaFrame title="내 단어장" src={vocaSrc} openTask={vocaTask} onOpenTaskDone={() => setVocaTask(null)}
+                    hwTask={vocaHwTask} onHwTaskDone={() => setVocaHwTask(null)} />}
             </div>
           </div>
         )}
