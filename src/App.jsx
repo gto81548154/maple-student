@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import QRCodeLib from "qrcode";
 // [0824 3차수] 배포 확인용 차수 표시 — 원장앱 APP_BUILD와 같은 장치. 학생 화면에는 안 띄우고
 //   마스터 홈(원장 전용) 머리글에만 뜬다(원장 결정). 새 차수 파일을 만들 때마다 이 글자를 같이 바꿀 것.
-const STUDENT_APP_BUILD = "학생앱 12차수 · 2026-08-27";
+const STUDENT_APP_BUILD = "학생앱 13차수 · 2026-08-27";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -2383,6 +2383,15 @@ function StudentLinkRecover({ apiBase }) {
         window.location.href = window.location.pathname + "?master=1";
         return;
       }
+      // [교사 08-27] 선생님 진입 — 계정관리의 이름 + 연락처 뒷 4자리가 맞으면 워커가 교사 링크를 내려준다.
+      //   링크를 잃어버렸거나 폰을 바꾼 선생님이 원장님을 거치지 않고 다시 들어오는 길.
+      if (d && d.success && d.teacher && d.tid && d.tk) {
+        saveTeacherLink(d.tid, d.tk);
+        const sp = new URLSearchParams();
+        sp.set("tid", d.tid); sp.set("tk", d.tk);
+        window.location.href = window.location.pathname + "?" + sp.toString();
+        return;
+      }
       if (d && d.success && d.id) {
         try { localStorage.setItem(LINK_STORE_KEY, JSON.stringify({ id: d.id, t: d.t || "" })); } catch (e) {}
         const sp = new URLSearchParams();
@@ -2402,7 +2411,7 @@ function StudentLinkRecover({ apiBase }) {
       <div style={{ width: "100%", maxWidth: 340, textAlign: "center" }}>
         <div style={{ fontSize: 40, marginBottom: 10 }}>👋</div>
         <div style={{ fontSize: 19, fontWeight: 800, color: "#222", marginBottom: 6 }}>처음 한 번만 확인할게요</div>
-        <div style={{ fontSize: 13.5, color: "#888", lineHeight: 1.6, marginBottom: 22 }}>이름과 전화번호 뒷 4자리를 입력하면<br />다음부터 바로 열려요</div>
+        <div style={{ fontSize: 13.5, color: "#888", lineHeight: 1.6, marginBottom: 22 }}>이름과 전화번호 뒷 4자리를 입력하면<br />다음부터 바로 열려요<br /><span style={{ fontSize: 12.5, color: "#a8aeb8" }}>선생님도 같은 방법으로 들어옵니다</span></div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10, textAlign: "left" }}>
           <div>
             <label style={{ fontSize: 12, fontWeight: 700, color: "#666", display: "block", marginBottom: 5 }}>이름</label>
