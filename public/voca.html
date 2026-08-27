@@ -740,6 +740,12 @@ const STU = (() => {
     api: (q.get('api') || '').replace(/\/+$/, ''),
     books: (q.get('books') || '').split(',').map(x => x.trim()).filter(Boolean),
     master: q.get('mk') === '1',   // 원장 전용 앱(마스터 홈)에서 열렸는지 — 원장 전용 책까지 책장에 올린다
+    /* [교사 선별 2026-08-27] 선별 권한과 "원장 전용 책 진열"을 갈랐다.
+     *   pk=1   : 단어 선별을 할 수 있다(선생님도 켜짐). mk=1은 여기에 더해 원장 전용 책까지 진열한다.
+     *   pkid   : 선별본을 누구 것으로 저장·조회할지 가리는 이름표(예: t_1724). 없으면 원장 정본.
+     *            선생님 선별은 원장 정본을 절대 덮지 않는다 — 학생 숙제 출제는 원장 정본만 쓴다. */
+    pk: q.get('pk') === '1',
+    pkid: (q.get('pkid') || '').trim(),
     /* [내신 2차수] 학교 시험 단어용 — 학생앱이 붙여 준다.
      *   sc  : 학생의 학교코드 (예: 하남고1) — 어느 교과서 단어책을 쓰는지 고르는 열쇠
      *   nsl : 이번 시험범위 과 번호 (예: 3,4) — 이 과에 해당하는 유닛만 진열한다
@@ -751,11 +757,15 @@ const STU = (() => {
 
 /* ───────── 저장소 (window.storage → localStorage → 메모리) ───────── */
 /* [0818 4차수] 선별 전용 모드 — 마스터 홈의 [단어 선별] 탭이 ?pick=1 로 연다.
- * 책장에서 책을 고르면 학습 홈을 건너뛰고 곧장 유닛 목록(선별 화면)으로 간다. 원장만 켜진다. */
+ * 책장에서 책을 고르면 학습 홈을 건너뛰고 곧장 유닛 목록(선별 화면)으로 간다.
+ * [교사 선별 2026-08-27] 원장(mk=1) 또는 선별 권한을 받은 선생님(pk=1)이면 켜진다. */
+const CAN_PICK = !!(STU && (STU.master || STU.pk));
 const PICKMODE = (() => {
   const q = new URLSearchParams(location.search);
-  return q.get('pick') === '1' && !!(STU && STU.master);
+  return q.get('pick') === '1' && CAN_PICK;
 })();
+/* [교사 선별] 선별본 파일 이름 — 원장은 {책id}.json(정본), 선생님은 {pkid}_{책id}.json(따로 보관). */
+const pickFileName = (bookId) => `${(STU && STU.pkid) ? STU.pkid + '_' : ''}${bookId}.json`;
 const KEY = STU ? `maplevoca_v1_s${STU.id}` : 'maplevoca_v1';   // 학생 모드: 기기 공유 대비 학생별 분리
 const store = {
   mem: null,
@@ -1509,8 +1519,8 @@ function renderHome(){
   $('#statBar').style.width = (correct/DATA.length*100).toFixed(1) + '%';
   $('#stampHome').innerHTML = `<b>${S.round}</b>회독`;
   $('#crownHome').textContent = S.crowns > 0 ? '♛'.repeat(S.crowns) : '';
-  const pb = $('#btnPick');                                   // [숙제 2차수] 단어 선별하기 — 마스터(원장)만
-  if (pb) pb.style.display = (STU && STU.master) ? 'block' : 'none';
+  const pb = $('#btnPick');                                   // [숙제 2차수] 단어 선별하기 — [교사 선별 08-27] 선생님도
+  if (pb) pb.style.display = CAN_PICK ? 'block' : 'none';
   const exN = DATA.filter(w => S.words[w.id]?.x).length;      // 아는 단어 제외(카드·블링크) 개수
   $('#exCount').textContent = exN;
   $('#exLink').style.display = exN ? 'block' : 'none';
@@ -2527,14 +2537,14 @@ async function loadPicks(bookId){
   const base = pickBase();
   if (!base) return {};
   try{
-    const r = await fetch(`${base.replace(/\/+$/, '')}/${bookId}.json`, { cache:'no-store' });
+    const r = await fetch(`${base.replace(/\/+$/, '')}/${pickFileName(bookId)}`, { cache:'no-store' });
     if (!r.ok) return null;
     const j = await r.json();
     return (j && typeof j === 'object' && !Array.isArray(j)) ? j : {};
   }catch(e){ return null; }
 }
 async function enterPick(){
-  if (!BOOK || !STU || !STU.master) return;
+  if (!BOOK || !STU || !CAN_PICK) return;
   const p = await loadPicks(BOOK.id);
   if (p === null) toast('저장된 선별 목록을 못 불러왔어요 — 지금 보이는 "미선별"은 진짜가 아닐 수 있어요. 인터넷 확인 후 다시 들어와 주세요');
   PICKS = p || {};
@@ -2616,6 +2626,7 @@ function pkRefresh(list){
 async function pkPut(lec, ids){ // 서버 저장 — 성공하면 true
   const base = pickBase();
   if (!base || !STU){ toast('서버 주소가 없어 저장할 수 없어요'); return false; }
+  // [교사 선별 08-27] 저장 위치는 워커가 열쇠(id·t)로 정한다 — 주소를 손대도 남의 선별본은 못 덮는다.
   const u = `${STU.api}/voca/picks?id=${encodeURIComponent(STU.id)}&t=${encodeURIComponent(STU.t)}&book=${encodeURIComponent(BOOK.id)}`;
   try{
     const r = await fetch(u, { method:'PUT', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ lec, ids }) });
