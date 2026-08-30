@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 // [4차] QR 만드는 라이브러리. 앱 안에 같이 들어가므로 인터넷 없이도 QR이 그려진다.
 //       설치: npm install qrcode   (예전에 쓰던 cdnjs qrcodejs와는 다른 물건이다)
 import QRCodeLib from "qrcode";
 // [0824 3차수] 배포 확인용 차수 표시 — 원장앱 APP_BUILD와 같은 장치. 학생 화면에는 안 띄우고
 //   마스터 홈(원장 전용) 머리글에만 뜬다(원장 결정). 새 차수 파일을 만들 때마다 이 글자를 같이 바꿀 것.
-const STUDENT_APP_BUILD = "학생앱 15차수 · 2026-08-27";
+const STUDENT_APP_BUILD = "학생앱 78차수 · 2026-08-30";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -30,11 +30,12 @@ const VOCA_TAB_ENABLED = true;
 // 내부 스크롤을 없앤다. 반대로 여기서는 "지금 보이는 영역"(maplVis)을 계속 알려줘
 // 마플보카의 모달·토스트가 화면 안에 뜨게 하고, 화면 전환(maplVocaScroll) 때는 맨 위로 스크롤한다.
 // 옛 voca.html(높이를 안 보내는 판)과 섞이면 아래가 잘리므로 두 파일은 반드시 한 커밋으로 배포.
-function VocaFrame({ title, src, topOffset = 60, openLast = false, onOpenLastDone, openTask = null, onOpenTaskDone, hwTask = null, onHwTaskDone }) {
+function VocaFrame({ title, src, topOffset = 60, openLast = false, onOpenLastDone, openTask = null, onOpenTaskDone, hwTask = null, onHwTaskDone, onPicked }) {
   const ref = useRef(null);
   const [h, setH] = useState(560);
   // [0812] 홈 카드 "단어장"으로 들어온 경우: voca가 살아있다는 첫 신호(높이)가 오면
   // "마지막 책 열어줘"를 딱 한 번 보낸다. 탭을 직접 누른 경우(openLast=false)는 예전처럼 책장부터.
+  const onPickedRef = useRef(onPicked);
   const openLastArmedRef = useRef(false);
   const openLastDoneRef = useRef(onOpenLastDone);
   openLastDoneRef.current = onOpenLastDone;
@@ -83,6 +84,8 @@ function VocaFrame({ title, src, topOffset = 60, openLast = false, onOpenLastDon
           if (openLastDoneRef.current) openLastDoneRef.current();
         }
       }
+      // [선별 78차수] 선생님이 유닛 하나를 저장할 때마다 마플보카가 알려준다 → 선생님 홈 카드를 새로 받아온다
+      if (d.type === "maplVocaPicked" && onPickedRef.current) onPickedRef.current();
       if (d.type === "maplVocaScroll") {
         const r = el.getBoundingClientRect();
         window.scrollTo({ top: Math.max(0, window.scrollY + r.top + (d.y || 0) - topOffset), behavior: "auto" });
@@ -394,14 +397,45 @@ const teacherLinkDead = () => {
   try { window.location.href = window.location.pathname + "?teacher_dead=1"; } catch (e) {}
 };
 
+// [교사 아이콘 08-30] 선생님 폰·PC에 깔리는 "마플쌤" 아이콘(초록) — 학생앱(남색)과 다른 앱으로 깔린다.
+//   시작 주소 = 주소창에서 쿼리를 통째로 뗀 것. 학생 id도, 열쇠(tid·tk)도 아이콘에 안 박힌다.
+//   → 원장이 [재발급]을 눌러 열쇠가 바뀌어도 깔아 둔 아이콘이 안 죽고,
+//     앱을 열면 위 restoreStudentLink가 폰에 저장해 둔 열쇠로 선생님 홈을 되살린다.
+const setupTeacherPwa = () => {
+  try {
+    if (!PWA_ICON_BASE) return;
+    const head = document.head;
+    const ensure = (sel, make) => { if (!head.querySelector(sel)) head.appendChild(make()); };
+    const u = new URL(window.location.href);
+    const startUrl = u.origin + u.pathname;   // 쿼리 없음
+    ensure('link[rel="manifest"]', () => {
+      const l = document.createElement("link");
+      l.rel = "manifest";
+      l.crossOrigin = "anonymous";
+      l.href = `${PWA_ICON_BASE}/teacher-manifest.json?u=${encodeURIComponent(startUrl)}&scope=${encodeURIComponent(startUrl)}`;
+      return l;
+    });
+    ensure('link[rel="apple-touch-icon"]', () => { const l = document.createElement("link"); l.rel = "apple-touch-icon"; l.sizes = "180x180"; l.href = `${PWA_ICON_BASE}/teacher-apple-touch-icon-180.png`; return l; });
+    const fav = head.querySelector('link[rel="icon"], link[rel="shortcut icon"]') || (() => { const l = document.createElement("link"); l.rel = "icon"; head.appendChild(l); return l; })();
+    fav.type = "image/png";
+    fav.href = `${PWA_ICON_BASE}/teacher-icon-192.png`;
+    ensure('meta[name="theme-color"]', () => { const m = document.createElement("meta"); m.name = "theme-color"; m.content = "#0b543d"; return m; });
+    ensure('meta[name="apple-mobile-web-app-capable"]', () => { const m = document.createElement("meta"); m.name = "apple-mobile-web-app-capable"; m.content = "yes"; return m; });
+    ensure('meta[name="apple-mobile-web-app-title"]', () => { const m = document.createElement("meta"); m.name = "apple-mobile-web-app-title"; m.content = "마플쌤"; return m; });
+  } catch (e) { console.warn("선생님 PWA 셋업 실패:", e?.message || e); }
+};
+
 // manifest(학생별 start_url 포함)와 아이콘 메타를 런타임 주입한다.
 // index.html을 안 건드리기 위한 방식 — 설치된 아이콘을 누르면 "그 학생 링크"로 열린다.
 const setupStudentPwa = () => {
   try {
     if (!PWA_ICON_BASE) return;
     // [마스터] 마스터 모드 주소(?master=1, 학생 id 포함 가능)를 설치 아이콘의 시작 주소로 심으면 안 된다.
-    // [교사 08-27] 선생님 폰도 같다 — 설치 아이콘이 학생 링크로 굳어지면 안 된다.
-    if (IS_STAFF_VIEW) return;
+    if (IS_MASTER_MODE) return;
+    // [교사 아이콘 08-30] 선생님은 위 setupTeacherPwa로 따로 깐다.
+    //   08-27에는 "설치 아이콘이 학생 링크로 굳어진다"는 이유로 통째로 껐지만,
+    //   시작 주소에서 쿼리를 통째로 떼면 그 걱정이 사라진다.
+    if (IS_TEACHER_MODE) { setupTeacherPwa(); return; }
     const head = document.head;
     const ensure = (sel, make) => { if (!head.querySelector(sel)) head.appendChild(make()); };
     const u = new URL(window.location.href);
@@ -1360,6 +1394,116 @@ const buildStudentExamDdays = (student, exams = [], limit = 2) => {
 
   // 학생 화면은 복잡하지 않게 내신 1개 + 모의고사 1개만 보여준다.
   return [nextSchoolExam, nextMockExam].filter(Boolean).slice(0, limit);
+};
+
+// ─── [오늘 수업 요약 16차수 · 원장 확정 C안] ────────────────────────────────
+// 선생님이 수업 들어가기 전에 한 번 훑는 화면의 재료를 만든다.
+//   위:  오늘 챙길 것  — 오늘 메모 → 📌 고정 메모 → 시험 D-day → 보강·시간변경
+//        (오늘 위 · 고정 아래 순서는 원장앱 To-Do 특이사항 띠와 같은 규칙이다)
+//   아래: 오는 순서    — 같은 시간끼리 묶는다. 사람 수(명)는 원장 지시대로 안 띄운다.
+// 순수 계산 — 오늘 날짜를 밖에서 받는다(시험도 이 함수를 그대로 돌린다).
+
+// 그 날짜 기준으로 학생의 가장 가까운 시험 하나. 끝난 시험은 안 센다.
+// 영어일(engDates[학년])이 있으면 그 날 기준 — 영어학원이라 원장앱 D-day 칩과 같은 규칙.
+const teacherExamDdayOn = (student, exams = [], ds = "") => {
+  const day = String(ds || "").slice(0, 10);
+  if (!student || !Array.isArray(exams) || !day) return null;
+  const diffTo = (t) => {
+    const a = new Date(String(t || "").slice(0, 10) + "T00:00:00");
+    const b = new Date(day + "T00:00:00");
+    if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return null;
+    return Math.round((a.getTime() - b.getTime()) / 86400000);
+  };
+  const items = exams
+    .filter(e => e && !e.deletedAt && isExamVisibleForStudentDday(e, student))
+    .map(e => {
+      const { start, end } = getExamStartEndForDday(e);
+      const target = getExamTargetDateForDday(e, student);
+      const diff = diffTo(target);
+      if (diff === null) return null;
+      const endDs = String(end || start || "").slice(0, 10);
+      if (endDs && endDs < day) return null;              // 이미 끝난 시험
+      const startDs = String(start || "").slice(0, 10);
+      const ongoing = !!(startDs && endDs && startDs <= day && day <= endDs);
+      const engDs = String(getEngExamDateForDday(e, student) || "").slice(0, 10);
+      const engDone = !!engDs && engDs < day;
+      const school = String(e.school || "").trim();
+      const kind = String(e.kind || "").trim();
+      const type = String(e.type || "");
+      const title = type === "모의고사"
+        ? (e.name || "모의고사")
+        : ([school, kind].filter(Boolean).join(" ") || e.name || "내신");
+      return {
+        id: String(e.id || `${title}_${target}`),
+        title,
+        type,
+        diff,
+        ongoing,
+        label: engDone ? "영어 끝" : (ongoing && diff < 0 ? "시험 중" : formatDdayLabel(diff)),
+        sortKey: engDone ? 9999 : (diff < 0 ? 0 : diff),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.sortKey - b.sortKey);
+  return items[0] || null;
+};
+
+// 시험 줄에 띄울지 — 진행 중이거나 2주 안이면 "오늘 챙길 것"이다. 그보다 멀면 안 띄운다.
+const TEACHER_BRIEF_EXAM_DAYS = 14;
+const teacherBriefExamWorth = (x) => !!x && x.label !== "영어 끝" && (x.ongoing || (x.diff >= 0 && x.diff <= TEACHER_BRIEF_EXAM_DAYS));
+
+// 시간 문자열을 정렬용 숫자로 (1:00~9:30 전부 오후 — computeTeacherDayRoster와 같은 규칙)
+const teacherBriefTimeVal = (t) => {
+  const m = String(t || "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return 9999;
+  const h = Number(m[1]);
+  return (h < 12 ? h + 12 : h) * 60 + Number(m[2]);
+};
+
+const buildTeacherDayBrief = (roll = [], ds = "", exams = []) => {
+  const day = String(ds || "").slice(0, 10);
+  const rows = Array.isArray(roll) ? roll.filter(r => r && r.student) : [];
+  const who = (r) => ({ id: String(r.student.id ?? ""), name: String(r.student.name || "") });
+  const alerts = [];
+
+  // ① 그날만 뜨는 메모 (원장앱: 흰 바탕 + 보라 테두리, 위쪽)
+  rows.forEach(r => {
+    const t = String(((r.student.todoNotes || {})[day]) || "").trim();
+    if (t) alerts.push({ kind: "today", icon: "🔔", text: t, names: [who(r)], tone: "today" });
+  });
+  // ② 📌 고정 메모 (원장앱: 보라 꽉 참, 아래쪽 — 늘 그대로인 배경 정보라 뒤로 내린다)
+  rows.forEach(r => {
+    const t = String(r.student.todoPin || "").trim();
+    if (t) alerts.push({ kind: "pin", icon: "📌", text: t, names: [who(r)], tone: "pin" });
+  });
+  // ③ 시험 D-day — 같은 시험은 한 줄로 묶고 이름을 옆에 단다
+  const examMap = new Map();
+  rows.forEach(r => {
+    const x = teacherExamDdayOn(r.student, exams, day);
+    if (!teacherBriefExamWorth(x)) return;
+    const key = `${x.title} ${x.label}`;
+    if (!examMap.has(key)) examMap.set(key, { kind: "exam", icon: "📅", text: key, names: [], sortKey: x.sortKey, tone: (x.ongoing || x.diff <= 7) ? "hot" : "warm" });
+    examMap.get(key).names.push(who(r));
+  });
+  [...examMap.values()].sort((a, b) => a.sortKey - b.sortKey).forEach(v => { const { sortKey, ...rest } = v; alerts.push(rest); });
+  // ④ 보강·시간변경 — 그날만 오는 학생
+  ["보강", "시간변경"].forEach(kindName => {
+    const hit = rows.filter(r => r.kind === kindName);
+    if (hit.length) alerts.push({ kind: "makeup", icon: kindName === "보강" ? "🔁" : "🔄", text: kindName, names: hit.map(who), tone: "info" });
+  });
+
+  // 오는 순서 — 같은 시간끼리 묶는다
+  const slotMap = new Map();
+  rows.forEach(r => {
+    const t = String(r.time || "");
+    if (!slotMap.has(t)) slotMap.set(t, []);
+    slotMap.get(t).push({ ...who(r), kind: r.kind || "정규" });
+  });
+  const slots = [...slotMap.entries()]
+    .sort((a, b) => teacherBriefTimeVal(a[0]) - teacherBriefTimeVal(b[0]))
+    .map(([time, list]) => ({ time: time || "시간 미정", rows: list }));
+
+  return { alerts, slots };
 };
 
 // ─── 이번 내신 시험범위 카드 (examr3 학생 노출 — 워커가 본인 학교 항목만 내려줌) ───
@@ -3697,6 +3841,9 @@ function TeacherHome({ auth }) {
   const [playing, setPlaying] = useState(null);
   const [busyItem, setBusyItem] = useState("");
   const [vocaTask, setVocaTask] = useState(null);   // 숙제단어 → 마플보카로 보낼 {book, lecs} (그냥 펼쳐 보기)
+  // [요약 16차수 원장 확정 C안] 홈의 "3. 오늘 수업"을 누르면 학생 명단이 아니라 요약 화면이 뜬다.
+  //   값이 날짜 문자열이면 그 날 요약을 보고 있는 것, ""이면 홈 대시보드.
+  const [briefDay, setBriefDay] = useState("");
   // [14차수 원장 지시] 학생 "앱 단어"와 같은 숙제 TEST — 범위에서 10개가 자동으로 뽑혀 객관식으로 나온다.
   //   원장 선별본이 있으면 그 단어가, 없으면 그 유닛에서 10개가 나간다(학생과 완전히 같은 규칙).
   const [vocaHwTask, setVocaHwTask] = useState(null);
@@ -3743,6 +3890,16 @@ function TeacherHome({ auth }) {
   useEffect(() => () => {
     const prev = openedVideoRef.current;
     if (prev) sendTeacherWatch(prev, (Date.now() - openedAtRef.current) / 1000);
+  }, []);
+
+  // [선별 78차수] 선생님 홈만 다시 받아온다 — 단어를 고르고 나면 "몇 칸 골랐는지"가 바로 바뀌어야 한다
+  const reloadHome = useCallback(async () => {
+    try {
+      const r = await fetch(teacherUrl("/teacher/home"), { cache: "no-store" });
+      if (r.status === 403) { teacherLinkDead(); return; }
+      const d = await r.json().catch(() => null);
+      if (d && d.success) setHome(d);
+    } catch (e) { /* 실패하면 다음에 다시 — 화면은 그대로 둔다 */ }
   }, []);
 
   useEffect(() => {
@@ -3863,6 +4020,42 @@ function TeacherHome({ auth }) {
     return true;
   };
 
+  /* [선별 78차수 · 원장 확정] 오늘 칸을 전부 10개씩 골랐으면 완료 기록을 자동으로 올린다.
+   * 선생님이 따로 [완료] 를 누를 필요가 없다 — "자동으로 선별할 수 있게" 라는 원장 지시 그대로.
+   * 마감(늦음 판정)은 시험과 같게 그날 출근 시각을 보낸다. 이미 오늘 기록이 있으면 안 올린다. */
+  const pickSentRef = useRef("");
+  useEffect(() => {
+    const hw = home && home.hw;
+    if (!hw || hw.mode !== "pick" || !hw.pickDone || hw.done) return;
+    if (!WORKER_ORIGIN || !home.vocaId) return;
+    const stamp = `${today}|${hw.bookId}|${(hw.range || []).join(",")}`;
+    if (pickSentRef.current === stamp) return;      // 한 번만 올린다
+    pickSentRef.current = stamp;
+    let dead = false;
+    (async () => {
+      let deadline = "";
+      try {
+        const w = teacherWorkOn(teacher, today);
+        if (w && w.time) {
+          const [hh, mm] = String(w.time).split(":");
+          const dl = new Date(today + "T00:00:00");
+          dl.setHours(academyHour24(hh), parseInt(mm, 10) || 0, 0, 0);
+          deadline = dl.toISOString();
+        }
+      } catch (e) { deadline = ""; }
+      try {
+        const r = await fetch(`${WORKER_ORIGIN}/voca/hw-clear?id=${encodeURIComponent(home.vocaId)}&t=${encodeURIComponent(auth.tk)}`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date: today, book: hw.bookId, lecs: hw.range,
+            n: (hw.range || []).length * (hw.pickGoal || 10), w: 0, r: 0, k: "pick", deadline }),
+        });
+        if (!dead && r.ok) reloadHome();
+        else if (!dead) pickSentRef.current = "";    // 실패하면 다음 기회에 다시
+      } catch (e) { if (!dead) pickSentRef.current = ""; }
+    })();
+    return () => { dead = true; };
+  }, [home, today, teacher, auth.tk, reloadHome]);
+
   // [10차수 원장 지시] 학생 화면은 새 창에서 연다 — 선생님 홈을 그대로 두고 학생만 확인하고 닫는다.
   const openStudent = (s) => {
     const sp = new URLSearchParams();
@@ -3895,6 +4088,11 @@ function TeacherHome({ auth }) {
     extra.set("pick", "1");
     extra.set("pk", "1");
     if (home?.pickPrefix) extra.set("pkid", home.pickPrefix);
+    // [선별 78차수] 오늘 골라야 하는 칸 — 마플보카가 이 칸들을 맨 위에 따로 모아 보여준다
+    if (home?.hw?.mode === "pick" && Array.isArray(home?.hw?.range) && home.hw.range.length) {
+      extra.set("plec", home.hw.range.join(","));
+      extra.set("pbook", String(home.hw.bookId || ""));
+    }
     return `${vocaSrc}&${extra.toString()}`;
   })();
 
@@ -3925,8 +4123,9 @@ function TeacherHome({ auth }) {
             <span style={{ marginLeft: "auto", fontSize: 11.5, color: "rgba(255,255,255,0.55)" }}>{home?.isOwner ? "원장 전용" : "선생님 전용"}</span>
           </div>
           {/* [12차수 원장 지시] 사람 수는 화면에 띄우지 않는다 */}
+          {/* [16차수 원장 지시] 개수도 안 띄운다 — "강의 204개" 같은 숫자를 선생님 화면에서 전부 뺐다 */}
           <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.7)", marginTop: 6 }}>
-            {fmtDateKR(today)} · 강의 {videoCount}개
+            {fmtDateKR(today)}
           </div>
         </div>
       </div>
@@ -3941,7 +4140,7 @@ function TeacherHome({ auth }) {
             { key: "videos", label: "강의" },
             { key: "students", label: "학생" },
           ].map((t) => (
-            <button key={t.key} onClick={() => setTab(t.key)} style={{
+            <button key={t.key} onClick={() => { setTab(t.key); setBriefDay(""); }} style={{
               flex: "1 0 auto", whiteSpace: "nowrap", padding: "14px 12px", border: "none", cursor: "pointer", background: "transparent",
               fontSize: 14, fontWeight: tab === t.key ? 700 : 500,
               color: tab === t.key ? "#182848" : "#9aa0ab",
@@ -3956,7 +4155,90 @@ function TeacherHome({ auth }) {
         {err && <div style={{ marginBottom: 12, padding: "9px 12px", borderRadius: 10, background: "#fff7ed", border: "1px solid #fed7aa", color: "#c2410c", fontSize: 12, fontWeight: 700 }}>⚠️ {err}</div>}
 
         {/* ── 홈 (대시보드) ── */}
-        {tab === "home" && (loading ? busyBox : (() => {
+        {/* ── [오늘 수업 요약 16차수 · 원장 확정 C안] 홈의 3번 카드에서 들어온다 ──
+            위: 오늘 챙길 것(오늘 메모 → 📌 고정 → 시험 → 보강) · 아래: 오는 순서(같은 시간끼리)
+            사람 수(명)는 원장 지시대로 어디에도 안 띄운다. 이름을 누르면 그 학생 화면이 새 창으로 열린다. */}
+        {tab === "home" && !loading && briefDay && (() => {
+          const brief = buildTeacherDayBrief(
+            computeTeacherDayRoster(roster?.students || [], roster?.makeups || [], briefDay),
+            briefDay,
+            roster?.exams || []
+          );
+          const toneOf = (t) => (
+            t === "today" ? { bg: "#fff", bd: "#c9b6f5", fg: "#5b21b6" } :
+            t === "pin"   ? { bg: "#f3e8ff", bd: "#e2d3fb", fg: "#5b21b6" } :
+            t === "hot"   ? { bg: "#fff0f0", bd: "#f7c9cd", fg: "#b03a2e" } :
+            t === "warm"  ? { bg: "#fff8e1", bd: "#ffe4a1", fg: "#a45b00" } :
+                            { bg: "#eef1ff", bd: "#d7dcfb", fg: "#2a4bb8" }
+          );
+          const nameBtn = (p, extra) => (
+            <button key={p.id} onClick={() => openStudent(p)}
+              style={{ border: "none", background: "transparent", padding: 0, margin: 0, cursor: "pointer", fontFamily: "inherit",
+                fontSize: 13.5, fontWeight: 700, color: "#1a1a2e", textAlign: "left", ...(extra || {}) }}>{p.name}</button>
+          );
+          return (
+            <div>
+              <button onClick={() => setBriefDay("")}
+                style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "8px 12px", marginBottom: 12, borderRadius: 9, border: "1px solid #dfe3ef", background: "#fff", color: "#555", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>← 홈</button>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                <span style={{ fontSize: 17, fontWeight: 800, color: "#1a1a2e" }}>{fmtDateKR(briefDay)}</span>
+                {briefDay === today && <span style={{ fontSize: 11, fontWeight: 800, color: "#1C66A5", background: "#eef1ff", borderRadius: 999, padding: "3px 9px" }}>오늘</span>}
+              </div>
+
+              {/* ① 오늘 챙길 것 */}
+              <div style={{ fontSize: 12, fontWeight: 800, color: "#7f8fa6", marginBottom: 8 }}>오늘 챙길 것</div>
+              {brief.alerts.length === 0 ? (
+                <div style={{ ...cardBox, cursor: "default", color: "#9aa0ab", fontSize: 13, fontWeight: 600, marginBottom: 18 }}>
+                  오늘은 특별히 챙길 것이 없습니다.
+                </div>
+              ) : (
+                <div style={{ marginBottom: 18 }}>
+                  {brief.alerts.map((a, i) => {
+                    const c = toneOf(a.tone);
+                    return (
+                      <div key={`${a.kind}_${i}`} style={{ display: "flex", alignItems: "flex-start", gap: 9, padding: "11px 12px", marginBottom: 7, borderRadius: 11, background: c.bg, border: `1px solid ${c.bd}` }}>
+                        <span style={{ flexShrink: 0, fontSize: 13, lineHeight: 1.45 }}>{a.icon}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13.5, fontWeight: 800, color: c.fg, lineHeight: 1.45, wordBreak: "keep-all" }}>{a.text}</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 8px", marginTop: 4 }}>
+                            {a.names.map(p => nameBtn(p, { fontSize: 12.5, fontWeight: 700, color: "#5c6470" }))}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* ② 오는 순서 */}
+              <div style={{ fontSize: 12, fontWeight: 800, color: "#7f8fa6", marginBottom: 8 }}>오는 순서</div>
+              {brief.slots.length === 0 ? (
+                <div style={{ ...cardBox, cursor: "default", color: "#9aa0ab", fontSize: 13, fontWeight: 600 }}>이 날 수업하는 학생이 없습니다.</div>
+              ) : (
+                <div style={{ background: "#fff", border: "1px solid #e8eaef", borderRadius: 14, overflow: "hidden" }}>
+                  {brief.slots.map((sl, i) => (
+                    <div key={sl.time} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 14px", borderTop: i === 0 ? "none" : "1px solid #f1f3f7" }}>
+                      <span style={{ flexShrink: 0, minWidth: 52, fontSize: 13, fontWeight: 900, color: "#1C66A5" }}>{sl.time}</span>
+                      <div style={{ flex: 1, minWidth: 0, display: "flex", flexWrap: "wrap", gap: "6px 10px" }}>
+                        {sl.rows.map(p => (
+                          <span key={p.id} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                            {nameBtn(p)}
+                            {p.kind !== "정규" && <span style={{ fontSize: 10, fontWeight: 800, color: "#a45b00", background: "#fff8e1", borderRadius: 999, padding: "2px 6px" }}>{p.kind}</span>}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ fontSize: 11.5, color: "#9aa0ab", fontWeight: 600, marginTop: 12 }}>이름을 누르면 그 학생의 앱 화면이 새 창으로 열립니다 (보기 전용).</div>
+            </div>
+          );
+        })()}
+
+        {tab === "home" && !briefDay && (loading ? busyBox : (() => {
           const work = teacherWorkOn(teacher, today);
           // 다음 출근일 — 오늘 이후 30일 안에서 처음 걸리는 날
           let nextWork = null;
@@ -4012,26 +4294,55 @@ function TeacherHome({ auth }) {
                 )}
               </div>
 
-              {/* 2. 숙제단어 */}
-              {home?.hw ? (
-                <button onClick={() => { startTeacherHwTest(); setVocaMode("study"); setTab("voca"); }} style={cardBox}>
+              {/* 2. 숙제단어 — [선별 78차수] 원장이 정한 방식에 따라 "단어 선별"이거나 "단어 시험"이다.
+                   선별이 기본. 누르면 선별은 [단어 선별] 탭으로, 시험은 예전처럼 숙제 TEST로 간다. */}
+              {home?.hw ? (() => {
+                const hw = home.hw;
+                const isPick = hw.mode === "pick";
+                const goal = hw.pickGoal || 10;
+                const units = Array.isArray(hw.range) ? hw.range : [];
+                const doneCnt = units.filter(u => ((hw.picked || {})[String(u)] || 0) >= goal).length;
+                const stamp = hw.done ? (hw.done.late ? "늦게 완료" : "완료") : "";
+                return (
+                <button onClick={() => {
+                  if (isPick) { setVocaTask(null); setVocaMode("pick"); setTab("voca"); }
+                  else { startTeacherHwTest(); setVocaMode("study"); setTab("voca"); }
+                }} style={cardBox}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 12, fontWeight: 800, color: "#7c3aed" }}>2. 숙제단어</span>
-                    {home.hw.atEnd && <span style={{ marginLeft: "auto", fontSize: 10.5, fontWeight: 800, color: "#c2410c", background: "#fff7ed", padding: "2px 8px", borderRadius: 999 }}>책 끝</span>}
+                    <span style={{ fontSize: 12, fontWeight: 800, color: "#7c3aed" }}>2. {isPick ? "단어 선별" : "단어 시험"}</span>
+                    {stamp && <span style={{ fontSize: 10.5, fontWeight: 800, color: "#0f766e", background: "#ecfdf5", padding: "2px 8px", borderRadius: 999 }}>{stamp}</span>}
+                    {hw.atEnd && <span style={{ marginLeft: "auto", fontSize: 10.5, fontWeight: 800, color: "#c2410c", background: "#fff7ed", padding: "2px 8px", borderRadius: 999 }}>책 끝</span>}
                   </div>
-                  <div style={cardMain}>{home.hw.title}</div>
-                  <div style={{ fontSize: 17, fontWeight: 900, color: "#7c3aed", letterSpacing: -0.3, marginTop: 5 }}>{home.hw.unit} {home.hw.range.join(", ")}</div>
-                  <div style={cardSub}>눌러서 숙제 TEST 시작 ›</div>
-                </button>
-              ) : (
+                  <div style={cardMain}>{hw.title}</div>
+                  <div style={{ fontSize: 17, fontWeight: 900, color: "#7c3aed", letterSpacing: -0.3, marginTop: 5 }}>{hw.unit} {fmtLecRange(units)}</div>
+                  {isPick && (
+                    <div style={{ marginTop: 7 }}>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        {units.map(u => {
+                          const got = (hw.picked || {})[String(u)] || 0;
+                          const full = got >= goal;
+                          return <span key={u} title={hw.unit + " " + u + " · " + got + "개"}
+                            style={{ flex: 1, height: 7, borderRadius: 999, background: full ? "#7c3aed" : (got ? "#ddd6fe" : "#eceef4") }} />;
+                        })}
+                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "#7c3aed", marginTop: 6 }}>
+                        {doneCnt}/{units.length}칸 완료 · 칸마다 {goal}개씩 고르기
+                      </div>
+                    </div>
+                  )}
+                  <div style={cardSub}>{isPick
+                    ? (hw.pickDone ? "오늘 몫을 다 골랐어요 · 눌러서 확인 ›" : "눌러서 단어 고르기 ›")
+                    : "눌러서 숙제 TEST 시작 ›"}</div>
+                </button>);
+              })() : (
                 <div style={{ ...cardBox, cursor: "default" }}>
                   <div style={{ fontSize: 12, fontWeight: 800, color: "#7c3aed" }}>2. 숙제단어</div>
                   <div style={{ fontSize: 13, color: "#9aa0ab", marginTop: 7, lineHeight: 1.6 }}>지금은 받은 단어 숙제가 없습니다.<br />원장님이 계정관리에서 책을 정해 주시면 여기에 뜹니다.</div>
                 </div>
               )}
 
-              {/* 3. 오늘 수업 학생 */}
-              <button onClick={() => { setDateStr(today); setTab("students"); }} style={cardBox}>
+              {/* 3. 오늘 수업 학생 — [16차수 원장 지시] 명단이 아니라 요약 화면으로 간다 */}
+              <button onClick={() => { setDateStr(today); setBriefDay(today); }} style={cardBox}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 12, fontWeight: 800, color: "#1C66A5" }}>3. 오늘 수업</span>
                   <span style={{ marginLeft: "auto", fontSize: 11.5, color: "#9aa0ab", fontWeight: 600 }}>{fmtDateKR(today)}</span>
@@ -4041,14 +4352,13 @@ function TeacherHome({ auth }) {
                     ? todayRoll.slice(0, 6).map(r => r.student.name).join(" · ") + (todayRoll.length > 6 ? " …" : "")
                     : "오늘 수업하는 학생이 없습니다"}
                 </div>
-                {todayRoll.length > 0 && <div style={cardSub}>눌러서 전체 보기 ›</div>}
+                {todayRoll.length > 0 && <div style={cardSub}>눌러서 오늘 수업 요약 보기 ›</div>}
               </button>
 
-              {/* 4. 강의 */}
+              {/* 4. 전 교재 강의 — [16차수 원장 지시] 제목을 바꾸고 개수 줄은 없앴다 */}
               <button onClick={() => setTab("videos")} style={cardBox}>
-                <div style={{ fontSize: 12, fontWeight: 800, color: "#00997a" }}>4. 강의</div>
-                <div style={cardMain}>교재 {bookCount}권 · 강의 {videoCount}개</div>
-                <div style={cardSub}>수업 준비용으로 아무 교재나 볼 수 있습니다 ›</div>
+                <div style={{ fontSize: 12, fontWeight: 800, color: "#00997a" }}>4. 전 교재 강의</div>
+                <div style={{ ...cardMain, fontSize: 13.5, fontWeight: 700 }}>학생들이 보는 강의 그대로 볼 수 있습니다 ›</div>
               </button>
             </div>
           );
@@ -4196,7 +4506,7 @@ function TeacherHome({ auth }) {
           <div>
             <button onClick={() => { openVideo(null); setOpenBook(null); }} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "8px 12px", marginBottom: 12, borderRadius: 9, border: "1px solid #dfe3ef", background: "#fff", color: "#555", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>← 교재 목록</button>
             <div style={{ fontSize: 17, fontWeight: 800, color: "#2A2A28", marginBottom: 3 }}>{openBook.name}</div>
-            <div style={{ fontSize: 12.5, color: "#999", marginBottom: 14 }}>{openBook.areaLabel} · 강의 {(openBook.videos || []).length}개</div>
+            <div style={{ fontSize: 12.5, color: "#999", marginBottom: 14 }}>{openBook.areaLabel}</div>
             {(openBook.videos || []).map((v) => {
               const isOpen = playing === v.id;
               const ytId = v.type === "playlist" ? "" : extractYoutubeId(v.url || "");
@@ -4230,7 +4540,7 @@ function TeacherHome({ auth }) {
           </div>
         ) : (
           <div>
-            <div style={{ fontSize: 12.5, color: "#999", marginBottom: 12 }}>교재를 누르면 그 안의 강의가 나옵니다. 배정과 상관없이 전 교재가 보입니다. (교재 {bookCount}권)</div>
+            <div style={{ fontSize: 12.5, color: "#999", marginBottom: 12 }}>교재를 누르면 그 안의 강의가 나옵니다. 배정과 상관없이 전 교재가 보입니다.</div>
             {areas.length === 0 && <div style={{ padding: 40, textAlign: "center", color: "#aaa", fontSize: 13.5 }}>등록된 강의가 없습니다.</div>}
             {areas.map((a) => (
               <div key={a.areaId} style={{ marginBottom: 18 }}>
@@ -4360,7 +4670,7 @@ function TeacherHome({ auth }) {
             </div>
             <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden", border: "1px solid #eceef2" }}>
               {vocaMode === "pick"
-                ? <VocaFrame title="단어 선별" src={vocaPickSrc} />
+                ? <VocaFrame title="단어 선별" src={vocaPickSrc} onPicked={reloadHome} />
                 : <VocaFrame title="내 단어장" src={vocaSrc} openTask={vocaTask} onOpenTaskDone={() => setVocaTask(null)}
                     hwTask={vocaHwTask} onHwTaskDone={() => setVocaHwTask(null)} />}
             </div>
@@ -7107,5 +7417,4 @@ function StepSection({ step, displayNum, stampDate, isChecked, isFailed, getFail
     </div>
   );
 }
- 
  
