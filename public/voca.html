@@ -385,6 +385,9 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
 .toast.show{opacity:1}
 .screen{display:none} .screen.show{display:block}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+/* [선별 78차수] 유닛 목록의 덩이 제목 — "오늘 고를 칸" / "그 밖의 칸" */
+.pkgrouphead{grid-column:1/-1;margin:14px 2px 2px;font-size:13px;font-weight:900;color:var(--brand,#6d28d9);letter-spacing:-.3px}
+.pkgrouphead:first-child{margin-top:2px}
 /* ── [숙제 2차수] 단어 선별하기 (마스터 전용) ── */
 .pickbtn{display:none; width:100%; margin:10px 0 2px; padding:12px 14px; border:1px dashed var(--ink-soft); border-radius:0;
   background:var(--card); color:var(--ink); font-size:14.5px; font-weight:700; cursor:pointer; text-align:left}
@@ -710,6 +713,14 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
   </div>
 </div></div>
 
+<!-- [찍기 방지 08-30] 첫 바퀴에서 절반 이상 틀렸을 때 뜨는 창 — 닫을 수 없고 3초 뒤 자동으로 다시 시작된다 -->
+<div class="modal locked" id="mHwRedo"><div class="sheet">
+  <h2 style="color:#b91c1c">처음부터 다시</h2>
+  <p id="hwRedoBody" style="font-size:14.5px; line-height:1.7; color:var(--ink-soft,#777); margin:8px 0 6px"></p>
+  <p style="font-size:13px; color:var(--ink-soft,#999); margin:0 0 12px">천천히 뜻을 읽고 풀어 주세요.</p>
+  <div style="text-align:center; font-size:44px; font-weight:900; color:#b91c1c; letter-spacing:-1px" id="hwRedoCount">3</div>
+</div></div>
+
 <div class="modal locked" id="mConfirm"><div class="sheet">
   <h2 id="cfTitle">확인</h2>
   <div id="cfBody" style="font-size:14.5px; color:var(--ink-soft); line-height:1.8"></div>
@@ -763,6 +774,15 @@ const CAN_PICK = !!(STU && (STU.master || STU.pk));
 /* [교사 선별 2026-08-27] 선생님인지 — 선생님 링크는 id가 __teacher__로 시작한다(원장은 __master__).
  * 원장 전용 책(보카바이블)은 선생님 책장에서 잠금 카드("???")조차 안 뜨게 한다(원장 지시). */
 const IS_TEACHER_VOCA = !!(STU && String(STU.id || '').startsWith('__teacher__'));
+/* [선별 78차수] 오늘 골라야 하는 칸 — 학생앱 선생님 홈이 ?plec=1,2,3,4&pbook=wm_hi 로 알려준다.
+ * 이 칸들만 맨 위에 "오늘 고를 칸"으로 따로 모아 보여준다. 나머지 칸도 그대로 고를 수 있다
+ * (원장 확정: "내 것이 1순위라도 선생님이 어디든 선별할 수 있게"). */
+const TODAY_PICK = (() => {
+  const q = new URLSearchParams(location.search);
+  const lecs = (q.get('plec') || '').split(',').map(x => parseInt(x, 10)).filter(v => Number.isFinite(v) && v > 0);
+  return { lecs, book: (q.get('pbook') || '').trim() };
+})();
+const todayPickLecs = () => (BOOK && TODAY_PICK.book && BOOK.id === TODAY_PICK.book) ? TODAY_PICK.lecs : [];
 const PICKMODE = (() => {
   const q = new URLSearchParams(location.search);
   return q.get('pick') === '1' && CAN_PICK;
@@ -2159,6 +2179,7 @@ function answerMc(picked){                          // picked: 고른 보기 번
       sesOk++;
     } else {
       p.w++; hwWrong++;
+      if (qi < HW.total) hwFirstWrong++;            // [찍기 방지 08-30] 첫 바퀴 안에서 틀린 것만 따로 센다
       Q.push(w);                                    // 통 맨 뒤로 — 다 맞혀야 끝난다
     }
   } else if (ok){                                   // 대표 뜻(첫 뜻묶음)만 기록 — 2회독 서술형은 다른 뜻 요구
@@ -2195,6 +2216,9 @@ function answerMc(picked){                          // picked: 고른 보기 번
 function mcAdvance(){
   if (!mcDone) return;
   if (Date.now() - mcDoneAt < 400) return;
+  if (document.querySelector('.modal.show')) return;               // [찍기 방지 08-30] 창이 떠 있으면 안 넘어간다
+  // [찍기 방지 08-30] 첫 바퀴 마지막 문제를 푼 순간 판정 — 절반 이상 틀렸으면 처음부터 다시
+  if (HW && qi === HW.total - 1 && hwFirstWrong * 2 >= HW.total) return hwRedoStart();
   if (qi === Q.length-1) return HW ? finishHw() : showSummary();   // [숙제 3차수] 숙제는 결과 화면 대신 완료 창
   qi++; renderMc();
 }
@@ -2218,7 +2242,10 @@ $('#mcStar').onclick = () => {
 $('#mcQuit').onclick = () => {
   if (HW){                                          // [숙제 3차수] 중간에 나가면 처음부터 — 확인 후 종료
     askConfirm({ title:'숙제 그만두기', body:'숙제가 아직 안 끝났어요. 나가면 다음에 처음부터 다시 풀어요. 그만둘까요?', yes:'그만두기', danger:true },
-      () => { HW = null; hwWrong = 0; renderHome(); show('home'); });
+      () => { HW = null; hwWrong = 0; hwFirstWrong = 0; hwRedo = 0;
+              if (hwRedoTimer){ clearInterval(hwRedoTimer); hwRedoTimer = null; }
+              $('#mHwRedo').classList.remove('show');
+              renderHome(); show('home'); });
     return;
   }
   renderHome(); show('home');
@@ -2236,6 +2263,12 @@ $('#mcQuit').onclick = () => {
  * 끝 = 서버에 완료 기록(POST /voca/hw-clear). 늦음 판정은 서버가 한다. */
 let HW = null;                       // 진행 중인 숙제 세션 { date, deadline, book, lecs, total }
 let hwWrong = 0;                     // 이번 숙제에서 틀린 횟수 합
+/* [찍기 방지 08-30 · 원장 확정] 첫 바퀴(처음 낸 단어를 한 번씩 다 본 시점)에서 절반 이상 틀리면
+ * 안내 창을 3초 띄우고 처음부터 다시 풀린다. 학생·선생님·원장 모두 같은 규칙이고 횟수 제한은 없다.
+ * 이미 맞힌 회독 기록은 그대로 남고 두 번 세어지지도 않는다 — 벌은 "시간을 다시 쓰는 것"이다. */
+let hwFirstWrong = 0;                // 첫 바퀴에서 틀린 개수
+let hwRedo = 0;                      // 처음부터 다시 시작한 횟수 (완료 기록에 같이 보낸다)
+let hwRedoTimer = null;
 let OPEN_HW_PENDING = null;
 
 function hwToday(){                  // 로컬(폰) 날짜 YYYY-MM-DD — 신호에 date가 없을 때만 사용
@@ -2394,13 +2427,40 @@ async function startHwSession(req){
     : [];
   const words = buildHwWords(lecs, date);   // [0818 회전 3차수] 어떤 단어의 몇 번째 뜻을 낼지(HWSI)도 여기서 정해진다
   if (!words.length){ toast('오늘 숙제 범위의 단어를 찾지 못했어요'); renderHome(); show('home'); return; }
+  const orderSeed = `${date}|${STU ? STU.id : ''}|order`;
   HW = { date, deadline: req.deadline ? String(req.deadline) : '', book: BOOK.id, lecs, total: words.length,
-    rec: words.map(w => ({ id: w.id, lec: w.lec })) };   // [0818 회전 2차수] 완료 때 기록할 "이번에 본 단어" 목록
-  hwWrong = 0;
-  Q = seededShuffle(words, `${date}|${STU ? STU.id : ''}|order`);
+    rec: words.map(w => ({ id: w.id, lec: w.lec })),      // [0818 회전 2차수] 완료 때 기록할 "이번에 본 단어" 목록
+    words, orderSeed };                                   // [찍기 방지 08-30] 처음부터 다시 풀 때 쓸 재료
+  hwWrong = 0; hwFirstWrong = 0; hwRedo = 0;
+  if (hwRedoTimer){ clearInterval(hwRedoTimer); hwRedoTimer = null; }
+  $('#mHwRedo').classList.remove('show');
+  Q = seededShuffle(words, orderSeed);
   qi = 0; sesOk = 0; sesWrong = []; sesInputs = {};
   renderMc(); show('mc');
   toast('오늘 단어 숙제 — 전부 맞히면 끝!');
+}
+/* [찍기 방지 08-30] 처음부터 다시 — 안내 창 3초 뒤 자동으로 첫 문제로 돌아간다.
+ * 창은 닫을 수 없고(locked), 그 사이 화면 터치로 넘어가지도 않는다(mcAdvance가 막는다). */
+function hwRedoStart(){
+  if (!HW) return;
+  hwRedo++;
+  $('#hwRedoBody').innerHTML = `${HW.total}개 중 <b>${hwFirstWrong}개</b>를 틀렸어요.<br>절반이 넘어서 처음부터 다시 풀어야 해요.`;
+  $('#hwRedoCount').textContent = '3';
+  openModal('#mHwRedo');
+  let left = 3;
+  if (hwRedoTimer) clearInterval(hwRedoTimer);
+  hwRedoTimer = setInterval(() => {
+    left--;
+    if (left > 0){ $('#hwRedoCount').textContent = String(left); return; }
+    clearInterval(hwRedoTimer); hwRedoTimer = null;
+    $('#mHwRedo').classList.remove('show');
+    if (!HW) return;                                  // 그 사이 숙제를 그만뒀으면 아무것도 안 한다
+    hwFirstWrong = 0;
+    // [82차수 08-31] 다시 풀 때마다 순서를 새로 섞는다 — 같은 순서로 나오면 답 자리를 외워 버리니까
+    Q = seededShuffle(HW.words, HW.orderSeed + '|redo' + hwRedo);
+    qi = 0; sesOk = 0; sesWrong = []; sesInputs = {};
+    renderMc();
+  }, 1000);
 }
 async function finishHw(){
   const hw = HW; HW = null;
@@ -2432,9 +2492,9 @@ async function finishHw(){
   $('#hwRetrySend').style.display = 'none';
   openModal('#mHwDone');
   // [0818 도장 1차수] 보낼 내용을 한 뭉치로 — 실패하면 이 뭉치를 그대로 폰에 적어둔다
-  const rec = { date: hw.date, book: hw.book, lecs: hw.lecs, n: hw.total, w: hwWrong,
+  const rec = { date: hw.date, book: hw.book, lecs: hw.lecs, n: hw.total, w: hwWrong, r: hwRedo,
     deadline: hw.deadline || '', doneAt: new Date().toISOString() };
-  const base = `총 ${hw.total}단어 · 틀린 횟수 ${hwWrong}번.`;
+  const base = `총 ${hw.total}단어 · 틀린 횟수 ${hwWrong}번` + (hwRedo ? ` · 처음부터 다시 ${hwRedo}번.` : '.');
   const res = await sendHwRecord(rec);
   if (res.offline){
     $('#hwDoneBody').textContent = base + ' (단독 열람이라 완료 기록은 저장하지 않았어요)';
@@ -2577,17 +2637,40 @@ function enterPickLecs(){       // 1단계: 유닛 목록
   /* [0818 원장 요청] 이미 고른 유닛은 목록 뒤로 — 아직 안 고른 유닛이 항상 맨 위에 온다.
    * 같은 무리 안에서는 원래 순서(유닛 번호 오름차순) 그대로. */
   const pkDone = lec => (Array.isArray(PICKS[String(lec)]) && PICKS[String(lec)].length) ? 1 : 0;
-  const lecOrder = Object.keys(byL).map(Number).sort((a,b) => pkDone(a) - pkDone(b) || a - b);
-  for (const lec of lecOrder){
+  const all = Object.keys(byL).map(Number);
+  // [선별 78차수] 오늘 몫 먼저, 그 아래 나머지. 오늘 몫이 없으면 예전 그대로 한 덩어리.
+  const today = todayPickLecs().filter(l => byL[l]);
+  const todaySet = new Set(today);
+  const rest = all.filter(l => !todaySet.has(l)).sort((a,b) => pkDone(a) - pkDone(b) || a - b);
+  const makeCard = (lec) => {
     const picked = Array.isArray(PICKS[String(lec)]) ? PICKS[String(lec)].length : 0;
+    const goal = pkGoalFor(byL[lec] || []);
+    const full = picked >= goal;
     const b = document.createElement('div');
     b.className = 'lec';
     b.innerHTML = `<div class="t">${lecLabel(lec)}</div>
       <div class="n">${byL[lec].length}단어</div>
-      <div class="pk${picked ? '' : ' no'}">${picked ? '✓ ' + picked + '개' : '미선별'}</div>`;
+      <div class="pk${picked ? '' : ' no'}">${picked ? (full ? '✓ ' : '') + picked + '개' : '미선별'}</div>`;
     b.onclick = () => enterPickWords(lec);
-    g.appendChild(b);
+    return b;
+  };
+  const addHead = (text) => {
+    const h = document.createElement('div');
+    h.className = 'pkgrouphead';
+    h.textContent = text;
+    g.appendChild(h);
+  };
+  // [선별 78차수] 오늘 몫이 있을 때는 안내 문구도 그에 맞게 바꾼다
+  $('#pkInfoLec').textContent = today.length
+    ? "위쪽 '오늘 고를 칸' 부터 채워 주세요. 칸을 누르면 그 칸의 단어가 전부 나옵니다. 아래 칸은 언제 골라도 됩니다."
+    : '유닛을 누르면 그 유닛의 단어가 전부 나옵니다. 다 고른 유닛은 아래로 내려가고, 아직 안 고른 유닛이 위에 남아요.';
+  if (today.length){
+    const doneN = today.filter(l => (Array.isArray(PICKS[String(l)]) ? PICKS[String(l)].length : 0) >= pkGoalFor(byL[l] || [])).length;
+    addHead(`오늘 고를 칸 — ${doneN}/${today.length}칸 완료`);
+    for (const lec of today) g.appendChild(makeCard(lec));
+    addHead('그 밖의 칸 (언제든 골라도 됩니다)');
   }
+  for (const lec of rest) g.appendChild(makeCard(lec));
   window.scrollTo(0,0); embScrollTop();
 }
 function enterPickWords(lec){   // 2단계: 그 유닛 단어 전부 + 체크
@@ -2658,6 +2741,8 @@ async function pkPut(lec, ids){ // 서버 저장 — 성공하면 true
     if (ok){
       PICKS[String(pkLec)] = ids;
       toast(`${lecLabel(pkLec)} 선별 ${ids.length}개 저장 완료`);
+      // [선별 78차수] 선생님 홈 카드가 바로 "몇 칸 완료"를 다시 세도록 알려준다
+      try{ window.parent.postMessage({ type:'maplVocaPicked', book: BOOK ? BOOK.id : '', lec: pkLec, n: ids.length }, '*'); }catch(e){}
       enterPickLecs();
     } else { sv.disabled = false; }
   };
@@ -2669,6 +2754,8 @@ async function pkPut(lec, ids){ // 서버 저장 — 성공하면 true
       if (ok){
         delete PICKS[String(pkLec)];
         toast('선별을 지웠어요');
+        // [선별 78차수] 지운 것도 선생님 홈 카드에 바로 반영되게 알린다
+        try{ window.parent.postMessage({ type:'maplVocaPicked', book: BOOK ? BOOK.id : '', lec: pkLec, n: 0 }, '*'); }catch(e){}
         enterPickLecs();
       }
     });
