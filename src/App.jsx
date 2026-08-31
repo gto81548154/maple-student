@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import QRCodeLib from "qrcode";
 // [0824 3차수] 배포 확인용 차수 표시 — 원장앱 APP_BUILD와 같은 장치. 학생 화면에는 안 띄우고
 //   마스터 홈(원장 전용) 머리글에만 뜬다(원장 결정). 새 차수 파일을 만들 때마다 이 글자를 같이 바꿀 것.
-const STUDENT_APP_BUILD = "학생앱 78차수 · 2026-08-30";
+const STUDENT_APP_BUILD = "학생앱 82차수 · 2026-08-31";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -36,6 +36,9 @@ function VocaFrame({ title, src, topOffset = 60, openLast = false, onOpenLastDon
   // [0812] 홈 카드 "단어장"으로 들어온 경우: voca가 살아있다는 첫 신호(높이)가 오면
   // "마지막 책 열어줘"를 딱 한 번 보낸다. 탭을 직접 누른 경우(openLast=false)는 예전처럼 책장부터.
   const onPickedRef = useRef(onPicked);
+  // [81차수 08-31] 매 렌더마다 갱신 — 이 한 줄이 없으면 [내 단어장]으로 먼저 연 뒤
+  //   탭 안에서 [단어 선별]로 바꿨을 때 저장해도 홈 카드가 안 새로 받아졌다.
+  onPickedRef.current = onPicked;
   const openLastArmedRef = useRef(false);
   const openLastDoneRef = useRef(onOpenLastDone);
   openLastDoneRef.current = onOpenLastDone;
@@ -4033,21 +4036,21 @@ function TeacherHome({ auth }) {
     pickSentRef.current = stamp;
     let dead = false;
     (async () => {
+      // [82차수 · 원장 확정 08-31] 선별 완료 마감 = 그날 자정(다음날 0시).
+      //   예전엔 시험처럼 출근 시각이라 출근하고 나서 고르면 전부 "늦게 완료"로 찍혔다.
+      //   (이 효과는 선별(pick)일 때만 돈다 — 시험 마감은 예전 그대로 출근 시각)
       let deadline = "";
       try {
-        const w = teacherWorkOn(teacher, today);
-        if (w && w.time) {
-          const [hh, mm] = String(w.time).split(":");
-          const dl = new Date(today + "T00:00:00");
-          dl.setHours(academyHour24(hh), parseInt(mm, 10) || 0, 0, 0);
-          deadline = dl.toISOString();
-        }
+        const dl = new Date(today + "T00:00:00");
+        dl.setDate(dl.getDate() + 1);
+        deadline = dl.toISOString();
       } catch (e) { deadline = ""; }
       try {
         const r = await fetch(`${WORKER_ORIGIN}/voca/hw-clear?id=${encodeURIComponent(home.vocaId)}&t=${encodeURIComponent(auth.tk)}`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ date: today, book: hw.bookId, lecs: hw.range,
-            n: (hw.range || []).length * (hw.pickGoal || 10), w: 0, r: 0, k: "pick", deadline }),
+            // [81차수 08-31] 단어 수 = 실제로 저장된 개수 합 (10개 미만 유닛은 그 개수만큼)
+            n: (hw.range || []).reduce((a, u) => a + ((hw.picked || {})[String(u)] || 0), 0), w: 0, r: 0, k: "pick", deadline }),
         });
         if (!dead && r.ok) reloadHome();
         else if (!dead) pickSentRef.current = "";    // 실패하면 다음 기회에 다시
@@ -4301,7 +4304,9 @@ function TeacherHome({ auth }) {
                 const isPick = hw.mode === "pick";
                 const goal = hw.pickGoal || 10;
                 const units = Array.isArray(hw.range) ? hw.range : [];
-                const doneCnt = units.filter(u => ((hw.picked || {})[String(u)] || 0) >= goal).length;
+                // [81차수 08-31] "칸 완료" = 그 칸에 선별본이 저장돼 있다(저장 자체가 목표를 다 채워야만 된다).
+                //   10개 고정 기준이면 단어 10개 미만 유닛(min(10, 단어수)만 골라 저장)이 영영 미완료로 남았다.
+                const doneCnt = units.filter(u => ((hw.picked || {})[String(u)] || 0) > 0).length;
                 const stamp = hw.done ? (hw.done.late ? "늦게 완료" : "완료") : "";
                 return (
                 <button onClick={() => {
@@ -4320,7 +4325,7 @@ function TeacherHome({ auth }) {
                       <div style={{ display: "flex", gap: 4 }}>
                         {units.map(u => {
                           const got = (hw.picked || {})[String(u)] || 0;
-                          const full = got >= goal;
+                          const full = got > 0;   // [81차수] 저장돼 있으면 다 고른 것(10개 미만 유닛 대응)
                           return <span key={u} title={hw.unit + " " + u + " · " + got + "개"}
                             style={{ flex: 1, height: 7, borderRadius: 999, background: full ? "#7c3aed" : (got ? "#ddd6fe" : "#eceef4") }} />;
                         })}
