@@ -2249,6 +2249,7 @@ $('#mcQuit').onclick = () => {
       () => { HW = null; hwWrong = 0; hwFirstWrong = 0; hwRedo = 0;
               if (hwRedoTimer){ clearInterval(hwRedoTimer); hwRedoTimer = null; }
               $('#mHwRedo').classList.remove('show');
+              postHwState(false);                       // [97차수] 그만뒀다 — 학생앱 확인창도 해제
               renderHome(); show('home'); });
     return;
   }
@@ -2441,6 +2442,7 @@ async function startHwSession(req){
   Q = seededShuffle(words, orderSeed);
   qi = 0; sesOk = 0; sesWrong = []; sesInputs = {};
   renderMc(); show('mc');
+  postHwState(true);                                    // [97차수] 학생앱에 "시험 중" 알림
   toast('오늘 단어 숙제 — 전부 맞히면 끝!');
 }
 /* [찍기 방지 08-30] 처음부터 다시 — 안내 창 3초 뒤 자동으로 첫 문제로 돌아간다.
@@ -2468,6 +2470,7 @@ function hwRedoStart(){
 }
 async function finishHw(){
   const hw = HW; HW = null;
+  postHwState(false);                                   // [97차수] 다 풀었다 — 이제 나가도 된다
   /* [0818 회전 2차수] 완료한 순간, 이번에 본 단어들의 "출제 횟수"를 진도 저장에 적는다.
    * - hwAsk = { 단어id: 몇 번 나왔나 } / hwDates = { 유닛: 마지막으로 반영한 날짜 }
    * - 같은 유닛을 같은 날 다시 풀면 또 세지 않는다(하루 한 번만) — 그날은 같은 문제 원칙 유지
@@ -2835,6 +2838,13 @@ window.addEventListener('popstate', () => {
  * 단독 열람(브라우저에서 직접)은 아무것도 달라지지 않는다. */
 let EMB = false;
 let VIS = { top: 0, h: window.innerHeight || 640 };
+/* [97차수 09-05] 숙제 TEST 진행 여부를 부모(학생앱)에게 알린다 — 학생앱 위 탭으로 나갈 때 확인창을 띄우기 위해.
+ * 시작하면 true, 완료 창이 뜨거나 [그만두기]로 나가면 false. 단독 열람(부모 없음)이면 아무것도 안 한다.
+ * 학생앱은 프레임이 사라질 때(탭 이동) 스스로 "진행 중 아님"으로 되돌리므로 여기서 더 챙길 것은 없다. */
+function postHwState(busy){
+  if (window.parent === window) return;
+  try{ window.parent.postMessage({ type: 'maplVocaHwState', busy: !!busy }, '*'); }catch(e){}
+}
 function postH(){
   if (window.parent === window) return;
   const h = Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
