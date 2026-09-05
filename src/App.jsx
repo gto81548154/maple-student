@@ -6,7 +6,7 @@ import { flushSync } from "react-dom";
 import QRCodeLib from "qrcode";
 // [0824 3차수] 배포 확인용 차수 표시 — 원장앱 APP_BUILD와 같은 장치. 학생 화면에는 안 띄우고
 //   마스터 홈(원장 전용) 머리글에만 뜬다(원장 결정). 새 차수 파일을 만들 때마다 이 글자를 같이 바꿀 것.
-const STUDENT_APP_BUILD = "학생앱 96차수 · 2026-09-05";
+const STUDENT_APP_BUILD = "학생앱 97차수 · 2026-09-05";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -32,9 +32,13 @@ const VOCA_TAB_ENABLED = true;
 // 내부 스크롤을 없앤다. 반대로 여기서는 "지금 보이는 영역"(maplVis)을 계속 알려줘
 // 마플보카의 모달·토스트가 화면 안에 뜨게 하고, 화면 전환(maplVocaScroll) 때는 맨 위로 스크롤한다.
 // 옛 voca.html(높이를 안 보내는 판)과 섞이면 아래가 잘리므로 두 파일은 반드시 한 커밋으로 배포.
-function VocaFrame({ title, src, topOffset = 60, openLast = false, onOpenLastDone, openTask = null, onOpenTaskDone, hwTask = null, onHwTaskDone, onPicked }) {
+function VocaFrame({ title, src, topOffset = 60, openLast = false, onOpenLastDone, openTask = null, onOpenTaskDone, hwTask = null, onHwTaskDone, onPicked, onHwState }) {
   const ref = useRef(null);
   const [h, setH] = useState(560);
+  // [97차수 09-05] 마플보카가 "숙제 TEST 시험 중/아님"(maplVocaHwState)을 알려주면 부모에게 전달 — 위 탭으로 나갈 때 확인창용.
+  //   프레임이 사라질 때(탭 이동·닫힘)는 반드시 "아님"으로 되돌린다(마플보카가 알려줄 기회가 없으므로).
+  const onHwStateRef = useRef(onHwState);
+  onHwStateRef.current = onHwState;
   // [0812] 홈 카드 "단어장"으로 들어온 경우: voca가 살아있다는 첫 신호(높이)가 오면
   // "마지막 책 열어줘"를 딱 한 번 보낸다. 탭을 직접 누른 경우(openLast=false)는 예전처럼 책장부터.
   const onPickedRef = useRef(onPicked);
@@ -91,6 +95,8 @@ function VocaFrame({ title, src, topOffset = 60, openLast = false, onOpenLastDon
       }
       // [선별 78차수] 선생님이 유닛 하나를 저장할 때마다 마플보카가 알려준다 → 선생님 홈 카드를 새로 받아온다
       if (d.type === "maplVocaPicked" && onPickedRef.current) onPickedRef.current();
+      // [97차수] 숙제 TEST 시험 중/아님
+      if (d.type === "maplVocaHwState" && onHwStateRef.current) onHwStateRef.current(!!d.busy);
       if (d.type === "maplVocaScroll") {
         const r = el.getBoundingClientRect();
         window.scrollTo({ top: Math.max(0, window.scrollY + r.top + (d.y || 0) - topOffset), behavior: "auto" });
@@ -108,6 +114,7 @@ function VocaFrame({ title, src, topOffset = 60, openLast = false, onOpenLastDon
       window.removeEventListener("resize", queueVis);
       clearInterval(tick);
       if (raf) cancelAnimationFrame(raf);
+      if (onHwStateRef.current) onHwStateRef.current(false);   // [97차수] 프레임이 사라지면 "시험 중 아님"
     };
   }, [topOffset]);
   return (
@@ -4910,6 +4917,15 @@ export default function App() {
   const flushingRef = useRef(false);
   // [95차수 09-05] 오답 TEST를 하나라도 푼 상태인지(VocabWrongTab이 알려준다) — 위 탭 줄로 나갈 때 확인창을 띄운다
   const vocabTestBusyRef = useRef(false);
+  // [97차수 09-05] 마플보카 단어 숙제 TEST가 진행 중인지(마플보카가 maplVocaHwState로 알려준다) — 위 탭 줄로 나갈 때 확인창
+  const vocaHwBusyRef = useRef(false);
+  // [95·97차수] 탭을 떠나기 전 확인 — 같은 탭이면 그냥 통과. 탭 줄과 오답 경고 띠의 [복습하기]가 함께 쓴다.
+  const confirmLeaveTab = (nextKey) => {
+    if (nextKey === tab) return true;
+    if (tab === "vocabWrong" && vocabTestBusyRef.current) return window.confirm("지금 나가면 푼 게 사라져요.\n그래도 나갈까요?");
+    if (tab === "voca" && vocaHwBusyRef.current) return window.confirm("단어 숙제 TEST를 풀던 중이에요.\n지금 나가면 처음부터 다시 풀어요. 그래도 나갈까요?");
+    return true;
+  };
 
   // [PASS] 새로 완주한 책 감지 → 앱 진입 시 축하 연출 (책당 딱 1번, 이 폰 기준)
   // ※ 반드시 위의 student·todos·progressTree state 선언 "뒤"에 있어야 함 — 앞에 두면 TDZ 크래시로 앱이 안 열림
@@ -5915,7 +5931,7 @@ export default function App() {
               )}
             </div>
             {hasVocabWrong && (
-              <button onClick={() => setTab("vocabWrong")} style={{
+              <button onClick={() => { if (!confirmLeaveTab("vocabWrong")) return; setTab("vocabWrong"); }} style={{
                 flexShrink: 0, padding: "7px 13px", borderRadius: 9, border: "none", cursor: "pointer",
                 background: vocabWarn.overdue > 0 ? "#c0392b" : "#9a6b00", color: "#fff",
                 fontSize: 12, fontWeight: 800,
@@ -5973,11 +5989,9 @@ export default function App() {
           ...((progressTree?.lanes || []).length ? [{ key: "progress", label: "진도" }] : []),
         ].map((t) => (
           <button key={t.key} onClick={() => {
-            // [95차수 09-05] 오답 TEST 도중(하나라도 풀었음)에 다른 탭으로 나가면 푼 게 사라진다 — 확인창을 한 번 띄운다
-            //   ("← 목록" 단추엔 원래 확인 카드가 있었지만 위 탭 줄로 나가면 그걸 건너뛰었다)
-            if (tab === "vocabWrong" && t.key !== "vocabWrong" && vocabTestBusyRef.current) {
-              if (!window.confirm("지금 나가면 푼 게 사라져요.\n그래도 나갈까요?")) return;
-            }
+            // [95·97차수] 오답 TEST(하나라도 풀었음)·단어 숙제 TEST(마플보카가 "시험 중") 도중에 다른 탭으로 나가면
+            //   푼 게 사라진다 — 확인창을 한 번 띄운다 (안쪽 [← 목록]·[그만두기]엔 원래 확인이 있었지만 위 탭 줄로 나가면 건너뛰었다)
+            if (!confirmLeaveTab(t.key)) return;
             // [96차수 09-05] 이미 단어 탭인데 "단어"를 또 누르면 아무것도 안 한다 — 예전엔 "숙제 TEST 시작" 신호를 또 보내서
             //   풀던 시험이 처음부터 다시 시작됐다(마플보카 실측: 열린 창을 닫고 새로 시작, 틀린·다시 시작 횟수도 0으로).
             if (t.key === "voca" && tab === "voca") return;
@@ -6306,6 +6320,7 @@ export default function App() {
           return (
             <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden", border: "1px solid #eceef2" }}>
               <VocaFrame title="단어장" src={src} openLast={vocaOpenLast} onOpenLastDone={() => setVocaOpenLast(false)}
+              onHwState={(busy) => { vocaHwBusyRef.current = !!busy; }}
                 openTask={vocaOpenTask} onOpenTaskDone={() => setVocaOpenTask(null)}
                 hwTask={vocaHwTask} onHwTaskDone={() => setVocaHwTask(null)} />
             </div>
