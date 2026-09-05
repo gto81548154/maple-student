@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+// [95차수 09-05] 오답 TEST에서 "다음 단어"를 누르는 손가락 동작 안에서 화면을 바로 그리고 입력칸에 커서를 두기 위해(폰 자판이 뜨려면 이 순서여야 한다)
+import { flushSync } from "react-dom";
 // [4차] QR 만드는 라이브러리. 앱 안에 같이 들어가므로 인터넷 없이도 QR이 그려진다.
 //       설치: npm install qrcode   (예전에 쓰던 cdnjs qrcodejs와는 다른 물건이다)
 import QRCodeLib from "qrcode";
 // [0824 3차수] 배포 확인용 차수 표시 — 원장앱 APP_BUILD와 같은 장치. 학생 화면에는 안 띄우고
 //   마스터 홈(원장 전용) 머리글에만 뜬다(원장 결정). 새 차수 파일을 만들 때마다 이 글자를 같이 바꿀 것.
-const STUDENT_APP_BUILD = "학생앱 82차수 · 2026-08-31";
+const STUDENT_APP_BUILD = "학생앱 96차수 · 2026-09-05";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -497,7 +499,7 @@ const subscribeMaplPush = async (student) => {
 // 홈 상단 "알림 켜기" 배너 — 마스터 모드·미지원 기기·이미 허용된 폰에서는 안 보인다
 // [수정 07-30] 학생이 배너를 닫았는지 폰에 기억해 둔다 (설치 안내 배너와 같은 방식).
 const PUSH_BANNER_DISMISS_KEY = "mapl_push_banner_dismissed_v1";
-function PushEnableBanner({ student }) {
+function PushEnableBanner({ student, wrapStyle }) {
   const [state, setState] = useState(() => {
     if (IS_STAFF_VIEW || pushSupport() === "unsupported") return "hidden";   // [교사] 선생님에게는 학생 푸시 안내를 띄우지 않는다
     if (Notification.permission === "granted") return "hidden"; // 허용된 폰은 앱이 알아서 구독을 갱신한다
@@ -526,7 +528,8 @@ function PushEnableBanner({ student }) {
     setBusy(false);
   };
   return (
-    <div style={{ maxWidth: MAX_W, margin: "12px auto 0", padding: "0 16px", boxSizing: "border-box" }}>
+    // [96차수 09-05] wrapStyle — 홈 카드 아래(이미 여백이 있는 자리)에 넣을 때 바깥 여백을 지우기 위해
+    <div style={{ maxWidth: MAX_W, margin: "12px auto 0", padding: "0 16px", boxSizing: "border-box", ...(wrapStyle || {}) }}>
       {state === "done" ? (
         <div style={{ background: "#E8F6EE", border: "1.5px solid #BFE5CE", borderRadius: 14, padding: "12px 16px", fontSize: 13.5, fontWeight: 800, color: "#1B8A5A" }}>
           ✅ 알림이 켜졌어요! 새 설문·공지가 오면 알려드릴게요.
@@ -1980,6 +1983,40 @@ const dispatchVideoPlayerEvent = (name, detail) => {
   } catch (e) { /* ignore */ }
 };
 
+// ─── [95차수 09-05] 강의 이어보기 — 영상마다 마지막 위치를 이 폰에 기억해 두고, 다시 열면 거기서부터 튼다 ───
+//   탭을 바꿨다 돌아오거나 앱을 껐다 켜도 이어진다(원장 결정: 폰 저장). 끝까지 본 영상은 기록을 지워 다음엔 처음부터.
+//   처음 5초 안·끝 10초 안은 기억하지 않는다(사실상 처음/끝이라 이어볼 의미가 없다). 최근 200개만 남긴다.
+//   재생목록(playlist)형은 어느 영상인지 알 수 없어 이어보기를 안 한다.
+const VIDEO_POS_KEY = "mapl_video_pos_v1";
+const readVideoPosMap = () => {
+  try { const m = JSON.parse(localStorage.getItem(VIDEO_POS_KEY) || "{}"); return m && typeof m === "object" && !Array.isArray(m) ? m : {}; }
+  catch (e) { return {}; }
+};
+const getVideoResumeSec = (videoId) => {
+  const rec = readVideoPosMap()[String(videoId || "")];
+  const sec = rec ? Number(rec.sec) : 0;
+  return Number.isFinite(sec) && sec > 5 ? Math.floor(sec) : 0;
+};
+const saveVideoPos = (videoId, sec, durSec) => {
+  const id = String(videoId || "");
+  if (!id) return;
+  try {
+    const m = readVideoPosMap();
+    const s = Math.floor(Number(sec) || 0);
+    const d = Math.floor(Number(durSec) || 0);
+    if (s <= 5 || (d > 0 && s >= d - 10)) delete m[id];   // 처음·끝 근처 = 기록 안 함(끝났으면 지움)
+    else m[id] = { sec: s, at: Date.now() };
+    const keys = Object.keys(m);
+    if (keys.length > 200) {
+      keys.sort((a, b) => (Number(m[a]?.at) || 0) - (Number(m[b]?.at) || 0)).slice(0, keys.length - 200).forEach(k => { delete m[k]; });
+    }
+    localStorage.setItem(VIDEO_POS_KEY, JSON.stringify(m));
+  } catch (e) { /* ignore */ }
+};
+const clearVideoPos = (videoId) => {
+  try { const m = readVideoPosMap(); delete m[String(videoId || "")]; localStorage.setItem(VIDEO_POS_KEY, JSON.stringify(m)); } catch (e) { /* ignore */ }
+};
+
 // ─── QR 그리기: 값 하나를 QR 그림으로 (출석 QR·카톡 문의 QR 공용) ───
 // [4차] 예전에는 QR 만드는 코드를 그때그때 인터넷(cdnjs)에서 내려받았다.
 //       학원 와이파이가 끊기면 QR이 안 나왔다. 이제는 앱 안에 들어있는 qrcode로 그린다.
@@ -2049,6 +2086,7 @@ function TrackedYoutubePlayer({ video }) {
   const lastPlayerTimeRef = useRef(0);
   const lastWallTimeRef = useRef(Date.now());
   const destroyedRef = useRef(false);
+  const lastPosSaveAtRef = useRef(0);   // [95차수] 이어보기 위치를 마지막으로 적어 둔 시각(5초마다 한 번만 적는다)
 
   const clearTickTimer = () => {
     if (timerRef.current) {
@@ -2093,6 +2131,12 @@ function TrackedYoutubePlayer({ video }) {
       lastWallTimeRef.current = now;
       lastPlayerTimeRef.current = currentSec;
 
+      // [95차수 09-05] 이어보기 — 재생 중이면 5초에 한 번 지금 위치를 폰에 적어 둔다
+      if (state === YT_STATE.PLAYING && now - lastPosSaveAtRef.current >= 5000) {
+        lastPosSaveAtRef.current = now;
+        saveVideoPos(video?.id, currentSec, durationSec || video?.durSec);
+      }
+
       if (deltaSec > 0.2) {
         dispatchVideoPlayerEvent("mapl:yt-tick", {
           videoId: String(video?.id || ""),
@@ -2122,6 +2166,10 @@ function TrackedYoutubePlayer({ video }) {
       if (playlistId) {
         playerVars.listType = "playlist";
         playerVars.list = playlistId;
+      } else {
+        // [95차수 09-05] 이어보기 — 이 폰에 적어 둔 마지막 위치가 있으면 거기서부터 튼다(재생목록형은 제외)
+        const resumeSec = getVideoResumeSec(video?.id);
+        if (resumeSec > 0) playerVars.start = resumeSec;
       }
 
       playerRef.current = new YT.Player(mountRef.current, {
@@ -2164,6 +2212,9 @@ function TrackedYoutubePlayer({ video }) {
               clearTickTimer();
               lastPlayerTimeRef.current = currentSec;
               lastWallTimeRef.current = Date.now();
+              // [95차수 09-05] 이어보기 — 멈추면 그 자리를 적어 두고, 끝까지 봤으면 기록을 지운다(다음엔 처음부터)
+              if (state === YT_STATE.ENDED) clearVideoPos(video?.id);
+              else if (state === YT_STATE.PAUSED) saveVideoPos(video?.id, currentSec, durationSec || video?.durSec);
             }
           },
           onError: (event) => {
@@ -2184,6 +2235,26 @@ function TrackedYoutubePlayer({ video }) {
     return () => {
       destroyedRef.current = true;
       clearTickTimer();
+      // [94차수 09-05] 영상 칸이 화면에서 사라질 때(탭 이동·날짜 바꾸기·다른 강의 열기) "멈춤" 신호를 한 번 보낸다.
+      //   예전엔 이 신호가 없어서 앱이 계속 "재생 중"인 줄 알았고, 그 뒤에 폰을 껐다 켠 시간이
+      //   통째로 그 강의의 "이탈"로 기록됐다(원장앱 영상 통계가 부풀었음). 신호를 받은 쪽(handleState)은
+      //   재생 중 표시를 끄고, 아직 안 보낸 시청 시간이 있으면 그 자리에서 저장한다.
+      if (playerRef.current) {
+        let currentSec = 0, durationSec = 0;
+        try {
+          currentSec = Number(playerRef.current.getCurrentTime?.() || 0);
+          durationSec = Math.round(Number(playerRef.current.getDuration?.() || 0));
+        } catch (e) { /* ignore */ }
+        // [95차수 09-05] 이어보기 — 영상 칸이 사라지는 순간의 위치도 적어 둔다(탭을 바꿨다 돌아오면 여기서부터)
+        if (!playlistId) saveVideoPos(video?.id, currentSec, durationSec || video?.durSec);
+        dispatchVideoPlayerEvent("mapl:yt-state", {
+          videoId: String(video?.id || ""),
+          state: YT_STATE.PAUSED,
+          durationSec,
+          currentSec,
+          unmounted: true,
+        });
+      }
       try { playerRef.current?.destroy?.(); } catch (e) { /* ignore */ }
       playerRef.current = null;
     };
@@ -2231,12 +2302,13 @@ const postVideoWatchToWorker = async (payload) => {
   if (!VIDEO_WATCH_API_URL) throw new Error("VITE_VIDEO_WATCH_API_URL이 설정되지 않았습니다");
   const headers = { "Content-Type": "application/json" };
   if (VIDEO_WATCH_API_KEY) headers.Authorization = `Bearer ${VIDEO_WATCH_API_KEY}`;
-  const resp = await fetch(VIDEO_WATCH_API_URL, {
+  // [95차수 09-05] 15초 안에 답이 없으면 실패로 보고 대기열에 넣는다(인터넷이 느릴 때 저장이 영영 매달려 있지 않게). 대기열은 나중에 자동 재전송.
+  const resp = await fetchWithTimeout(VIDEO_WATCH_API_URL, {
     method: "POST",
     headers,
     // [08-08] 본인 확인 값(t)을 보낼 때 붙인다. 대기열에 쌓여 있던 옛 기록도 보내는 순간 붙는다.
     body: JSON.stringify({ ...payload, t: getSelfAccessToken() }),
-  });
+  }, 15000);
   if (!resp.ok) {
     const msg = await resp.text().catch(() => "");
     throw new Error(msg || `video-watch 저장 실패: ${resp.status}`);
@@ -2448,8 +2520,9 @@ const computeActiveTodoDateEarly = (todos, studentId, selectedDate) => {
       })
       .sort((a, b) => b.localeCompare(a));
     const todayStr = getTodayStr();
-    const allDatesFull = filterTodoDatesForReveal(allDatesRaw, todayStr, new Date().getHours());
-    return pickDefaultTodoDate(allDatesFull, todayStr) || "";
+    const hourNow = new Date().getHours();
+    const allDatesFull = filterTodoDatesForReveal(allDatesRaw, todayStr, hourNow);
+    return pickDefaultTodoDate(allDatesFull, todayStr, hourNow) || "";   // [96차수] 밤 10시 규칙도 본문과 같게
   } catch (e) { return ""; }
 };
 
@@ -3405,6 +3478,9 @@ function MockExamTab({ studentId }) {
             </span>
           </button>
 
+          {/* [96차수 09-05 · 원장 결정] OMR 카드 사진 단추는 준비될 때까지 숨긴다 — 눌러도 아무 일이 없어 고장으로 오해했다.
+              되살리려면 아래 false && 를 지우면 된다. */}
+          {false && (
           <button style={menuBtn(false)}>
             <span style={{ fontSize: 24 }}>📷</span>
             <span>
@@ -3412,6 +3488,7 @@ function MockExamTab({ studentId }) {
               <div style={{ fontSize: 12, color: "#999", marginTop: 2 }}>준비 중이에요</div>
             </span>
           </button>
+          )}
 
           {attempts.length > 0 && (
             <div style={{ marginTop: 14, borderTop: "1px solid #f0f0f0", paddingTop: 12 }}>
@@ -3514,9 +3591,11 @@ function StudentCalendarTab({ student, makeups, customHolidays, exams, attLog, a
   const first = new Date(ym.y, ym.m, 1);
   const firstDow = first.getDay(); // 0=일요일 시작
   const daysInMonth = new Date(ym.y, ym.m + 1, 0).getDate();
+  // [85차수 08-31 · 원장 요청] 앞뒤 빈칸을 전달·다음달 날짜(연회색)로 채운다 — 누르면 달력이 그 달로 넘어간다
   const cells = [];
-  for (let i = 0; i < firstDow; i++) cells.push(null);
+  for (let i = firstDow; i > 0; i--) cells.push(new Date(ym.y, ym.m, 1 - i));
   for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(ym.y, ym.m, d));
+  for (let d = 1; cells.length % 7 !== 0; d++) cells.push(new Date(ym.y, ym.m + 1, d));
   const move = (diff) => setYm((p) => { const d = new Date(p.y, p.m + diff, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
   const sel = selDate ? dayInfo(selDate, new Date(selDate + "T00:00:00")) : null;
   const WEEK_KO = ["일", "월", "화", "수", "목", "금", "토"];
@@ -3545,19 +3624,21 @@ function StudentCalendarTab({ student, makeups, customHolidays, exams, attLog, a
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3 }}>
           {cells.map((dObj, idx) => {
             if (!dObj) return <div key={"e" + idx} />;
+            const out = dObj.getMonth() !== ym.m;   // [85차수] 전달·다음달 날짜 — 연하게, 누르면 그 달로
             const ds = fmtYMD(dObj);
             const info = dayInfo(ds, dObj);
             const isSel = ds === selDate;
             const isToday = ds === todayStr;
             const attended = !!(info.att && (info.att.inAt || info.att.inTime));
             return (
-              <button key={ds} onClick={() => setSelDate(ds)} style={{
+              <button key={ds} onClick={() => { if (out) setYm({ y: dObj.getFullYear(), m: dObj.getMonth() }); setSelDate(ds); }} style={{
                 minHeight: 52, padding: "5px 2px 4px", borderRadius: 9, cursor: "pointer",
+                opacity: out ? 0.5 : 1,
                 border: isSel ? "1.8px solid #2A6FDB" : isToday ? "1.5px solid #b9cff2" : (info.attendTime != null && info.isVac) ? "1.5px solid #F2C14E" : "1px solid transparent",
                 background: info.hol ? "#FDF0EE" : info.attendTime != null ? "#F0F6FF" : info.isVac ? "#FFF6E0" : "#fff",
                 display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
               }}>
-                <span style={{ fontSize: 12.5, fontWeight: isToday ? 800 : 600, color: info.hol ? "#D2402E" : dObj.getDay() === 0 ? "#D2402E" : dObj.getDay() === 6 ? "#2A6FDB" : "#333" }}>{dObj.getDate()}</span>
+                <span style={{ fontSize: 12.5, fontWeight: isToday ? 800 : 600, color: out ? "#b6bac4" : info.hol ? "#D2402E" : dObj.getDay() === 0 ? "#D2402E" : dObj.getDay() === 6 ? "#2A6FDB" : "#333" }}>{dObj.getDate()}</span>
                 <span style={{ display: "flex", gap: 2, alignItems: "center", minHeight: 9 }}>
                   {info.dayExams.length > 0 && <span style={{ width: 6, height: 6, borderRadius: 3, background: "#E67E22" }} />}
                   {info.visMk && <span style={{ width: 6, height: 6, borderRadius: 3, background: "#8E44AD" }} />}
@@ -3598,7 +3679,7 @@ function StudentCalendarTab({ student, makeups, customHolidays, exams, attLog, a
               rows.push(["시험", `${ex.name || ex.type || "시험"}${period ? ` (${period})` : ""}`, "#E67E22"]);
             });
             if (sel.visMk) rows.push([sel.visMk.isOverride ? "시간변경" : "보강", sel.visMk.time ? `${sel.visMk.time} 등원` : "시간 미정", "#8E44AD"]);
-            else if (sel.attendTime && !sel.hol) rows.push([sel.isVac ? "방학 시간표" : "등원", `${sel.attendTime} 등원 예정`, sel.isVac ? "#B45309" : "#2A6FDB"]);
+            else if (sel.attendTime && !sel.hol) rows.push([sel.isVac ? "방학 시간표" : "등원", `${sel.attendTime} 등원${selDate < todayStr ? "" : " 예정"}`, sel.isVac ? "#B45309" : "#2A6FDB"]);   // [96차수] 지난 날은 "예정"을 뺀다
             if (sel.hiddenMk) rows.push(["등원 취소", "이 날은 등원이 취소되었어요", "#999999"]);
             if (sel.attMark?.type === "late") rows.push(["지각", Number(sel.attMark.time) > 0 ? `${sel.attMark.time}분 지각` : "지각 처리됨", "#E8890C"]);
             if (sel.attMark?.type === "absent") rows.push(["결석", sel.attMark.reason ? `사유: ${sel.attMark.reason}` : "결석 처리됨", "#D2402E"]);
@@ -3905,30 +3986,56 @@ function TeacherHome({ auth }) {
     } catch (e) { /* 실패하면 다음에 다시 — 화면은 그대로 둔다 */ }
   }, []);
 
-  useEffect(() => {
-    let dead = false;
-    (async () => {
-      try {
-        const [rh, rs] = await Promise.all([
-          fetch(teacherUrl("/teacher/home"), { cache: "no-store" }),
-          fetch(teacherUrl("/teacher/students"), { cache: "no-store" }),
-        ]);
-        if (rh.status === 403 || rs.status === 403) { teacherLinkDead(); return; }
-        const dh = await rh.json().catch(() => null);
-        const dsx = await rs.json().catch(() => null);
-        if (dead) return;
-        setHome(dh && dh.success ? dh : null);
-        setRoster(dsx && dsx.success ? dsx : null);
-        if (dh && dh.today) setDateStr(dh.today);
-        if (!dh?.success || !dsx?.success) setErr("일부 자료를 불러오지 못했습니다.");
-      } catch (e) {
-        if (!dead) setErr("불러오지 못했습니다. 인터넷 연결을 확인해주세요.");
-      } finally {
-        if (!dead) setLoading(false);
+  // [96차수 09-05] 선생님 홈도 다시 받아온다 — 예전엔 처음 열 때 딱 한 번만 받아서, 앱을 켜 둔 채 다음 날 다시 열면
+  //   "오늘 할일"·출근 안내가 어제 것 그대로였다(학생 화면엔 화면 켤 때 새로 받는 장치가 있는데 여기엔 없었음).
+  //   ① 화면을 다시 켤 때 — 마지막으로 받은 지 1분이 넘었으면 조용히 다시 받는다
+  //   ② 머리글 ↻ 단추 — 직접 다시 받는다
+  //   다시 받을 때 실패하면 화면은 그대로 두고 안내만 3초 띄운다. 서버의 "오늘"이 바뀌었으면(날짜가 넘어감) 학생 탭 날짜도 오늘로 옮긴다.
+  const [refreshing, setRefreshing] = useState(false);
+  const lastLoadAtRef = useRef(0);
+  const deadRef = useRef(false);
+  const lastTodayRef = useRef("");
+  const loadAll = useCallback(async ({ initial = false, manual = false } = {}) => {
+    if (manual) setRefreshing(true);
+    try {
+      const [rh, rs] = await Promise.all([
+        fetch(teacherUrl("/teacher/home"), { cache: "no-store" }),
+        fetch(teacherUrl("/teacher/students"), { cache: "no-store" }),
+      ]);
+      if (rh.status === 403 || rs.status === 403) { teacherLinkDead(); return; }
+      const dh = await rh.json().catch(() => null);
+      const dsx = await rs.json().catch(() => null);
+      if (deadRef.current) return;
+      lastLoadAtRef.current = Date.now();
+      setHome(prev => (dh && dh.success ? dh : prev));
+      setRoster(prev => (dsx && dsx.success ? dsx : prev));
+      if (dh && dh.success && dh.today) {
+        if (initial || dh.today !== lastTodayRef.current) setDateStr(dh.today);
+        lastTodayRef.current = dh.today;
       }
-    })();
-    return () => { dead = true; };
+      if (!dh?.success || !dsx?.success) {
+        setErr("일부 자료를 불러오지 못했습니다.");
+        if (!initial) setTimeout(() => setErr(""), 3000);
+      }
+    } catch (e) {
+      if (deadRef.current) return;
+      setErr(initial ? "불러오지 못했습니다. 인터넷 연결을 확인해주세요." : "다시 받아오지 못했어요. 인터넷 연결을 확인해 주세요.");
+      if (!initial) setTimeout(() => setErr(""), 3000);
+    } finally {
+      if (!deadRef.current) { setLoading(false); if (manual) setRefreshing(false); }
+    }
   }, []);
+  useEffect(() => {
+    deadRef.current = false;
+    loadAll({ initial: true });
+    const onVis = () => {
+      if (document.hidden) return;
+      if (Date.now() - lastLoadAtRef.current < 60000) return;   // 방금 받았으면 안 받는다
+      loadAll();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { deadRef.current = true; document.removeEventListener("visibilitychange", onVis); };
+  }, [loadAll]);
 
   const F = "'Pretendard Variable', -apple-system, sans-serif";
   const teacher = home?.teacher || {};
@@ -4124,6 +4231,11 @@ function TeacherHome({ auth }) {
             <span style={{ fontSize: 17, fontWeight: 800 }}>{home?.isOwner ? "원장" : (teacher.name ? `${teacher.name} 선생님` : "선생님")}</span>
             {teacher.role && <span style={{ fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 999, background: "rgba(255,255,255,0.18)" }}>{teacher.role}</span>}
             <span style={{ marginLeft: "auto", fontSize: 11.5, color: "rgba(255,255,255,0.55)" }}>{home?.isOwner ? "원장 전용" : "선생님 전용"}</span>
+            {/* [96차수 09-05] 다시 받아오기 단추 — 학생 화면의 ↻와 같은 모양 */}
+            <button onClick={() => loadAll({ manual: true })} disabled={refreshing} title="다시 받아오기" aria-label="다시 받아오기"
+              style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 9, border: "1px solid rgba(255,255,255,0.25)", background: refreshing ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.14)", color: "#fff", fontSize: 15, fontWeight: 700, cursor: refreshing ? "default" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", opacity: refreshing ? 0.65 : 1 }}>
+              {refreshing ? "…" : "↻"}
+            </button>
           </div>
           {/* [12차수 원장 지시] 사람 수는 화면에 띄우지 않는다 */}
           {/* [16차수 원장 지시] 개수도 안 띄운다 — "강의 204개" 같은 숫자를 선생님 화면에서 전부 뺐다 */}
@@ -4374,9 +4486,11 @@ function TeacherHome({ auth }) {
           const first = new Date(calYm.y, calYm.m, 1);
           const firstDow = first.getDay();
           const daysInMonth = new Date(calYm.y, calYm.m + 1, 0).getDate();
+          // [85차수 08-31 · 원장 요청] 앞뒤 빈칸을 전달·다음달 날짜(연회색)로 채운다 — 누르면 달력이 그 달로 넘어간다
           const cells = [];
-          for (let i = 0; i < firstDow; i++) cells.push(null);
+          for (let i = firstDow; i > 0; i--) cells.push(new Date(calYm.y, calYm.m, 1 - i));
           for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(calYm.y, calYm.m, d));
+          for (let d = 1; cells.length % 7 !== 0; d++) cells.push(new Date(calYm.y, calYm.m + 1, d));
           const move = (diff) => setCalYm(p => { const d = new Date(p.y, p.m + diff, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
           const allHol = { ...HOLIDAYS, ...((roster && roster.holidays) || {}) };
           const holName = (v) => (typeof v === "string" ? v : (v && v.name) || "휴원");
@@ -4400,13 +4514,14 @@ function TeacherHome({ auth }) {
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3 }}>
                   {cells.map((dObj, idx) => {
                     if (!dObj) return <div key={"e" + idx} />;
+                    const out = dObj.getMonth() !== calYm.m;   // [85차수] 전달·다음달 날짜 — 연하게, 누르면 그 달로
                     const ds = fmtYMD(dObj);
                     const w = teacherWorkOn(teacher, ds);
                     const hol = allHol[ds];
                     const isSel = ds === calSel;
                     const isToday = ds === today;
                     return (
-                      <button key={ds} onClick={() => setCalSel(ds)}
+                      <button key={ds} onClick={() => { if (out) setCalYm({ y: dObj.getFullYear(), m: dObj.getMonth() }); setCalSel(ds); }}
                         // [근무표 수정 15차수] 원장만 — 길게 누르기(폰) / 우클릭(PC)으로 근무 고치기 창
                         onContextMenu={home?.isOwner ? (e) => { e.preventDefault(); setCalSel(ds); setSchedEdit({ date: ds, openId: "" }); } : undefined}
                         onTouchStart={home?.isOwner ? () => { schedPressRef.current = setTimeout(() => { setCalSel(ds); setSchedEdit({ date: ds, openId: "" }); }, 550); } : undefined}
@@ -4414,11 +4529,12 @@ function TeacherHome({ auth }) {
                         onTouchMove={home?.isOwner ? () => { clearTimeout(schedPressRef.current); } : undefined}
                         style={{
                         minHeight: 52, padding: "5px 2px 4px", borderRadius: 9, cursor: "pointer",
+                        opacity: out ? 0.5 : 1,
                         border: isSel ? "1.8px solid #2A6FDB" : isToday ? "1.5px solid #b9cff2" : w && w.kind === "추가" ? "1.5px solid #F2C14E" : "1px solid transparent",
                         background: hol ? "#FDF0EE" : w ? "#F0F6FF" : "#fff",
                         display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
                       }}>
-                        <span style={{ fontSize: 12.5, fontWeight: isToday ? 800 : 600, color: hol ? "#D2402E" : dObj.getDay() === 0 ? "#D2402E" : dObj.getDay() === 6 ? "#2A6FDB" : "#333" }}>{dObj.getDate()}</span>
+                        <span style={{ fontSize: 12.5, fontWeight: isToday ? 800 : 600, color: out ? "#b6bac4" : hol ? "#D2402E" : dObj.getDay() === 0 ? "#D2402E" : dObj.getDay() === 6 ? "#2A6FDB" : "#333" }}>{dObj.getDate()}</span>
                         {/* [12차수 원장 지시] 칸에 사람 수를 적지 않는다 — 근무일이면 "출근"만 */}
                         <span style={{ minHeight: 11, fontSize: 9.5, fontWeight: 800, color: w ? "#2A6FDB" : "#c8cdd8", lineHeight: 1 }}>{w ? "출근" : ""}</span>
                       </button>
@@ -4792,6 +4908,8 @@ export default function App() {
   const viewingVideoRef = useRef(null);
   // [3차] 대기열 재전송(flush)이 겹쳐 도는 것을 막는 문지기. 겹치면 같은 기록이 두 번 저장된다.
   const flushingRef = useRef(false);
+  // [95차수 09-05] 오답 TEST를 하나라도 푼 상태인지(VocabWrongTab이 알려준다) — 위 탭 줄로 나갈 때 확인창을 띄운다
+  const vocabTestBusyRef = useRef(false);
 
   // [PASS] 새로 완주한 책 감지 → 앱 진입 시 축하 연출 (책당 딱 1번, 이 폰 기준)
   // ※ 반드시 위의 student·todos·progressTree state 선언 "뒤"에 있어야 함 — 앞에 두면 TDZ 크래시로 앱이 안 열림
@@ -5091,15 +5209,21 @@ export default function App() {
       setPendingVideoCount(getPendingVideoWatch().length);
       setLastVideoSaveStatus("저장 대기 중");
     } finally {
-      videoSaveInFlightRef.current = false;
+      // [95차수 09-05] 이 저장이 아직 "지금 보는 영상"의 것일 때만 문지기를 푼다 — 그새 영상을 닫았거나 다른 영상을 열었으면
+      //   그쪽 문지기(새 영상의 것)를 건드리면 안 된다.
+      if (currentSessionIdRef.current === rootSessionId) videoSaveInFlightRef.current = false;
     }
 
+    setVideoWatch(prev => applyVideoWatchLocal(prev || {}, payload));
+    // [95차수 09-05] 그새 영상을 닫았거나 다른 영상을 열었으면(세션이 바뀜) 기준값을 건드리지 않는다.
+    //   예전엔 닫을 때 저장이 끝날 때까지 기다려서 이런 일이 없었지만, 이제 저장을 뒤에서 하므로 여기서 막아야
+    //   옛 영상의 합계가 새 영상의 기준값에 들어가 새 영상의 첫 부분이 안 잡히는 일이 없다.
+    if (currentSessionIdRef.current !== rootSessionId) return true;
     videoSaveChunkSeqRef.current = chunkSeq;
     lastSavedPlaySecRef.current = totalPlaySec;
     lastSavedFocusSecRef.current = totalFocusSec;
     lastSavedAwaySecRef.current = totalAwaySec;
     lastSavedAwayCountRef.current = totalAwayCount;
-    setVideoWatch(prev => applyVideoWatchLocal(prev || {}, payload));
     return true;
   };
 
@@ -5169,12 +5293,17 @@ export default function App() {
   const closeVideo = async () => {
     if (viewingVideo && viewStartTime) {
       finishAwayMeasurement();
-      const saved = await saveCurrentVideoProgress({ reason: "close", minDeltaSec: 1, partialSave: false });
-      if (!saved) {
-        const totalPlaySec = Math.round(ytPlaySecRef.current);
-        if (totalPlaySec > 0) setLastVideoSaveStatus("이미 자동 저장된 시청 기록입니다");
-        else setLastVideoSaveStatus("재생한 시간이 없어 시청 기록을 저장하지 않았습니다");
-      }
+      // [95차수 09-05] 저장은 뒤에서 하고 영상은 바로 닫는다 — 예전엔 저장이 끝날 때까지 기다려서 인터넷이 느리면
+      //   다음 영상이 한참 안 열렸다. 저장 재료(재생 시간 등)는 부르는 순간 바로 읽어 두므로 아래에서 기준값을
+      //   0으로 되돌려도 안전하고, 저장이 끝난 뒤의 기준값 갱신은 세션이 바뀌면 건너뛴다(saveCurrentVideoProgress).
+      const totalPlaySec = Math.round(ytPlaySecRef.current);
+      saveCurrentVideoProgress({ reason: "close", minDeltaSec: 1, partialSave: false })
+        .then((saved) => {
+          if (saved) return;
+          if (totalPlaySec > 0) setLastVideoSaveStatus("이미 자동 저장된 시청 기록입니다");
+          else setLastVideoSaveStatus("재생한 시간이 없어 시청 기록을 저장하지 않았습니다");
+        })
+        .catch(() => {});
       try { localStorage.removeItem("pending_away"); } catch (e) { /* ignore */ }
     }
 
@@ -5490,14 +5619,16 @@ export default function App() {
   //   학생 폰에 바로 떠서 아이가 다음 숙제를 미리 보는 문제가 있었다. 학원이 밤 10시에 끝나므로
   //   오늘이 수업날이면 22시 전까지 앞으로 날짜를 숨긴다. 날짜 단추·기본 날짜·홈 카드가 전부 이 목록을 쓴다.
   const todayStrForTab = getTodayStr();
-  const allDatesFull = filterTodoDatesForReveal(allDatesRaw, todayStrForTab, new Date().getHours());
+  const hourNow = new Date().getHours();
+  const allDatesFull = filterTodoDatesForReveal(allDatesRaw, todayStrForTab, hourNow);
   // [0825 4차수] 지금 다음 숙제를 숨기고 있는 중인지 — 그냥 안 보이면 "숙제 없네?"로 오해해서 안내 한 줄을 띄운다
   const todoRevealHeld = Array.isArray(allDatesRaw) && allDatesRaw.length > allDatesFull.length;
 
   // [0813] 앱을 열었을 때 기본으로 보여줄 날짜 — 원장 결정:
   // ① 오늘 기록이 있으면 오늘 ② 없으면 오늘 이후 가장 가까운 기록(=다음 숙제)
   // ③ 미래 기록도 없으면 가장 최근 지난 기록. 학생이 단추로 고른 날짜(selectedDate)가 언제나 먼저다.
-  const defaultDate = pickDefaultTodoDate(allDatesFull, todayStrForTab);
+  // [96차수 09-05 · 원장 결정] 단, 수업날 밤 10시가 지나 다음 숙제가 열렸으면 그 다음 숙제가 기본(위 computeActiveTodoDateEarly와 같은 규칙).
+  const defaultDate = pickDefaultTodoDate(allDatesFull, todayStrForTab, hourNow);
   // 날짜 단추는 3개 유지. 기본 날짜가 최신 3개 밖이면, 기본 날짜와 그보다 가까운 날짜 2개로 채운다.
   // [0813 검토수정] 예전에는 최신(=가장 먼) 2개를 데려와서 정작 가까운 날짜가 안 보였다.
   let allDates = allDatesFull.slice(0, 3);
@@ -5588,6 +5719,9 @@ export default function App() {
   // deadline = 그 수업 날짜의 등원 시각. 등원 정보가 없으면 빈 값(서버는 그 경우 늦음 판정 안 함).
   const startVocaHwTest = () => {
     if (!taskVoca) return false;
+    // [94차수 09-05] 선생님이 학생 화면을 열어본 경우(보기 전용)에는 학생 숙제 TEST를 시작하지 않는다.
+    //   학생 열쇠(t)가 없어 도장도 못 읽고 결과도 저장되지 않으므로, 열어봐야 헛일이다.
+    if (IS_TEACHER_MODE) return false;
     let deadline = "";
     try {
       const allHol = { ...HOLIDAYS, ...(customHolidays || {}) };
@@ -5794,8 +5928,8 @@ export default function App() {
       {/* [PASS] 교재 완주 축하 오버레이 — 새 완주가 있을 때만 */}
       {passQueue.length > 0 && <BookPassCelebration books={passQueue} onClose={() => setPassQueue([])} />}
 
-      {/* [푸시] 알림 켜기 배너 — 허용 전인 폰에만 보인다 */}
-      {student && <PushEnableBanner student={student} />}
+      {/* [푸시] 알림 켜기 배너 — [96차수 09-05 · 원장 결정] 탭 줄 위에서 홈 카드 아래로 옮겼다.
+          설치 배너·설문·오답 경고와 함께 뜨는 날은 숙제 카드가 화면 아래로 밀렸기 때문. 홈 탭 맨 아래에서 그린다. */}
 
       {/* [설문] 진행 중 설문 — 선택지를 누르면 제출, 마감 전까지 변경 가능 */}
       {(() => {
@@ -5839,15 +5973,25 @@ export default function App() {
           ...((progressTree?.lanes || []).length ? [{ key: "progress", label: "진도" }] : []),
         ].map((t) => (
           <button key={t.key} onClick={() => {
+            // [95차수 09-05] 오답 TEST 도중(하나라도 풀었음)에 다른 탭으로 나가면 푼 게 사라진다 — 확인창을 한 번 띄운다
+            //   ("← 목록" 단추엔 원래 확인 카드가 있었지만 위 탭 줄로 나가면 그걸 건너뛰었다)
+            if (tab === "vocabWrong" && t.key !== "vocabWrong" && vocabTestBusyRef.current) {
+              if (!window.confirm("지금 나가면 푼 게 사라져요.\n그래도 나갈까요?")) return;
+            }
+            // [96차수 09-05] 이미 단어 탭인데 "단어"를 또 누르면 아무것도 안 한다 — 예전엔 "숙제 TEST 시작" 신호를 또 보내서
+            //   풀던 시험이 처음부터 다시 시작됐다(마플보카 실측: 열린 창을 닫고 새로 시작, 틀린·다시 시작 횟수도 0으로).
+            if (t.key === "voca" && tab === "voca") return;
             if (t.key === "voca") {
               // [0825 5차수] 단어 숙제가 남아 있으면 숙제 TEST부터, 통과했거나 숙제가 없으면 예전처럼 책장(마지막 책)
-              if (taskVoca && !vocaHwRec) startVocaHwTest();
+              // [94차수 09-05] 선생님 화면(보기 전용)은 도장을 못 읽으므로 늘 책장으로만 — 숙제 TEST를 열지 않는다
+              if (taskVoca && !vocaHwRec && !IS_TEACHER_MODE) startVocaHwTest();
               else setVocaOpenLast(true);
             }
             setTab(t.key);
           }} style={(() => {
             // [0825 8차수] 단어 숙제가 남아 있는 동안 "단어" 탭도 빨간 칸 — 누르면 바로 숙제 TEST가 시작된다
-            const vocaAlert = t.key === "voca" && taskVoca && !vocaHwRec;
+            // [94차수 09-05] 선생님 화면에서는 도장을 못 읽어 늘 "남음"으로 보였다 → 선생님 화면은 빨간 칸을 안 쓴다
+            const vocaAlert = t.key === "voca" && taskVoca && !vocaHwRec && !IS_TEACHER_MODE;
             return {
               // [0819] 한 칸을 화면 너비의 23%로 고정한다 — 넷이 꽉 차고 다섯째가 조금 보여서
               //        "옆으로 밀면 더 있다"는 것이 눈에 띈다. 글자를 꾸겨 넣지 않아 크게 보인다.
@@ -5879,6 +6023,17 @@ export default function App() {
           try { vocaLastId = localStorage.getItem("maplevoca_lastbook") || ""; } catch (e) { vocaLastId = ""; }
           const vocaLastName = vocaFullLabel(vocaLastId);
           const vocaTitle = vocaLastName || (vocaIds.length ? (vocaFullLabel(vocaIds[0]) || "내 단어장") : "내 단어장");
+          // [94차수 09-05] 2번 카드 상태 3가지 — 학생: 숙제 남음(빨강)·통과(초록) / 선생님 화면: 판정 없음(흰색).
+          //   선생님이 학생 화면을 열면 통과 도장을 못 읽어온다(학생 열쇠 t가 없음). 예전엔 이때도 "아직 안 봄"(빨강)으로
+          //   나와서 이미 통과한 학생까지 안 본 것처럼 보였고, 카드를 누르면 학생 숙제 TEST까지 열렸다.
+          const hwTodo = !!taskVoca && !vocaHwRec && !IS_TEACHER_MODE;
+          const hwDone = !!taskVoca && !!vocaHwRec && !IS_TEACHER_MODE;
+          const hwStaff = !!taskVoca && IS_TEACHER_MODE;
+          const hwRangeText = taskVoca
+            ? (taskVoca.ns
+                ? `내신 단어 ${fmtLecRange(taskVoca.lessons)}과`                          /* [내신 4차수] */
+                : `${vocaShortLabel(taskVoca.book)} ${VOCA_UNIT_WORDS[taskVoca.book] || "DAY"} ${fmtLecRange(taskVoca.lecs)}`)
+            : vocaTitle;
           // 마지막에 보던 강의 = 시청 기록(lastAt)이 가장 최근인 영상
           const watchBySid = videoWatch[String(studentId)] || videoWatch[Number(studentId)] || {};
           let lastVideo = null; let lastVideoAt = 0;
@@ -5977,22 +6132,22 @@ export default function App() {
                   // date = 이 숙제의 수업 날짜(activeDate) — 전날 미리 해도 그 수업 칸에 도장이 찍힌다.
                   // deadline = 그 수업 날짜의 등원 시각. 등원 정보가 없으면 빈 값(서버는 그 경우 늦음 판정 안 함).
                   // [0825 5차수] 이미 통과한 날은 숙제 TEST를 다시 열지 않고 책장으로 — 단어 탭과 같은 동작
-                  if (taskVoca && !vocaHwRec) { startVocaHwTest(); setTab("voca"); return; }
+                  // [94차수 09-05] 선생님 화면(hwStaff)은 판정이 없으므로 늘 책장으로만 간다
+                  if (hwTodo) { startVocaHwTest(); setTab("voca"); return; }
                   setVocaOpenLast(true); setTab("voca");
                 }} style={{ ...cardBox,
                   /* [0825 7차수] 글이 아니라 색으로 — 통과=초록 칸, 숙제 남음=빨간 칸, 숙제 없는 날=흰 칸 (4번 오답 카드와 같은 말투) */
-                  background: taskVoca ? (vocaHwRec ? "#e8f7ee" : "#fdecea") : "#fff",
-                  border: taskVoca ? (vocaHwRec ? "1px solid #a8dcbd" : "1px solid #f5c2bd") : "1px solid #e8eaef" }}>
-                  <div style={{ ...cardLabel, color: taskVoca ? (vocaHwRec ? "#1B8A5A" : "#b03a2e") : cardLabel.color }}>
-                    📚 2. 단어 숙제{taskVoca ? (vocaHwRec ? " · 통과 ✓" : " · 아직 안 봄") : ""}
+                  /* [94차수 09-05] 선생님 화면은 판정을 모르는 상태라 흰 칸 */
+                  background: hwDone ? "#e8f7ee" : hwTodo ? "#fdecea" : "#fff",
+                  border: hwDone ? "1px solid #a8dcbd" : hwTodo ? "1px solid #f5c2bd" : "1px solid #e8eaef" }}>
+                  <div style={{ ...cardLabel, color: hwDone ? "#1B8A5A" : hwTodo ? "#b03a2e" : cardLabel.color }}>
+                    📚 2. 단어 숙제{hwDone ? " · 통과 ✓" : hwTodo ? " · 아직 안 봄" : hwStaff ? " · 확인은 원장앱에서" : ""}
                   </div>
-                  <div style={{ ...cardMain, color: taskVoca ? (vocaHwRec ? "#14603f" : "#b03a2e") : cardMain.color }}>{taskVoca
-                    ? (taskVoca.ns
-                        ? `내신 단어 ${fmtLecRange(taskVoca.lessons)}과`                          /* [내신 4차수] */
-                        : `${vocaShortLabel(taskVoca.book)} ${VOCA_UNIT_WORDS[taskVoca.book] || "DAY"} ${fmtLecRange(taskVoca.lecs)}`)
-                    : vocaTitle}</div>
-                  <div style={{ ...cardSub, color: taskVoca ? (vocaHwRec ? "#3e8f66" : "#c0655c") : cardSub.color, fontWeight: taskVoca ? 700 : cardSub.fontWeight }}>{taskVoca
-                    ? (vocaHwRec ? "통과 완료! 누르면 단어장" : "누르면 숙제 TEST 시작")
+                  <div style={{ ...cardMain, color: hwDone ? "#14603f" : hwTodo ? "#b03a2e" : cardMain.color }}>{hwRangeText}</div>
+                  <div style={{ ...cardSub, color: hwDone ? "#3e8f66" : hwTodo ? "#c0655c" : cardSub.color, fontWeight: (hwDone || hwTodo) ? 700 : cardSub.fontWeight }}>{hwDone
+                    ? "통과 완료! 누르면 단어장"
+                    : hwTodo ? "누르면 숙제 TEST 시작"
+                    : hwStaff ? "선생님 화면에선 시험이 안 열려요 · 누르면 단어장"
                     : vocaLastName ? "이어서 공부하기" : "공부하러 가기"}</div>
                 </button>
                 {studentVideos.length > 0 && (
@@ -6019,6 +6174,8 @@ export default function App() {
                   <div style={cardSub}>열린 회차 보기</div>
                 </button>
               </div>
+              {/* [푸시] 알림 켜기 배너 — 허용 전인 폰에만 보인다. [96차수] 홈 카드 아래 자리(위 탭 줄에서 이사) */}
+              {student && <PushEnableBanner student={student} wrapStyle={{ maxWidth: "none", margin: 0, padding: 0 }} />}
               {/* [0813] 강의 고르기 창 — 시작 강의 하나 크게, 앞뒤 강의는 "추가 강의"를 눌러야 펼쳐짐. 바깥을 누르면 닫힌다 */}
               {/* [0813-2] 고르기 창 은퇴 — 카드를 누르면 창 없이 바로 강의 탭으로 간다. 되살리려면 false && 를 지우면 된다. */}
               {false && videoPicker && picker.main && (
@@ -6093,8 +6250,10 @@ export default function App() {
               </div>
             )}
 
-            {/* 5단계 렌더링 (빈 단계는 StepSection 내부에서 "오늘 없음"으로 표시) */}
-            {stepGroups.map((step, idx) => (
+            {/* 5단계 렌더링 (빈 단계는 StepSection 내부에서 "오늘 없음"으로 표시)
+                [94차수 09-05] 투두가 하나도 없는 학생(allDates가 빈 목록)에게는 다섯 칸 대신 아래 안내만 보여준다 —
+                예전엔 stepGroups가 늘 5칸이라 "등록된 과제가 아직 없어요" 안내가 절대 안 나오고 "오늘 없음" 다섯 칸만 보였다. */}
+            {allDates.length > 0 && stepGroups.map((step, idx) => (
               <StepSection
                 key={step.key}
                 step={step}
@@ -6109,12 +6268,11 @@ export default function App() {
               />
             ))}
 
-            {stepGroups.length === 0 && (
+            {allDates.length === 0 && (
               <div style={{ textAlign: "center", padding: "60px 20px", color: "#bbb" }}>
                 <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
-                <div style={{ fontSize: 15, fontWeight: 600, color: "#999" }}>
-                  {allDates.length === 0 ? "등록된 과제가 아직 없어요" : "이 날짜에 등록된 과제가 없어요"}
-                </div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: "#999" }}>등록된 과제가 아직 없어요</div>
+                <div style={{ fontSize: 12.5, color: "#bbb", marginTop: 8, lineHeight: 1.6 }}>선생님이 숙제를 적으면 여기에 보여요</div>
               </div>
             )}
           </>
@@ -6257,7 +6415,8 @@ export default function App() {
           );
         })()}
         {tab === "vocabWrong" && (
-          <VocabWrongTab vocabWrongWords={vocabWrongWords} studentId={studentId} />
+          <VocabWrongTab vocabWrongWords={vocabWrongWords} studentId={studentId}
+            onProgress={(busy) => { vocabTestBusyRef.current = !!busy; }} />
         )}
         {tab === "progress" && (
           <StudentProgressTree student={student} todos={todos} progressTree={progressTree} />
@@ -6557,7 +6716,7 @@ function buildVocabAnswerDisplay(correctAnswers = []) {
 // ─── VocabWrongTab: 월별 오답 단어 TEST ───
 // 숙제/과제의 "2. 단어 TEST"와 섞지 않고 상단 별도 탭에서만 보여준다.
 // 2차: 완료 결과를 Worker로 보내고, 통과한 단어는 다음 풀에서 제외되도록 한다.
-function VocabWrongTab({ vocabWrongWords = {}, studentId }) {
+function VocabWrongTab({ vocabWrongWords = {}, studentId, onProgress }) {
   const [mode, setMode] = useState("list"); // list | test | done
   const [active, setActive] = useState(null);
   const [idx, setIdx] = useState(0);
@@ -6570,6 +6729,18 @@ function VocabWrongTab({ vocabWrongWords = {}, studentId }) {
   const [sendStatus, setSendStatus] = useState("");
   // [3차 ③] 테스트 도중에 목록으로 나가려 할 때 띄우는 확인 카드
   const [askLeave, setAskLeave] = useState(false);
+  // [95차수 09-05] 정답 입력칸 — 다음 단어로 넘어갈 때 커서를 다시 두어 폰 자판이 내려가지 않게 한다
+  const inputRef = useRef(null);
+  // [95차수 09-05] "하나라도 풀었는지"를 부모(학생앱)에게 알린다 — 위 탭 줄로 나갈 때 확인창을 띄우기 위해.
+  //   이 화면이 사라질 때(탭 이동)는 반드시 "진행 중 아님"으로 되돌린다.
+  const onProgressRef = useRef(onProgress);
+  onProgressRef.current = onProgress;
+  const inProgress = mode === "test" && (idx > 0 || revealed);
+  useEffect(() => {
+    if (onProgressRef.current) onProgressRef.current(inProgress);
+    return () => { if (onProgressRef.current) onProgressRef.current(false); };
+  }, [inProgress]);
+  const focusInput = () => { try { inputRef.current?.focus(); } catch (e) { /* ignore */ } };
 
   const monthLabel = (mk) => {
     const [y, m] = String(mk || "").split("-");
@@ -6614,10 +6785,14 @@ function VocabWrongTab({ vocabWrongWords = {}, studentId }) {
 
   const startTest = (m) => {
     if (!m.words.length) return;
-    setActive(m);
-    resetProgress();
-    setStartedAt(new Date().toISOString());
-    setMode("test");
+    // [95차수 09-05] 단추를 누른 손가락 동작 안에서 화면을 바로 그리고 입력칸에 커서를 둔다(폰 자판이 바로 뜨게)
+    flushSync(() => {
+      setActive(m);
+      resetProgress();
+      setStartedAt(new Date().toISOString());
+      setMode("test");
+    });
+    focusInput();
   };
 
   const backToList = () => {
@@ -6714,7 +6889,7 @@ function VocabWrongTab({ vocabWrongWords = {}, studentId }) {
           <div style={{ fontSize: 14, color: pass ? "#0b7a5c" : "#c0392b", fontWeight: 800, marginBottom: 10 }}>정답률 {summary.accuracy}% · 기준 90%</div>
           {!pass && summary.wrongLabels.length > 0 && (
             <div style={{ marginTop: 12, marginBottom: 16, textAlign: "left" }}>
-              <div style={{ fontSize: 13, color: "#777", marginBottom: 6 }}>★ 별표된 어려운 단어</div>
+              <div style={{ fontSize: 13, color: "#777", marginBottom: 6 }}>이번에 틀린 단어</div>{/* [96차수] 제목이 "별표된 어려운 단어"였는데 실제 목록은 이번에 틀린 단어라 문구를 맞춤 */}
               {summary.wrongLabels.map(w => <span key={w} style={{ display: "inline-block", margin: "0 6px 6px 0", padding: "4px 10px", borderRadius: 8, background: "#fdf0ef", color: "#b3564c", fontSize: 13 }}>{w}</span>)}
             </div>
           )}
@@ -6761,11 +6936,15 @@ function VocabWrongTab({ vocabWrongWords = {}, studentId }) {
       sendResult(finalSummary);
       return;
     }
-    setAnswers(finalAnswers);
-    setIdx(idx + 1);
-    setInput("");
-    setRevealed(false);
-    setJudged(null);
+    // [95차수 09-05] 다음 단어를 바로 그리고 입력칸에 커서를 둔다 — 예전엔 단어마다 입력칸을 다시 눌러야 자판이 떴다
+    flushSync(() => {
+      setAnswers(finalAnswers);
+      setIdx(idx + 1);
+      setInput("");
+      setRevealed(false);
+      setJudged(null);
+    });
+    focusInput();
   };
 
   return (
@@ -6795,10 +6974,19 @@ function VocabWrongTab({ vocabWrongWords = {}, studentId }) {
           <div style={{ fontSize: 32, fontWeight: 900, textAlign: "center", color: "#23252B", marginBottom: 22 }}>{current.word}</div>
           <div style={{ fontSize: 13, color: "#777", marginBottom: 7 }}>이 단어의 뜻을 한국어로 적어주세요.</div>
           <input
+            ref={inputRef}
+            autoFocus
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !revealed && input.trim()) check(); }}
-            disabled={revealed}
+            // [95차수 09-05] 엔터 한 번 = 정답 확인, 한 번 더 = 다음 단어. 한글 조합 중(isComposing)의 엔터는 무시한다.
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              if (e.nativeEvent && e.nativeEvent.isComposing) return;
+              if (!revealed) { if (input.trim()) check(); }
+              else next();
+            }}
+            // [95차수 09-05] 정답을 보여주는 동안에도 잠그지 않고 읽기 전용으로 — 잠그면(disabled) 커서·자판이 사라져 엔터가 안 먹는다
+            readOnly={revealed}
             placeholder="정답을 입력하세요"
             style={{ width: "100%", padding: "13px 14px", borderRadius: 10, border: "1.5px solid #d4d7de", fontSize: 16, boxSizing: "border-box" }}
           />
@@ -7119,10 +7307,14 @@ function matchVideosForTask(taskText, studentVideos) {
 // ─── [0813] 숙제 기본 날짜 고르기 — 원장 결정 규칙 ───
 // ① 오늘 기록이 있으면 오늘 ② 없으면 오늘 이후 가장 가까운 기록 날짜(다음 숙제)
 // ③ 미래 기록도 없으면 가장 최근 지난 기록 ④ 기록이 하나도 없으면 오늘
-function pickDefaultTodoDate(allDatesFull, todayStr) {
+function pickDefaultTodoDate(allDatesFull, todayStr, hour) {
   const list = Array.isArray(allDatesFull) ? allDatesFull : [];
-  if (list.includes(todayStr)) return todayStr;
   const upcoming = list.filter(d => d > todayStr).sort()[0];
+  // [96차수 09-05 · 원장 결정] 수업날 밤 10시가 지나 다음 숙제가 열렸으면 그 다음 숙제를 기본으로 보여준다.
+  //   예전엔 이 시간대에도 오늘(이미 끝난) 숙제가 먼저 보여서 학생이 숙제 탭 → 날짜 단추를 눌러야 다음 숙제가 보였다.
+  //   hour를 안 넘기면(옛 호출) 예전 규칙 그대로.
+  if (list.includes(todayStr) && Number(hour) >= 22 && upcoming) return upcoming;
+  if (list.includes(todayStr)) return todayStr;
   if (upcoming) return upcoming;
   return list[0] || todayStr;
 }
