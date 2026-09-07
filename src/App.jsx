@@ -6,7 +6,7 @@ import { flushSync } from "react-dom";
 import QRCodeLib from "qrcode";
 // [0824 3차수] 배포 확인용 차수 표시 — 원장앱 APP_BUILD와 같은 장치. 학생 화면에는 안 띄우고
 //   마스터 홈(원장 전용) 머리글에만 뜬다(원장 결정). 새 차수 파일을 만들 때마다 이 글자를 같이 바꿀 것.
-const STUDENT_APP_BUILD = "학생앱 101차수 · 2026-09-07";
+const STUDENT_APP_BUILD = "학생앱 102차수 · 2026-09-07";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -5069,6 +5069,9 @@ export default function App() {
     if (cur === "swapped") { try { window.location.reload(); } catch (e) {} return; }
     try {
       const reg = await navigator.serviceWorker.getRegistration();
+      // [102차수] 등록을 기다리는 사이에도 시험·영상이 시작됐을 수 있다 — 기다린 뒤 한 번 더 본다. (1차 검토 지적 4번)
+      const busyAfterWait = appUpdateBusyMsg();
+      if (busyAfterWait) { setSw({ state: cur, msg: busyAfterWait }); return; }
       const waiting = reg && reg.waiting;
       if (!waiting) {
         // 대기 중인 워커가 없다 = 이미 바뀌었거나(→ 새로고침) 아직 안 왔다(→ 실패 안내)
@@ -5086,6 +5089,11 @@ export default function App() {
         // 대상 워커가 활성화되고 controller가 실제로 바뀐 것을 확인한 뒤에만 새로고침(학생이 누른 요청의 후속 동작)
         if (!navigator.serviceWorker.controller) return;
         finish();
+        // [102차수] 교체를 기다리는 동안(최대 10초) 학생이 시험·영상을 시작했을 수 있다 — 새로고침 직전에 다시 본다.
+        //   바쁘면 새로고침하지 않고 "이미 바뀜(swapped)"으로 안내만 한다. 일을 마친 뒤 [업데이트]를 다시 누르면 그때 새로고침된다.
+        //   (새 워커는 이미 활성화돼 있으므로 다시 메시지를 보낼 필요가 없다 → swapped 경로가 맞다) (1차 검토 지적 4번)
+        const busyNow = appUpdateBusyMsg();
+        if (busyNow) { setSw({ state: "swapped", msg: "🆕 새 버전이 준비됐어요. 진행 중인 시험·영상을 마친 뒤 [업데이트]를 눌러 주세요." }); return; }
         try { window.location.reload(); } catch (e) {}
       };
       // 리스너를 먼저 걸고 → 그 다음 메시지를 보낸다(순서가 바뀌면 교체 순간을 놓칠 수 있다)
@@ -5290,8 +5298,11 @@ export default function App() {
         setError("load_error");
       }
     } finally {
-      loadInFlightRef.current = null;
+      // [102차수] 옛 요청(학생 바뀜·화면 닫힘 뒤에 늦게 끝난 것)은 지금 도는 요청의 진행 표시·수동 예약을 건드리지 않는다.
+      //   정리(cleanup)가 이미 ref를 초기화했고, 그 뒤 시작한 새 요청이 같은 ref를 쓰고 있을 수 있기 때문.
+      //   (101차수까지는 alive 검사 앞에서 진행 표시를 지우고, 옛 요청이 새 예약까지 지웠다) (1차 검토 지적 2번)
       if (alive()) {
+        loadInFlightRef.current = null;
         setLoading(false);
         if (manualQueuedRef.current) {
           // [100차수] 자동이 도는 동안 눌린 [다시 받기] — 자동이 성공했든 실패했든 이제 fresh=1로 1번 실제 실행.
@@ -5301,8 +5312,6 @@ export default function App() {
         } else if (manual) {
           setRefreshing(false); // 성공·실패·예외 어느 쪽이든 단추는 반드시 풀린다
         }
-      } else {
-        manualQueuedRef.current = false;
       }
     }
   };
