@@ -6,7 +6,7 @@ import { flushSync } from "react-dom";
 import QRCodeLib from "qrcode";
 // [0824 3차수] 배포 확인용 차수 표시 — 원장앱 APP_BUILD와 같은 장치. 학생 화면에는 안 띄우고
 //   마스터 홈(원장 전용) 머리글에만 뜬다(원장 결정). 새 차수 파일을 만들 때마다 이 글자를 같이 바꿀 것.
-const STUDENT_APP_BUILD = "학생앱 97차수 · 2026-09-05";
+const STUDENT_APP_BUILD = "학생앱 101차수 · 2026-09-07";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -636,11 +636,14 @@ const fetchWithTimeout = async (url, options = {}, timeoutMs = 10000) => {
   }
 };
 
-const resolveStudentSyncUrl = (studentId) => {
+const resolveStudentSyncUrl = (studentId, { forceFresh = false } = {}) => {
   if (!STUDENT_SYNC_API_URL) return "";
   const u = new URL(STUDENT_SYNC_API_URL, window.location.origin);
   u.searchParams.set("id", String(studentId));
   u.searchParams.set("studentId", String(studentId));
+  // [100차수] 학생이 [다시 받기]를 눌렀을 때만 fresh=1 — 워커(09-07판)가 60초 기억을 건너뛰고 DB에서 다시 읽는다.
+  //   옛 워커는 이 값을 모르고 무시하므로 답은 그대로 읽힌다(그때는 "진짜 새로 읽었다"고 표시하지 않는다).
+  if (forceFresh) u.searchParams.set("fresh", "1");
   const accessToken = new URLSearchParams(window.location.search).get("t") || "";
   if (accessToken) u.searchParams.set("t", accessToken);
   // [마스터] 워커가 "앱 접속" 배지를 갱신하지 않게 한다(학생 토큰 검사는 그대로 통과).
@@ -685,6 +688,44 @@ const looksLikeValidBundle = (raw, payload) => {
   if (payload && payload.student && typeof payload.student === "object") return true;
   return Array.isArray(payload?.students || payload?.stu3);
 };
+
+// ─── [99차수] 서버 답 검증 — "정상인 빈 답"과 "반쪽 답"을 가른다 ───
+// 예전엔 새 답이 비어 있으면 무조건 옛 값을 지켰다(keepPrevIfUnexpectedEmpty). 그래서 선생님이 숙제·강의를
+// 지워도 학생 폰에서는 안 없어졌다. 이제는
+//   · 칸이 있고 모양이 맞으면(빈 {}·[] 포함) → 그대로 믿고 화면·백업에 반영한다(지운 것은 지워진다)
+//   · 칸이 정식 이름·옛 이름 모두 없거나, 있는데 모양이 틀리면(문자열 등) → 반쪽 답. 화면에 안 쓰고 백업도 안 덮는다
+// "칸이 있다"는 값이 비었는지가 아니라 열쇠(key)가 실제로 있는지로 본다(|| {} 로 감추지 않는다).
+const isPlainObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+const hasKey = (obj, k) => !!obj && Object.prototype.hasOwnProperty.call(obj, k);
+// 정식 이름이 있으면 그 값, 없으면 옛 이름 값. 둘 다 없으면 undefined (빈 값과 구별된다).
+const pickField = (payload, ...names) => {
+  for (const n of names) if (hasKey(payload, n)) return payload[n];
+  return undefined;
+};
+// 서버가 항상 보내는 필수 칸 5개 — 없거나 모양이 틀리면 "불완전" 오류를 던진다.
+const REQUIRED_BUNDLE_FIELDS = [
+  { names: ["todos", "todo4"], kind: "object", label: "숙제" },
+  { names: ["checklistData", "chk3", "checklist"], kind: "object", label: "체크" },
+  { names: ["records", "rec3"], kind: "object", label: "기록" },
+  { names: ["videos", "student_videos"], kind: "array", label: "강의" },
+  { names: ["vocabWrongWords", "vocab_wrong_words"], kind: "object", label: "오답단어" },
+];
+const makeIncompleteError = (label) => {
+  const e = new Error(`서버 답이 불완전합니다: ${label}`);
+  e.code = "incomplete";
+  return e;
+};
+const validateBundleFields = (payload) => {
+  for (const f of REQUIRED_BUNDLE_FIELDS) {
+    const v = pickField(payload, ...f.names);
+    if (v === undefined) throw makeIncompleteError(f.label + " 칸 없음");
+    const ok = f.kind === "array" ? Array.isArray(v) : isPlainObject(v);
+    if (!ok) throw makeIncompleteError(f.label + " 모양 이상");
+  }
+};
+// [99차수] 시험범위 — 서버가 주는 { school, schools, data } 모양을 그대로 보존한다.
+//   없거나(구버전 서버) 모양이 아니면 null. 빈 범위 { school, schools, data: {} }도 정상(→ 카드가 비는 게 맞다).
+const normalizeExamRanges = (v) => (isPlainObject(v) ? v : null);
 
 // Worker가 전체 원본(todo4/chk3)을 보내도, 학생 1명만 필터링해서 쓰고,
 // Worker가 이미 학생 1명 데이터만 보내도 기존 화면 구조({date:{sid:row}})로 맞춘다.
@@ -745,8 +786,8 @@ const normalizeVocabWrongWordsForStudent = (source = {}, studentId) => {
   return {};
 };
 
-const loadStudentBundleFromWorker = async (studentId) => {
-  const url = resolveStudentSyncUrl(studentId);
+const loadStudentBundleFromWorker = async (studentId, { forceFresh = false } = {}) => {
+  const url = resolveStudentSyncUrl(studentId, { forceFresh });
   if (!url) throw new Error("STUDENT_SYNC_API_URL 미설정");
   // [08-10] 기다리는 시간 10초 → 20초. 자료가 커져 서버가 느린 날, 폰 인터넷이 느린 학생도 끊기지 않게.
   const resp = await fetchWithTimeout(url, { method: "GET", cache: "no-store" }, 20000);
@@ -762,6 +803,8 @@ const loadStudentBundleFromWorker = async (studentId) => {
   }
   const raw = await resp.json();
   const payload = unwrapBundlePayload(raw);
+  // [99차수] HTTP는 200인데 몸통이 실패(success:false)면 정상 답으로 읽지 않는다 → 폰 백업 경로.
+  if (raw && raw.success === false) throw new Error("학생 동기화 API 실패 응답: " + String(raw.error || raw.message || ""));
   let student = getStudentFromPayload(payload, studentId);
   const anyState = findStudentAnyState(payload, studentId);
   let withdrawnFlag = false;
@@ -782,22 +825,31 @@ const loadStudentBundleFromWorker = async (studentId) => {
     throw makeWithdrawnError(student);
   }
 
-  const todoSource = payload.todos || payload.todo4 || {};
-  const chkSource = payload.checklistData || payload.chk3 || payload.checklist || {};
-  const recSource = payload.records || payload.rec3 || {};
+  // [99차수] 검증 → 정규화 → (loadData에서) 한 번에 적용 → 같은 자료를 백업.
+  //   필수 칸이 빠졌거나 모양이 틀리면 여기서 던진다 → 화면·백업 그대로, "이전 자료 표시 중" 안내.
+  validateBundleFields(payload);
+  const todoSource = pickField(payload, "todos", "todo4");
+  const chkSource = pickField(payload, "checklistData", "chk3", "checklist");
+  const recSource = pickField(payload, "records", "rec3");
   const vwSource = payload.videoWatch || payload.video_watch || {};
   const examSource = payload.exams || payload.exam3 || [];
-  const vocabWrongSource = payload.vocabWrongWords || payload.vocab_wrong_words || {};
+  const vocabWrongSource = pickField(payload, "vocabWrongWords", "vocab_wrong_words");
+  const videosSource = pickField(payload, "videos", "student_videos");
+  // [99차수] 시험범위 — 서버는 예전부터 examRanges·examr3 둘 다 보냈는데 학생앱이 여기서 빠뜨려 카드가 비어 있었다.
+  const examRangesSource = pickField(payload, "examRanges", "examr3");
 
   return {
     source: "worker",
     student,
+    // [100차수] 워커 09-07판이 붙여 주는 메모: fresh=1을 받아 실제로 DB를 다시 읽었는지. 옛 워커면 null.
+    syncMeta: (raw && raw.sync && typeof raw.sync === "object") ? raw.sync : null,
     withdrawnFlag, // [08-07] 마스터 모드에서만 true가 될 수 있다 — 화면 위 안내 띠용
     todos: normalizeByDateForStudent(todoSource, studentId),
     checklistData: normalizeByDateForStudent(chkSource, studentId),
     records: normalizeRecordsForStudent(recSource, studentId),
-    videos: payload.videos || payload.student_videos || [],
+    videos: videosSource,
     videoWatch: normalizeVideoWatchForStudent(vwSource, studentId),
+    examRanges: normalizeExamRanges(examRangesSource),
     makeups: payload.makeups || payload.mkp3 || [],
     customHolidays: payload.customHolidays || payload.holi3 || {},
     exams: Array.isArray(examSource) ? examSource : [],
@@ -810,9 +862,13 @@ const loadStudentBundleFromWorker = async (studentId) => {
   };
 };
 
-const loadStudentBundle = async (studentId) => {
-  return await loadStudentBundleFromWorker(studentId);
+const loadStudentBundle = async (studentId, opts = {}) => {
+  return await loadStudentBundleFromWorker(studentId, opts);
 };
+// [100차수] 수동 우회가 성공한 뒤 이 시간 동안은 자동 새로고침에도 fresh=1을 붙인다.
+//   워커는 여러 대가 돌아서, 방금 새로 읽은 뒤에도 다음 자동 요청이 다른 워커의 옛 60초 기억을 받을 수 있기 때문.
+//   워커의 BUNDLE_SHARED_TTL_MS(60초)와 같은 값. 수동 성공 때만 켜지고 자동 성공으로는 늘어나지 않는다.
+const FRESH_GRACE_MS = 60 * 1000;
 
 const getStudentBundleStorageKey = (studentId) => `maple_student_bundle_${studentId}`;
 
@@ -854,6 +910,7 @@ const makeLoadErrorCode = (e) => {
   if (/응답 지연/.test(msg)) return "E-시간초과";
   if (/미설정|주소가 없습니다/.test(msg)) return "E-설정없음";
   if (/찾을 수 없습니다|목록에 없는/.test(msg)) return "E-빈응답";
+  if (/불완전|실패 응답/.test(msg)) return "E-불완전"; // [99차수] 서버 답에 필수 칸이 빠졌거나 success:false
   if (e && e.name === "TypeError") return "E-네트워크";
   return "E-알수없음";
 };
@@ -875,7 +932,7 @@ const restoreStudentBundleFromLocal = (studentId) => {
     // [08-10] 백업 유효기간 24시간 → 7일. 학생은 보통 이틀에 한 번 오므로 24시간이면 안전망이 거의 못 쓰였다.
     //         서버가 아픈 날에도 최근 일주일 안에 한 번이라도 열었던 학생은 화면이 뜬다.
     if (Date.now() - (parsed.savedAt || 0) > 7 * 24 * 60 * 60 * 1000) return null;
-    return { ...parsed.bundle, source: "local-backup" };
+    return { ...parsed.bundle, source: "local-backup", savedAt: parsed.savedAt || 0 };   // [98차수] 저장 시각도 같이 — 화면에 "언제 것인지" 보여주려고
   } catch (e) {
     return null;
   }
@@ -896,6 +953,7 @@ const saveStudentBundleToLocal = (studentId, bundle = {}) => {
         makeups: bundle.makeups || [],
         customHolidays: bundle.customHolidays || {},
         exams: Array.isArray(bundle.exams || bundle.exam3) ? (bundle.exams || bundle.exam3) : [],
+        examRanges: normalizeExamRanges(bundle.examRanges ?? bundle.examr3), // [99차수] 오프라인에서도 시험범위 카드가 뜨게
         vocabWrongWords: bundle.vocabWrongWords || {},
         progressTree: bundle.progressTree || null,
         attLog: bundle.attLog || {},
@@ -3287,13 +3345,20 @@ function MockResultScreen({ round, result, onDone }) {
   );
 }
 
-function MockExamTab({ studentId }) {
+function MockExamTab({ studentId, onBusy }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [rounds, setRounds] = useState([]);
   const [notice, setNotice] = useState("");
   const [sel, setSel] = useState(null);            // 고른 회차 — null이면 목록
   const [view, setView] = useState("menu");        // sel이 있을 때: "menu" | "exam70" | "exam50" | "answer" | "result"
+  // [101차수] 시험 진행·답 입력·제출 화면이면 "바쁨"을 위(App)에 알린다 — 앱 업데이트 단추가 이때는 새로고침을 안 하게.
+  //   (답은 찍을 때마다 폰에 임시 저장되지만, 제출 중이거나 시간 재는 중에 화면이 바뀌면 곤란하다)
+  useEffect(() => {
+    const busy = !!sel && (view === "exam70" || view === "exam50" || view === "answer");
+    if (typeof onBusy === "function") onBusy(busy);
+    return () => { if (typeof onBusy === "function") onBusy(false); };
+  }, [sel, view]);
   const [result, setResult] = useState(null);      // 방금 제출한 결과 (결과 화면용)
   const [exam, setExamState] = useState(() => loadMockExamState(studentId)); // 진행/완료된 시험 (폰 저장과 동기화)
 
@@ -4905,7 +4970,144 @@ export default function App() {
   const [syncSource, setSyncSource] = useState(""); // worker
   const [lastLoadedAt, setLastLoadedAt] = useState(null); // 마지막 동기화 시각
   const [offlineNotice, setOfflineNotice] = useState(""); // Worker 실패 시 로컬 백업 표시 안내
-  const loadInFlightRef = useRef(false); // 30초 polling 중복 호출 방지
+  // [98차수→101차수] 앱 새 판(서비스워커) 감지.
+  //   상태: "" 없음 / "found" 새 판 발견(대기 중) / "applying" 적용 중 / "swapped" 이미 교체됨(새로고침만 하면 됨) / "failed" 적용 실패
+  //   98차수는 새 워커를 보자마자 SKIP_WAITING을 보내고 "준비 완료"라고 띄웠다. 이제는
+  //     · 발견만 하고 스스로 바꾸지 않는다(학생이 [업데이트]를 눌러야 적용) · 자동 새로고침 없음
+  //     · 설치 중(installing)·설치 발견(updatefound)·상태 바뀜(statechange)까지 지켜본다
+  //     · 첫 설치(controller 없음→생김)는 새 판이 아니다. 그 뒤 또 바뀌면 그때가 새 판이다(hadController를 고정하지 않는다)
+  //     · 서비스워커 등록이 나중에(푸시 준비 뒤) 생겨도 따라간다(ready로 기다림, 15초 상한)
+  //   참고: 지금 sw.js는 설치되자마자 스스로 교체되는 구조(skipWaiting·claim)라 실제로는 "swapped"가 대부분이고,
+  //         "found"·"applying"은 sw.js가 나중에 기다리는 구조로 바뀔 때를 위한 것이다.
+  const [swUpdate, setSwUpdate] = useState({ state: "", msg: "" });
+  const swUpdateRef = useRef({ state: "", msg: "" });
+  const setSw = (next) => { swUpdateRef.current = next; setSwUpdate(next); };
+  const mockBusyRef = useRef(false); // [101차수] 모의고사 시험·답 입력·제출 중(MockExamTab이 알려준다)
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    let dead = false;
+    let hadController = !!navigator.serviceWorker.controller;
+    let reg = null;
+    const tracked = new Set();
+    const cleanups = [];
+    const timers = [];
+    const set = (state, msg = "") => { if (!dead) setSw({ state, msg }); };
+
+    const trackWorker = (w) => {
+      if (!w || tracked.has(w)) return;
+      tracked.add(w);
+      const onState = () => {
+        if (dead) return;
+        // installed + 이미 controller가 있다 = 새 판이 대기 중(자동으로 바꾸지 않는다). 첫 설치면 controller가 없어 안 띄운다.
+        if (w.state === "installed" && navigator.serviceWorker.controller && swUpdateRef.current.state !== "applying") set("found");
+        // 적용 중이었는데 새 워커가 버려졌다(redundant) = 실패
+        if (w.state === "redundant" && swUpdateRef.current.state === "applying") set("failed");
+      };
+      w.addEventListener("statechange", onState);
+      cleanups.push(() => w.removeEventListener("statechange", onState));
+      onState(); // 리스너를 단 뒤 지금 상태도 한 번 본다(전환 순간을 놓치지 않게)
+    };
+    const attachReg = (r) => {
+      if (!r || dead || reg === r) return;
+      reg = r;
+      if (r.waiting && navigator.serviceWorker.controller) set("found");
+      if (r.installing) trackWorker(r.installing);
+      const onFound = () => trackWorker(r.installing);
+      r.addEventListener("updatefound", onFound);
+      cleanups.push(() => r.removeEventListener("updatefound", onFound));
+    };
+    const poke = async () => {
+      try {
+        let r = await navigator.serviceWorker.getRegistration();
+        if (!r) {
+          // 등록은 학생 자료가 뜬 뒤(푸시 준비)에 생긴다 — 생길 때까지 기다리되 15초면 그만둔다(중복 등록은 안 한다)
+          r = await Promise.race([
+            navigator.serviceWorker.ready,
+            new Promise((res) => { timers.push(setTimeout(() => res(null), 15000)); }),
+          ]);
+        }
+        if (!r || dead) return;
+        attachReg(r);
+        try { await r.update(); } catch (e) { /* 오프라인이면 그냥 넘어간다 */ }
+        if (dead) return;
+        if (reg.waiting && navigator.serviceWorker.controller && swUpdateRef.current.state === "") set("found");
+      } catch (e) { /* ignore */ }
+    };
+    const onVis = () => { if (!document.hidden) poke(); };
+    const onCtrl = () => {
+      if (dead) return;
+      if (!hadController) { hadController = true; return; } // 첫 설치(claim) — 새 판 아님. 다음 교체부터 새 판이다
+      if (!navigator.serviceWorker.controller) return;        // controller가 없어지는 현상은 새 판이 아니다
+      if (swUpdateRef.current.state === "applying") return;   // 학생이 눌러서 바꾸는 중 — 아래 applyAppUpdate가 처리한다
+      set("swapped");                                         // 외부 요인으로 바뀜 — 안내만, 자동 새로고침 없음
+    };
+    poke();
+    document.addEventListener("visibilitychange", onVis);
+    navigator.serviceWorker.addEventListener("controllerchange", onCtrl);
+    return () => {
+      dead = true;
+      document.removeEventListener("visibilitychange", onVis);
+      navigator.serviceWorker.removeEventListener("controllerchange", onCtrl);
+      cleanups.forEach((f) => { try { f(); } catch (e) {} });
+      timers.forEach((t) => clearTimeout(t));
+    };
+  }, []);
+  // [101차수] 학생이 [업데이트]를 눌렀을 때만 적용한다. 진행 중 작업이 있으면 안내만 하고 멈춘다.
+  const appUpdateBusyMsg = () => {
+    if (vocabTestBusyRef.current || vocaHwBusyRef.current || mockBusyRef.current || viewingVideoRef.current) {
+      return "진행 중인 시험·영상을 마친 뒤 업데이트해 주세요.";
+    }
+    return "";
+  };
+  const applyAppUpdate = async () => {
+    const cur = swUpdateRef.current.state;
+    const busyMsg = appUpdateBusyMsg();
+    if (busyMsg) { setSw({ state: cur, msg: busyMsg }); return; }
+    if (cur === "applying") return;
+    if (!("serviceWorker" in navigator)) { setSw({ state: "failed", msg: "" }); return; }
+    // 이미 새 controller로 바뀐 상태면 메시지를 다시 보낼 필요 없이 새로고침만(학생이 눌렀으니 이건 사용자 요청의 후속 동작).
+    if (cur === "swapped") { try { window.location.reload(); } catch (e) {} return; }
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      const waiting = reg && reg.waiting;
+      if (!waiting) {
+        // 대기 중인 워커가 없다 = 이미 바뀌었거나(→ 새로고침) 아직 안 왔다(→ 실패 안내)
+        if (navigator.serviceWorker.controller && cur === "found") { try { window.location.reload(); } catch (e) {} return; }
+        setSw({ state: "failed", msg: "" }); return;
+      }
+      setSw({ state: "applying", msg: "" });
+      let done = false;
+      const finish = () => {
+        if (done) return; done = true;
+        navigator.serviceWorker.removeEventListener("controllerchange", onSwapped);
+        clearTimeout(timer);
+      };
+      const onSwapped = () => {
+        // 대상 워커가 활성화되고 controller가 실제로 바뀐 것을 확인한 뒤에만 새로고침(학생이 누른 요청의 후속 동작)
+        if (!navigator.serviceWorker.controller) return;
+        finish();
+        try { window.location.reload(); } catch (e) {}
+      };
+      // 리스너를 먼저 걸고 → 그 다음 메시지를 보낸다(순서가 바뀌면 교체 순간을 놓칠 수 있다)
+      navigator.serviceWorker.addEventListener("controllerchange", onSwapped);
+      const timer = setTimeout(() => {
+        // 10초 안에 안 바뀌면(sw.js가 메시지를 모르거나 실패) 안내하고 단추를 정상으로 돌린다 — 다시 시도·반복 새로고침은 안 한다
+        finish();
+        setSw({ state: "failed", msg: "" });
+      }, 10000);
+      try { waiting.postMessage({ type: "SKIP_WAITING" }); } catch (e) { finish(); setSw({ state: "failed", msg: "" }); }
+    } catch (e) {
+      setSw({ state: "failed", msg: "" });
+    }
+  };
+  // [100차수] 요청 진행 상태 — 예전엔 true/false 하나라서, 자동 받기 중에 [다시 받기]를 누르면 아무 표시 없이 그냥 끝났다.
+  //   이제: 무엇이 도는지("auto"/"manual") + 수동 1건 예약 + 수동 성공 후 60초 유예창 + 학생 바뀜 감지(epoch)를 따로 기억한다.
+  //   규칙: 아무것도 없을 때 → 그대로 실행 / 자동 중 + 수동 → 즉시 "받는 중…" 켜고 자동이 끝나면 fresh=1 수동 1회
+  //         수동 중(또는 예약됨) + 수동 → 같은 일로 합침 / 수동 중 + 자동 → 건너뜀 / 자동 중 + 자동 → 건너뜀
+  const loadInFlightRef = useRef(null);      // null | "auto" | "manual"
+  const manualQueuedRef = useRef(false);     // 자동이 끝나면 수동(fresh=1) 1회 실행 예약
+  const freshUntilRef = useRef(0);           // 이 시각까지는 자동 요청에도 fresh=1
+  const loadEpochRef = useRef(0);            // 학생이 바뀌거나 화면이 닫히면 +1 → 옛 요청 결과는 버린다
   // [08-07] 한 번 차단된 링크인지. true가 되면 30초 자동 새로고침이 서버를 그만 두드린다.
   //         학생이 [다시 확인]을 누를 때(manual)만 다시 물어본다.
   const withdrawnRef = useRef(false);
@@ -4984,26 +5186,19 @@ export default function App() {
   const videoSaveChunkSeqRef = useRef(0);  // 자동 저장 조각 ID 충돌 방지
   const videoSaveInFlightRef = useRef(false); // 자동 저장 중복 호출 방지
 
-  const keepPrevIfUnexpectedEmpty = (prev, next, label) => {
-    const prevCount = Array.isArray(prev) ? prev.length : Object.keys(prev || {}).length;
-    const nextCount = Array.isArray(next) ? next.length : Object.keys(next || {}).length;
-    if (prevCount > 0 && nextCount === 0) {
-      console.warn(`[guard] ${label} 빈 응답 무시 (prev 보존)`);
-      return prev;
-    }
-    return next;
-  };
-
+  // [99차수] 예전의 keepPrevIfUnexpectedEmpty("새 값이 비면 옛 값 유지")는 없앴다.
+  //   반쪽 답은 이미 loadStudentBundleFromWorker에서 걸러지므로, 여기까지 온 빈 값은 "진짜 지워진 것"이다.
+  //   (시청 기록 videoWatch만은 아직 서버에 못 보낸 폰 기록이 있을 수 있어 예전처럼 합친다.)
   const applyBundle = (bundle) => {
     if (!bundle?.student) return;
     setStudent(bundle.student);
     // [08-07] 마스터(·[08-27] 선생님)가 그만둔 학생 화면을 열었을 때만 켜진다. 학생 화면에서는 항상 꺼져 있다.
     setMasterWithdrawn(!!bundle.withdrawnFlag && IS_STAFF_VIEW);
     setProgressTree(bundle.progressTree || null);
-    setTodos(prev => keepPrevIfUnexpectedEmpty(prev, bundle.todos || {}, "todos"));
-    setChecklistData(prev => keepPrevIfUnexpectedEmpty(prev, bundle.checklistData || {}, "checklistData"));
-    setRecords(prev => keepPrevIfUnexpectedEmpty(prev, bundle.records || {}, "records"));
-    setVideos(prev => keepPrevIfUnexpectedEmpty(prev, bundle.videos || [], "videos"));
+    setTodos(isPlainObject(bundle.todos) ? bundle.todos : {});
+    setChecklistData(isPlainObject(bundle.checklistData) ? bundle.checklistData : {});
+    setRecords(isPlainObject(bundle.records) ? bundle.records : {});
+    setVideos(Array.isArray(bundle.videos) ? bundle.videos : []);
     setVideoWatch(prev => mergeVideoWatchSnapshots(bundle.videoWatch || {}, prev || {}));
     setMakeups(bundle.makeups || []);
     setCustomHolidays(bundle.customHolidays || {});
@@ -5012,10 +5207,13 @@ export default function App() {
     setAttStatus(bundle.att || {});
     setSurveys(Array.isArray(bundle.surveys) ? bundle.surveys : []);
     setSurveyResponses(bundle.surveyResponses || {});
-    setExamRanges(bundle.examRanges || bundle.examr3 || null);
-    setVocabWrongWords(prev => keepPrevIfUnexpectedEmpty(prev, bundle.vocabWrongWords || {}, "vocabWrongWords"));
+    setExamRanges(normalizeExamRanges(bundle.examRanges ?? bundle.examr3)); // [99차수] 구버전 백업(칸 없음)도 null로 무사히 열린다
+    setVocabWrongWords(isPlainObject(bundle.vocabWrongWords) ? bundle.vocabWrongWords : {});
     setSyncSource(bundle.source || "");
-    setOfflineNotice(bundle.source === "local-backup" ? "동기화 서버 연결 실패로 최근 백업 데이터를 표시 중입니다." : "");
+    // [98차수] 폰에 저장해 둔 옛 화면을 쓸 때는 학생이 알아듣게 — 언제 것인지 + 새 숙제·강의가 안 보일 수 있다는 것.
+    setOfflineNotice(bundle.source === "local-backup"
+      ? `지금 화면은 ${bundle.savedAt ? new Date(bundle.savedAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "예전"}에 저장해 둔 옛날 것이에요. 새 숙제·강의가 안 보일 수 있어요. 인터넷을 확인하고 [다시 받기]를 눌러 주세요.`
+      : "");
     setLastLoadedAt(new Date());
   };
 
@@ -5025,25 +5223,46 @@ export default function App() {
     //         학생이 [다시 확인]을 눌렀을 때만(manual) 다시 물어본다.
     if (withdrawnRef.current && !manual) return;
     if (loadInFlightRef.current) {
-      if (manual) setRefreshing(false);
+      // [100차수] 자동이 도는 중에 학생이 눌렀다 → 표시를 바로 켜고, 자동이 끝난 뒤 fresh=1 수동을 1번 예약.
+      //   이미 수동이 돌거나 예약돼 있으면 같은 일로 합친다(추가 예약 없음). 자동끼리는 건너뛴다.
+      if (manual && loadInFlightRef.current === "auto" && !manualQueuedRef.current) {
+        manualQueuedRef.current = true;
+        setRefreshing(true);
+      }
       return;
     }
-    loadInFlightRef.current = true;
+    await runLoad(manual ? "manual" : "auto");
+  };
+
+  const runLoad = async (kind) => {
+    const manual = kind === "manual";
+    const epoch = loadEpochRef.current;
+    const alive = () => epoch === loadEpochRef.current; // 학생 바뀜·화면 닫힘 뒤에는 결과를 화면에 쓰지 않는다
+    loadInFlightRef.current = kind;
     if (manual) setRefreshing(true);
+    // 수동이거나, 수동 성공 후 60초 유예창 안이면 fresh=1
+    const forceFresh = manual || Date.now() < freshUntilRef.current;
     try {
-      const bundle = await loadStudentBundle(studentId);
+      const bundle = await loadStudentBundle(studentId, { forceFresh });
+      if (!alive()) return;
       if (!bundle || !bundle.student) {
         setError("not_found");
         return;
       }
       applyBundle(bundle);
       saveStudentBundleToLocal(studentId, bundle);
+      // [100차수] 수동 우회가 "진짜로" DB를 다시 읽었을 때만 유예창을 연다(옛 워커가 fresh를 무시했으면 열지 않는다).
+      //   자동 요청 성공으로는 창을 늘리지 않는다.
+      if (manual && bundle.syncMeta && bundle.syncMeta.forceFreshApplied === true) {
+        freshUntilRef.current = Date.now() + FRESH_GRACE_MS;
+      }
       withdrawnRef.current = false; // 다시 등록되면 여기로 들어와 잠금이 풀린다
       clearWithdrawnStrikes(studentId); // [08-10] 정상 응답이 오면 3진 아웃 카운트를 0으로 되돌린다
       setError(null);
       setLoadErrorCode(""); // [08-10]
     } catch (e) {
       console.error("Load error:", e);
+      if (!alive()) return;
       // [08-07→08-10] 그만둔(삭제·정지) 학생 차단 — 단, 한 번에 판정하지 않는다.
       // 서버가 잠깐 잘못 답하는 순간(빈 명단·순간 403/404)에 멀쩡한 학생의 백업을 지우면 되돌릴 수 없기 때문.
       // 10분 안에 같은 답이 3번 연속 왔을 때만 차단 + 백업 삭제를 실행한다.
@@ -5071,9 +5290,20 @@ export default function App() {
         setError("load_error");
       }
     } finally {
-      loadInFlightRef.current = false;
-      setLoading(false);
-      if (manual) setRefreshing(false);
+      loadInFlightRef.current = null;
+      if (alive()) {
+        setLoading(false);
+        if (manualQueuedRef.current) {
+          // [100차수] 자동이 도는 동안 눌린 [다시 받기] — 자동이 성공했든 실패했든 이제 fresh=1로 1번 실제 실행.
+          //   "받는 중…" 표시는 여기서 끄지 않는다(예약된 수동이 끝날 때 끈다).
+          manualQueuedRef.current = false;
+          runLoad("manual");
+        } else if (manual) {
+          setRefreshing(false); // 성공·실패·예외 어느 쪽이든 단추는 반드시 풀린다
+        }
+      } else {
+        manualQueuedRef.current = false;
+      }
     }
   };
 
@@ -5108,7 +5338,15 @@ export default function App() {
     loadData();
     if (!document.hidden) start();
     document.addEventListener("visibilitychange", onVisRefresh);
-    return () => { stop(); document.removeEventListener("visibilitychange", onVisRefresh); };
+    return () => {
+      stop(); document.removeEventListener("visibilitychange", onVisRefresh);
+      // [100차수] 학생이 바뀌거나 화면이 닫히면 진행 중이던 요청의 결과·예약은 새 화면에 쓰지 않는다.
+      loadEpochRef.current += 1;
+      loadInFlightRef.current = null;
+      manualQueuedRef.current = false;
+      freshUntilRef.current = 0;
+      setRefreshing(false);
+    };
   }, [studentId]);
 
   const finishAwayMeasurement = () => {
@@ -5859,7 +6097,9 @@ export default function App() {
             </button>
             {lastLoadedAt && (
               <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", textAlign: "center", marginTop: 3, whiteSpace: "nowrap" }}>
-                {lastLoadedAt.toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})} 동기화
+                {syncSource === "local-backup"
+                  ? <span style={{ color: "#ffd678" }}>옛 저장본</span>   /* [98차수] 서버에서 못 받고 폰 저장본을 쓰는 중 */
+                  : `${lastLoadedAt.toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})} 동기화`}
               </div>
             )}
           </div>
@@ -5896,7 +6136,35 @@ export default function App() {
 
       {offlineNotice && (
         <div style={{ padding: "10px 24px", background: "#fff7e6", borderBottom: "1px solid #ffe0a3", color: "#8a5a00", fontSize: 12, fontWeight: 700 }}>
-          <div style={{ maxWidth: MAX_W, margin: "0 auto" }}>⚠️ {offlineNotice}</div>
+          <div style={{ maxWidth: MAX_W, margin: "0 auto", display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ flex: 1 }}>⚠️ {offlineNotice}</span>
+            {/* [98차수] 옛 화면 띠에서 바로 다시 받기 — 위쪽 ↻ 단추를 못 찾는 학생용 */}
+            <button type="button" onClick={() => loadData({ manual: true })} disabled={refreshing}
+              style={{ flexShrink: 0, border: "none", background: "#b3641b", color: "#fff", borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 800, cursor: "pointer", opacity: refreshing ? 0.6 : 1 }}>
+              {refreshing ? "받는 중…" : "다시 받기"}
+            </button>
+          </div>
+        </div>
+      )}
+      {/* [98차수→101차수] 앱 새 판 안내 — 학생이 [업데이트]를 눌러야 바뀐다. 시험·영상 중이면 안내만 하고 안 바꾼다. 자동 새로고침 없음 */}
+      {!!swUpdate.state && (
+        <div style={{ padding: "10px 24px", background: swUpdate.state === "failed" ? "#fff4e5" : "#e8f4ff", borderBottom: "1px solid " + (swUpdate.state === "failed" ? "#f5d3a6" : "#b9dcff"), color: swUpdate.state === "failed" ? "#8a4b00" : "#1c4f8a", fontSize: 12, fontWeight: 700 }}>
+          <div style={{ maxWidth: MAX_W, margin: "0 auto", display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ flex: 1 }}>
+              {swUpdate.msg
+                ? swUpdate.msg
+                : swUpdate.state === "found" ? "🆕 새 버전이 있어요. 하던 일을 마친 뒤 업데이트해 주세요."
+                : swUpdate.state === "applying" ? "업데이트 준비 중…"
+                : swUpdate.state === "swapped" ? "🆕 새 버전으로 바뀌었어요. 하던 일을 마친 뒤 [업데이트]를 누르면 최신 화면이 됩니다."
+                : "업데이트를 적용하지 못했어요. 하던 일을 마친 뒤 앱과 같은 사이트의 다른 창을 모두 닫고 다시 열어 주세요."}
+            </span>
+            {swUpdate.state !== "failed" && (
+              <button type="button" onClick={applyAppUpdate} disabled={swUpdate.state === "applying"}
+                style={{ flexShrink: 0, border: "none", background: "#1c4f8a", color: "#fff", borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 800, cursor: swUpdate.state === "applying" ? "default" : "pointer", opacity: swUpdate.state === "applying" ? 0.6 : 1 }}>
+                {swUpdate.state === "applying" ? "준비 중…" : "업데이트"}
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -6296,7 +6564,7 @@ export default function App() {
         )}
 
         {tab === "mock" && (
-          <MockExamTab studentId={studentId} />
+          <MockExamTab studentId={studentId} onBusy={(b) => { mockBusyRef.current = !!b; }} />
         )}
 
         {VOCA_TAB_ENABLED && tab === "voca" && (() => {
