@@ -6,7 +6,7 @@ import { flushSync } from "react-dom";
 import QRCodeLib from "qrcode";
 // [0824 3차수] 배포 확인용 차수 표시 — 원장앱 APP_BUILD와 같은 장치. 학생 화면에는 안 띄우고
 //   마스터 홈(원장 전용) 머리글에만 뜬다(원장 결정). 새 차수 파일을 만들 때마다 이 글자를 같이 바꿀 것.
-const STUDENT_APP_BUILD = "학생앱 102차수 · 2026-09-07";
+const STUDENT_APP_BUILD = "학생앱 107차수 · 2026-09-08";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -119,7 +119,7 @@ function VocaFrame({ title, src, topOffset = 60, openLast = false, onOpenLastDon
   }, [topOffset]);
   return (
     <iframe ref={ref} title={title} src={src} scrolling="no"
-      style={{ width: "100%", height: h, border: "none", display: "block", background: "#F7F8FA", overflow: "hidden" }} />
+      style={{ width: "100%", height: h, border: "none", display: "block", background: "#F5F6FA", overflow: "hidden" }} />
   );
 }
 const WORKER_ORIGIN = (() => { try { return new URL(STUDENT_SYNC_API_URL).origin; } catch (e) { return ""; } })();
@@ -503,120 +503,150 @@ const subscribeMaplPush = async (student) => {
   if (!r.ok || !d?.success) throw new Error(d?.error || "알림 등록 저장 실패");
   return d;
 };
-// 홈 상단 "알림 켜기" 배너 — 마스터 모드·미지원 기기·이미 허용된 폰에서는 안 보인다
-// [수정 07-30] 학생이 배너를 닫았는지 폰에 기억해 둔다 (설치 안내 배너와 같은 방식).
-const PUSH_BANNER_DISMISS_KEY = "mapl_push_banner_dismissed_v1";
-function PushEnableBanner({ student, wrapStyle }) {
-  const [state, setState] = useState(() => {
-    if (IS_STAFF_VIEW || pushSupport() === "unsupported") return "hidden";   // [교사] 선생님에게는 학생 푸시 안내를 띄우지 않는다
-    if (Notification.permission === "granted") return "hidden"; // 허용된 폰은 앱이 알아서 구독을 갱신한다
-    // [수정 07-30] 차단(denied)은 앱에서 되돌릴 수 없어 배너가 영구히 남았다 → 아예 띄우지 않는다.
-    if (Notification.permission === "denied") return "hidden";
-    try { if (localStorage.getItem(PUSH_BANNER_DISMISS_KEY) === "1") return "hidden"; } catch (e) {}
-    return "off";
-  });
-  const [busy, setBusy] = useState(false);
-  if (state === "hidden") return null;
-  const dismiss = () => {
-    try { localStorage.setItem(PUSH_BANNER_DISMISS_KEY, "1"); } catch (e) {}
-    setState("hidden");
-  };
-  const enable = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await registerMaplSw();
-      const perm = await Notification.requestPermission();
-      if (perm !== "granted") { setState(perm === "denied" ? "denied" : "off"); setBusy(false); return; }
-      await subscribeMaplPush(student);
-      setState("done");
-      setTimeout(() => setState("hidden"), 5000);
-    } catch (e) { alert("알림 설정에 실패했어요: " + (e?.message || e)); }
-    setBusy(false);
-  };
-  return (
-    // [96차수 09-05] wrapStyle — 홈 카드 아래(이미 여백이 있는 자리)에 넣을 때 바깥 여백을 지우기 위해
-    <div style={{ maxWidth: MAX_W, margin: "12px auto 0", padding: "0 16px", boxSizing: "border-box", ...(wrapStyle || {}) }}>
-      {state === "done" ? (
-        <div style={{ background: "#E8F6EE", border: "1.5px solid #BFE5CE", borderRadius: 14, padding: "12px 16px", fontSize: 13.5, fontWeight: 800, color: "#1B8A5A" }}>
-          ✅ 알림이 켜졌어요! 새 설문·공지가 오면 알려드릴게요.
-        </div>
-      ) : (
-        <div style={{ background: "#fff", border: "1.5px solid #E4E0D8", borderRadius: 14, padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
-          <span style={{ fontSize: 20, flexShrink: 0 }}>🔔</span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 800, color: "#2A2A28" }}>새 설문·공지 알림 받기</div>
-            <div style={{ fontSize: 11.5, color: "#888", marginTop: 1 }}>중요한 안내가 오면 바로 알려드려요</div>
-          </div>
-          <button onClick={enable} disabled={busy} style={{ flexShrink: 0, padding: "9px 16px", borderRadius: 10, border: "none", background: busy ? "#c9d6ea" : "#2A6FDB", color: "#fff", fontSize: 13, fontWeight: 800, cursor: busy ? "default" : "pointer" }}>
-            {busy ? "설정 중..." : "알림 켜기"}
-          </button>
-          {/* [수정 07-30] 닫기 버튼이 없어 원치 않는 학생에게 배너가 계속 남았다. */}
-          <button onClick={dismiss} disabled={busy} aria-label="알림 배너 닫기" style={{ flexShrink: 0, border: "none", background: "transparent", color: "#bbb", fontSize: 15, fontWeight: 900, cursor: busy ? "default" : "pointer", padding: 4, lineHeight: 1 }}>✕</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// 설치 안내 배너: 폰에서만, 설치본이 아니고, 닫은 적 없을 때만 표시
+// ─── [103차수 09-08 디자인 개편] 알림·설치 안내는 "더보기 → 앱 설정"으로 이사 ───
+//   예전 PushEnableBanner(홈 카드 아래)·PwaInstallBanner(맨 위 남색 띠)는 없앴다. 첫 화면의 학습 영역을 밀지 않기 위해서다(원장 결정 09-08).
+//   남는 것 하나 = 카카오톡 안에서 열었을 때의 "브라우저로 열기" 띠(KakaoOpenBanner). 카카오톡 안에서는 홈 화면 추가·알림이
+//   아예 안 되므로 이것만은 위에 그대로 둔다. 닫기 기억 키는 예전 설치 배너 키를 그대로 쓴다(전에 닫은 학생은 계속 안 보이게).
+//   브라우저 권한·설치 조건은 우회하지 않는다 — 설정 화면은 "지금 상태"를 글자로 보여주고, 할 수 있는 동작만 단추로 준다.
 const PWA_BANNER_DISMISS_KEY = "mapl_pwa_banner_dismissed_v1";
-function PwaInstallBanner() {
+const UA_STR = (() => { try { return navigator.userAgent || ""; } catch (e) { return ""; } })();
+const IS_IOS_UA = /iPhone|iPad|iPod/i.test(UA_STR);
+const IS_MOBILE_UA = IS_IOS_UA || /Android/i.test(UA_STR);
+const IS_KAKAO_UA = /KAKAOTALK/i.test(UA_STR);
+// 안드로이드 "설치" 신호(beforeinstallprompt)는 앱이 뜨자마자 한 번만 온다. 설정 화면은 나중에 열리므로 여기(모듈 위)에서 미리 받아 둔다.
+let PWA_INSTALL_EVT = null;
+let PWA_INSTALLED_FLAG = false;
+const PWA_INSTALL_LISTENERS = new Set();
+try {
+  window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); PWA_INSTALL_EVT = e; PWA_INSTALL_LISTENERS.forEach((f) => { try { f(); } catch (err) {} }); });
+  window.addEventListener("appinstalled", () => { PWA_INSTALLED_FLAG = true; PWA_INSTALL_EVT = null; PWA_INSTALL_LISTENERS.forEach((f) => { try { f(); } catch (err) {} }); });
+} catch (e) {}
+const openOutsideKakao = () => {
+  try { window.location.href = "kakaotalk://web/openExternal?url=" + encodeURIComponent(window.location.href); } catch (e) {}
+};
+function KakaoOpenBanner() {
   const [dismissed, setDismissed] = useState(() => { try { return localStorage.getItem(PWA_BANNER_DISMISS_KEY) === "1"; } catch (e) { return false; } });
-  const [installEvt, setInstallEvt] = useState(null); // 안드로이드 beforeinstallprompt
-  const [installed, setInstalled] = useState(false);
-  const ua = navigator.userAgent || "";
-  const isIos = /iPhone|iPad|iPod/i.test(ua);
-  const isMobileUa = isIos || /Android/i.test(ua);
-  useEffect(() => {
-    const onPrompt = (e) => { e.preventDefault(); setInstallEvt(e); };
-    const onInstalled = () => setInstalled(true);
-    window.addEventListener("beforeinstallprompt", onPrompt);
-    window.addEventListener("appinstalled", onInstalled);
-    return () => { window.removeEventListener("beforeinstallprompt", onPrompt); window.removeEventListener("appinstalled", onInstalled); };
-  }, []);
-  if (dismissed || installed || isPwaStandalone()) return null;
+  if (!IS_KAKAO_UA || dismissed || isPwaStandalone()) return null;
   const dismiss = () => { setDismissed(true); try { localStorage.setItem(PWA_BANNER_DISMISS_KEY, "1"); } catch (e) {} };
-  // 카카오톡 인앱 브라우저: 설치 자체가 불가 → 외부 브라우저(크롬/사파리)로 원탭 탈출 버튼 제공
-  const isKakao = /KAKAOTALK/i.test(ua);
-  if (isKakao) {
-    const openExternal = () => {
-      try { window.location.href = "kakaotalk://web/openExternal?url=" + encodeURIComponent(window.location.href); } catch (e) {}
-    };
-    return (
-      <div style={{ background: "#0f3460", color: "#fff", padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontSize: 20, flexShrink: 0 }}>📲</span>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 800 }}>카카오톡 안에서는 홈 화면 추가가 안 돼요</div>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.75)", marginTop: 2, lineHeight: 1.5 }}>
-            오른쪽 버튼으로 {isIos ? "Safari" : "브라우저"}에서 열면 바로 추가할 수 있어요
-          </div>
-        </div>
-        <button onClick={openExternal}
-          style={{ border: "none", borderRadius: 8, background: "#ffd166", color: "#1a1a2e", fontWeight: 900, fontSize: 12, padding: "8px 12px", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{isIos ? "Safari로 열기" : "브라우저로 열기"}</button>
-        <button onClick={dismiss} aria-label="배너 닫기" style={{ border: "none", background: "transparent", color: "rgba(255,255,255,0.6)", fontSize: 15, fontWeight: 900, cursor: "pointer", flexShrink: 0, padding: 4 }}>✕</button>
-      </div>
-    );
-  }
-  if (!isMobileUa) return null;
   return (
     <div style={{ background: "#0f3460", color: "#fff", padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
       <span style={{ fontSize: 20, flexShrink: 0 }}>📲</span>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 800 }}>홈 화면에 추가하면 앱처럼 한 번에 열려요</div>
+        <div style={{ fontSize: 12.5, fontWeight: 800 }}>카카오톡 안에서는 홈 화면 추가가 안 돼요</div>
         <div style={{ fontSize: 11, color: "rgba(255,255,255,0.75)", marginTop: 2, lineHeight: 1.5 }}>
-          {isIos
-            ? <>Safari 하단 <b>공유 버튼(네모+화살표)</b> → <b>홈 화면에 추가</b></>
-            : installEvt
-              ? <>오른쪽 <b>설치</b> 버튼 한 번이면 끝!</>
-              : <>브라우저 메뉴(⋮) → <b>홈 화면에 추가</b></>}
+          오른쪽 버튼으로 {IS_IOS_UA ? "Safari" : "브라우저"}에서 열면 바로 추가할 수 있어요
         </div>
       </div>
-      {!isIos && installEvt && (
-        <button onClick={async () => { try { installEvt.prompt(); const r = await installEvt.userChoice; if (r && r.outcome === "accepted") setInstalled(true); } catch (e) {} }}
-          style={{ border: "none", borderRadius: 8, background: "#ffd166", color: "#1a1a2e", fontWeight: 900, fontSize: 12, padding: "8px 14px", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>설치</button>
-      )}
-      <button onClick={dismiss} aria-label="배너 닫기" style={{ border: "none", background: "transparent", color: "rgba(255,255,255,0.6)", fontSize: 15, fontWeight: 900, cursor: "pointer", flexShrink: 0, padding: 4 }}>✕</button>
+      <button type="button" onClick={openOutsideKakao}
+        style={{ border: "none", borderRadius: 8, background: "#ffd166", color: "#1a1a2e", fontWeight: 900, fontSize: 12, padding: "8px 12px", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{IS_IOS_UA ? "Safari로 열기" : "브라우저로 열기"}</button>
+      <button type="button" onClick={dismiss} aria-label="배너 닫기" style={{ border: "none", background: "transparent", color: "rgba(255,255,255,0.6)", fontSize: 15, fontWeight: 900, cursor: "pointer", flexShrink: 0, padding: 4 }}>✕</button>
+    </div>
+  );
+}
+// 설정 화면 공용 모양 — 흰 카드 + 제목 + 설명 + 상태 딱지
+const SETTING_CARD = { background: "#fff", border: "1px solid #E4E8EF", borderRadius: 14, padding: "14px 16px", marginBottom: 12 };
+const SETTING_TITLE = { fontSize: 15, fontWeight: 800, color: "#232B3B" };
+const SETTING_DESC = { fontSize: 12.5, color: "#647084", marginTop: 4, lineHeight: 1.55 };
+function SettingStatus({ tone = "ok", children }) {
+  const c = tone === "ok" ? { bg: "#E8F6EE", fg: "#1B8A5A" } : tone === "warn" ? { bg: "#FDECEA", fg: "#B03A2E" } : { bg: "#EEF1F5", fg: "#556072" };
+  return <span style={{ display: "inline-block", marginTop: 9, fontSize: 12, fontWeight: 800, padding: "4px 9px", borderRadius: 7, background: c.bg, color: c.fg }}>{children}</span>;
+}
+const SETTING_BTN = { marginTop: 10, display: "inline-block", padding: "10px 16px", borderRadius: 9, border: "none", background: "#2466D9", color: "#fff", fontSize: 13.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", minHeight: 44 };
+// 알림(푸시) 설정 카드 — 폰의 실제 권한 상태를 그대로 보여준다. 가짜 스위치 없음.
+function PushSettingCard({ student }) {
+  const [perm, setPerm] = useState(() => { try { return ("Notification" in window) ? Notification.permission : "unsupported"; } catch (e) { return "unsupported"; } });
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const support = pushSupport();
+  const enable = async () => {
+    if (busy) return;
+    setBusy(true); setMsg("");
+    try {
+      await registerMaplSw();
+      const p = await Notification.requestPermission();
+      setPerm(p);
+      if (p !== "granted") { setMsg(p === "denied" ? "알림이 차단됐어요. 폰 설정에서 허용한 뒤 다시 열어 주세요." : "알림을 허용하지 않았어요."); setBusy(false); return; }
+      await subscribeMaplPush(student);
+      setMsg("알림이 켜졌어요! 새 설문·공지가 오면 알려드릴게요.");
+    } catch (e) { setMsg("알림 설정에 실패했어요: " + (e?.message || e)); }
+    setBusy(false);
+  };
+  let body;
+  if (IS_STAFF_VIEW) {
+    body = <SettingStatus tone="dim">선생님·원장 화면에서는 학생 알림을 바꾸지 않아요</SettingStatus>;
+  } else if (support === "unsupported") {
+    body = (
+      <>
+        <SettingStatus tone="dim">이 브라우저에서는 알림을 지원하지 않아요</SettingStatus>
+        {IS_IOS_UA && !isPwaStandalone() && <div style={{ ...SETTING_DESC, marginTop: 8 }}>아이폰은 먼저 홈 화면에 추가한 뒤, 그 아이콘으로 열면 알림을 켤 수 있어요.</div>}
+      </>
+    );
+  } else if (perm === "granted") {
+    body = <SettingStatus tone="ok">켜져 있어요</SettingStatus>;
+  } else if (perm === "denied") {
+    body = (
+      <>
+        <SettingStatus tone="warn">차단됨</SettingStatus>
+        <div style={{ ...SETTING_DESC, marginTop: 8 }}>앱에서는 되돌릴 수 없어요. 폰 설정 → 브라우저(또는 이 앱) → 알림에서 허용한 뒤 다시 열어 주세요.</div>
+      </>
+    );
+  } else {
+    body = (
+      <>
+        <SettingStatus tone="dim">아직 안 켬</SettingStatus>
+        <div>
+          <button type="button" onClick={enable} disabled={busy} style={{ ...SETTING_BTN, opacity: busy ? 0.6 : 1, cursor: busy ? "default" : "pointer" }}>{busy ? "설정 중..." : "알림 켜기"}</button>
+        </div>
+      </>
+    );
+  }
+  return (
+    <div style={SETTING_CARD}>
+      <div style={SETTING_TITLE}>🔔 새 설문·공지 알림</div>
+      <div style={SETTING_DESC}>중요한 안내가 오면 폰으로 바로 알려드려요</div>
+      {body}
+      {msg && <div style={{ ...SETTING_DESC, marginTop: 8, color: perm === "granted" ? "#1B8A5A" : "#B03A2E", fontWeight: 700 }}>{msg}</div>}
+    </div>
+  );
+}
+// 홈 화면 추가(설치) 안내 카드 — 이미 추가됨·카카오톡·아이폰·안드로이드·PC를 실제 상태로 구분한다
+function PwaInstallCard() {
+  const [installEvt, setInstallEvt] = useState(PWA_INSTALL_EVT);
+  const [installed, setInstalled] = useState(PWA_INSTALLED_FLAG);
+  useEffect(() => {
+    const f = () => { setInstallEvt(PWA_INSTALL_EVT); setInstalled(PWA_INSTALLED_FLAG); };
+    PWA_INSTALL_LISTENERS.add(f); f();
+    return () => { PWA_INSTALL_LISTENERS.delete(f); };
+  }, []);
+  let body;
+  if (installed || isPwaStandalone()) {
+    body = <SettingStatus tone="ok">이미 추가됨 — 지금 앱처럼 열려 있어요</SettingStatus>;
+  } else if (IS_KAKAO_UA) {
+    body = (
+      <>
+        <SettingStatus tone="warn">카카오톡 안에서는 추가가 안 돼요</SettingStatus>
+        <div><button type="button" onClick={openOutsideKakao} style={SETTING_BTN}>{IS_IOS_UA ? "Safari로 열기" : "브라우저로 열기"}</button></div>
+      </>
+    );
+  } else if (!IS_MOBILE_UA) {
+    body = <SettingStatus tone="dim">폰에서 열면 홈 화면에 추가할 수 있어요</SettingStatus>;
+  } else if (IS_IOS_UA) {
+    body = <div style={{ ...SETTING_DESC, marginTop: 8 }}>Safari 아래쪽 <b>공유 버튼(네모+화살표)</b> → <b>홈 화면에 추가</b>를 누르면 돼요.</div>;
+  } else if (installEvt) {
+    body = (
+      <div>
+        <button type="button" style={SETTING_BTN}
+          onClick={async () => { try { installEvt.prompt(); const r = await installEvt.userChoice; if (r && r.outcome === "accepted") { PWA_INSTALLED_FLAG = true; setInstalled(true); } } catch (e) {} }}>설치</button>
+      </div>
+    );
+  } else {
+    body = <div style={{ ...SETTING_DESC, marginTop: 8 }}>브라우저 메뉴(⋮) → <b>홈 화면에 추가</b>를 누르면 돼요.</div>;
+  }
+  return (
+    <div style={SETTING_CARD}>
+      <div style={SETTING_TITLE}>📲 홈 화면에 추가</div>
+      <div style={SETTING_DESC}>앱처럼 한 번에 열려요</div>
+      {body}
     </div>
   );
 }
@@ -1647,11 +1677,12 @@ function getNaesinVocaParams(student, examRanges, items) {
   }
   return { sc, nsl: [...new Set(out)].sort((a, b) => a - b) };
 }
-function StudentExamRangeCard({ student, items, examRanges }) {
+function StudentExamRangeCard({ student, items, examRanges, defaultOpen = null }) {
   // [수정 07-31] 평소에는 접어두고, 시험이 일주일 안으로 들어오면 저절로 펼쳐지게.
   // null = 학생이 아직 안 눌렀다는 뜻(위 StudentExamDdaySection과 같은 방식).
+  // [103차수] defaultOpen — 더보기 → 시험 정보 화면처럼 학생이 일부러 들어온 곳에서는 처음부터 펼쳐 둔다(true).
   const [userOpen, setUserOpen] = useState(null);
-  const open = userOpen === null ? isExamSoon(items) : userOpen;
+  const open = userOpen === null ? (defaultOpen === null ? isExamSoon(items) : !!defaultOpen) : userOpen;
   const naesin = (items || []).find(x => x && x.type === "내신") || null;
   const code = getStudentSchoolCodeForRange(student || {});
   const info = naesin ? getExamRangeTextForStudent(examRanges, code, { name: naesin.name, date: naesin.start, kind: naesin.kind, semester: naesin.semester }) : null;
@@ -1694,13 +1725,21 @@ function StudentExamRangeCard({ student, items, examRanges }) {
 const isExamSoon = (list) => (list || []).some(
   (x) => x && (x.ongoing || (typeof x.diff === "number" && x.diff >= 0 && x.diff <= 7))
 );
-function StudentExamDdaySection({ items }) {
+// [103차수] 가장 가까운 시험 하나(시험 기간 중이면 그게 0순위) — 더보기·홈 요약 줄이 쓴다. 아래 StudentExamDdaySection의 규칙과 같다.
+const nearestExamOf = (list) => {
+  const l = (Array.isArray(list) ? list : []).filter(Boolean);
+  if (!l.length) return null;
+  const rank = (x) => (typeof x.diff === "number" ? Math.max(x.diff, 0) : 99999);
+  return l.reduce((a, b) => (rank(b) < rank(a) ? b : a));
+};
+function StudentExamDdaySection({ items, defaultOpen = null }) {
   const list = Array.isArray(items) ? items.filter(Boolean) : [];
   const examSoon = isExamSoon(list);
   // null = 학생이 아직 한 번도 안 눌렀다는 뜻. 그동안은 시험이 가까운지에 따라 저절로 열린다.
   // 한 번 누른 뒤로는 학생이 고른 상태를 그대로 지킨다(앱이 멋대로 다시 펼치지 않는다).
+  // [103차수] defaultOpen — 더보기 → 시험 정보 화면에서는 처음부터 펼쳐 둔다(true).
   const [userOpen, setUserOpen] = useState(null);
-  const open = userOpen === null ? examSoon : userOpen;
+  const open = userOpen === null ? (defaultOpen === null ? examSoon : !!defaultOpen) : userOpen;
   if (list.length === 0) return null;
 
   // [수정 07-30] 예전에는 "내신 1 · 모의 1"이 글자로 박혀 있어 실제 개수와 무관하게 늘 같았다.
@@ -1829,6 +1868,16 @@ const BADGE_STYLES = {
 
 // ─── 학생 앱 가운데 정렬 폭 (PC 대응) ───
 const MAX_W = 600;
+// ─── [103차수 09-08 디자인 개편] 학생 화면 공용 색·크기 (계획서 4절) ───
+//   남색은 원본 #182848 그대로(계획서 허용), 페이지 배경·카드 테두리·파랑 단추·글자색은 계획서 값.
+const UI = {
+  navy: "#182848", bg: "#F5F6FA", card: "#fff", line: "#E4E8EF", blue: "#2466D9",
+  text: "#232B3B", sub: "#647084", dim: "#9AA3B2",
+  okBg: "#E8F6EE", okFg: "#1B8A5A", warnBg: "#FDECEA", warnFg: "#B03A2E", blueBg: "#EEF3FC",
+};
+// 위 탭 줄의 실제 높이(px). 붙박이(sticky) 탭 줄 아래로 내용을 맞추는 보정(VocaFrame topOffset·강의 카드 스크롤)이 전부 이 값을 쓴다.
+//   숫자를 여기 한 곳에서만 바꾼다(계획서 8.5).
+const TAB_BAR_H = 48;
 
 // ─── 마플영어 브랜드 컬러 (로고에서 추출) ───
 const BRAND = {
@@ -4887,6 +4936,193 @@ function TeacherLinkDeadScreen() {
   );
 }
 
+// ═══ [103차수 09-08 디자인 개편] 학생 화면 공통 틀 — 머리글 · 위 탭 5개 · 더보기 ═══
+// 계획서(01_IMPLEMENTATION_PLAN.md) 4·5·10절. 선생님 홈(TeacherHome)·마스터 홈(MasterHome)은 이 틀을 쓰지 않는다.
+// 머리글: 1행 = MP 마플영어 / 출석 QR, 2행 = 이름 / 학교·학년 / 새로고침(↻)+동기화 시각. 아바타·시험·공지·설문은 더보기로 이사.
+function StudentHeader({ innerRef, student, attToken, onQr, refreshing, onRefresh, lastLoadedAt, syncSource }) {
+  const schoolLine = [student?.school, student?.grade].filter(Boolean).join(" ");
+  return (
+    <div ref={innerRef} style={{ background: UI.navy, padding: "14px 16px 12px", color: "#fff" }}>
+      <div style={{ maxWidth: MAX_W, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 26, height: 20, border: "2px solid rgba(255,255,255,0.65)", borderRadius: 4, fontSize: 11, fontWeight: 800, letterSpacing: -0.5, flexShrink: 0 }}>MP</span>
+          <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: -0.3 }}>마플영어</span>
+          {/* [마스터·교사] 남의 화면에서 출석 QR을 띄워 잘못 찍히는 일이 없도록 숨긴다(원본 규칙 그대로). */}
+          {IS_STAFF_VIEW ? (
+            <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.45)" }}>출석 QR 숨김</span>
+          ) : !attToken ? (
+            <span style={{ marginLeft: "auto", flexShrink: 0, whiteSpace: "nowrap", fontSize: 11, fontWeight: 700, color: "rgba(255,214,120,0.95)" }}>QR 없음 — 선생님께 문의</span>
+          ) : (
+            <button type="button" onClick={onQr} aria-label="출석 QR 열기"
+              style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 5, padding: "8px 11px", minHeight: 36, borderRadius: 9, border: "1px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.12)", color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ display: "block" }}><path d="M3 3h8v8H3V3zm2 2v4h4V5H5zm8-2h8v8h-8V3zm2 2v4h4V5h-4zM3 13h8v8H3v-8zm2 2v4h4v-4H5zm8-2h3v3h-3v-3zm5 0h3v3h-3v-3zm-5 5h3v3h-3v-3zm5 0h3v3h-3v-3z"/></svg> 출석 QR
+            </button>
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+          <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "baseline", flexWrap: "wrap", columnGap: 8, rowGap: 2 }}>
+            <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: -0.5, lineHeight: 1.25, wordBreak: "keep-all" }}>{student?.name || ""}</span>
+            {schoolLine && <span style={{ fontSize: 13, fontWeight: 500, color: "rgba(255,255,255,0.6)", lineHeight: 1.3, wordBreak: "keep-all" }}>{schoolLine}</span>}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
+            <button type="button" onClick={onRefresh} disabled={refreshing} aria-label="다시 받기"
+              title={lastLoadedAt ? `마지막 동기화: ${lastLoadedAt.toLocaleTimeString()}${syncSource ? ` · ${syncSource}` : ""}` : "새로고침"}
+              style={{ width: 34, height: 34, borderRadius: 10, border: "1px solid rgba(255,255,255,0.18)", background: refreshing ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.12)", color: "#fff", cursor: refreshing ? "default" : "pointer", fontSize: 16, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", opacity: refreshing ? 0.65 : 1, fontFamily: "inherit" }}>
+              {refreshing ? "…" : "↻"}
+            </button>
+            {lastLoadedAt && (
+              <div style={{ fontSize: 9, color: "rgba(255,255,255,0.45)", textAlign: "center", marginTop: 2, whiteSpace: "nowrap" }}>
+                {syncSource === "local-backup"
+                  ? <span style={{ color: "#ffd678" }}>옛 저장본</span>   /* [98차수] 서버에서 못 받고 폰 저장본을 쓰는 중 */
+                  : `${lastLoadedAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })} 동기화`}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+// 위 탭 5개(홈·숙제·단어·강의·더보기) — 같은 폭, 붙박이(sticky). 옆으로 미는 방식은 없앴다(계획서 4절).
+//   alert = 단어 숙제가 남아 있을 때 "단어" 칸을 빨갛게(0825 8차수 원장 결정 그대로).
+function StudentTabBar({ tabs, activeKey, onPick }) {
+  return (
+    <div style={{ background: "#fff", borderBottom: `1px solid ${UI.line}`, position: "sticky", top: 0, zIndex: 10 }}>
+      <div role="tablist" aria-label="메뉴" style={{ maxWidth: MAX_W, margin: "0 auto", display: "flex", height: TAB_BAR_H, boxSizing: "border-box" }}>
+        {tabs.map((t) => {
+          const on = activeKey === t.key;
+          return (
+            <button key={t.key} type="button" role="tab" aria-selected={on} onClick={() => onPick(t.key)}
+              style={{
+                flex: "1 1 0", minWidth: 0, whiteSpace: "nowrap", textAlign: "center", padding: "0 2px", border: "none", cursor: "pointer", fontFamily: "inherit",
+                background: t.alert ? UI.warnBg : "transparent", fontSize: 15,
+                fontWeight: t.alert ? 800 : on ? 800 : 600,
+                color: t.alert ? UI.warnFg : on ? UI.navy : UI.dim,
+                borderBottom: on ? (t.alert ? `2.5px solid ${UI.warnFg}` : `2.5px solid ${UI.navy}`) : "2.5px solid transparent",
+                boxSizing: "border-box", lineHeight: 1,
+              }}>{t.label}</button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+// 더보기 목록 — 작은 아이콘 + 제목 + 짧은 설명 + 오른쪽 화살표 (계획서 10절). 항목 내용은 App이 실제 데이터로 만들어 넘긴다.
+function MoreMenu({ groups, onPick }) {
+  return (
+    <div>
+      <div style={{ fontSize: 20, fontWeight: 800, color: UI.text, margin: "2px 0 8px" }}>더보기</div>
+      {groups.map((g) => (
+        <div key={g.title}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: UI.sub, margin: "14px 2px 6px" }}>{g.title}</div>
+          <div style={{ background: UI.card, border: `1px solid ${UI.line}`, borderRadius: 14, overflow: "hidden" }}>
+            {g.items.map((it, i) => (
+              <button key={it.key} type="button" onClick={() => onPick(it.key)}
+                style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", minHeight: 52, boxSizing: "border-box", border: "none", borderTop: i ? "1px solid #EEF1F5" : "none", background: "transparent", cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
+                <span aria-hidden="true" style={{ width: 34, height: 34, borderRadius: 10, background: UI.blueBg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>{it.icon}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: "block", fontSize: 15, fontWeight: 700, color: UI.text }}>{it.title}</span>
+                  {it.sub && <span style={{ display: "block", fontSize: 12.5, marginTop: 2, color: it.subTone === "warn" ? UI.warnFg : it.subTone === "ok" ? UI.okFg : UI.sub, fontWeight: it.subTone ? 700 : 500, lineHeight: 1.4 }}>{it.sub}</span>}
+                </span>
+                <span aria-hidden="true" style={{ color: "#B4BCC9", fontSize: 18, flexShrink: 0 }}>›</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+// 더보기 하위 화면의 공용 틀 — 위에 "‹ 더보기" 되돌아가기 + 제목. 안에는 기존 화면(달력·오답·모의고사·진도 등)을 그대로 넣는다.
+function MoreSubFrame({ title, onBack, children }) {
+  return (
+    <div>
+      <button type="button" onClick={onBack} style={{ display: "inline-flex", alignItems: "center", gap: 3, border: "none", background: "transparent", padding: "4px 2px", minHeight: 36, fontSize: 13.5, fontWeight: 700, color: UI.blue, cursor: "pointer", fontFamily: "inherit" }}>
+        <span aria-hidden="true" style={{ fontSize: 17, lineHeight: 1 }}>‹</span> 더보기
+      </button>
+      {title && <div style={{ fontSize: 20, fontWeight: 800, color: UI.text, margin: "2px 0 12px" }}>{title}</div>}
+      {children}
+    </div>
+  );
+}
+// 더보기 → 공지·설문: 고정 공지(pinnedMessages)와 진행 중 설문(StudentSurveyCard)을 나눠서 보여준다.
+//   "읽음/안 읽음"은 원본에 기록이 없으므로 새로 추정하지 않는다(계획서 6절). 설문 응답 규칙은 StudentSurveyCard 그대로.
+function NoticesScreen({ pinnedMessages, surveys, surveyResponses, student, onSurveySubmitted }) {
+  const secHead = { fontSize: 13, fontWeight: 800, color: UI.sub, margin: "14px 2px 8px" };
+  const empty = (t) => <div style={{ background: UI.card, border: `1px solid ${UI.line}`, borderRadius: 14, padding: "18px 16px", fontSize: 13.5, color: UI.dim, textAlign: "center" }}>{t}</div>;
+  return (
+    <div>
+      <div style={{ ...secHead, marginTop: 0 }}>공지</div>
+      {pinnedMessages.length === 0 ? empty("지금 올라온 공지가 없어요") : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {pinnedMessages.map(([dateKey, rec]) => (
+            <div key={dateKey} style={{ background: UI.card, border: `1px solid ${UI.line}`, borderRadius: 14, padding: "12px 14px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                <span style={{ fontSize: 12 }}>📌</span>
+                <span style={{ fontSize: 11.5, color: UI.sub }}>{fmtDateShort(dateKey) ? `${fmtDateShort(dateKey)} · ` : ""}{rec.author || "선생님"}</span>
+              </div>
+              <div style={{ fontSize: 14.5, color: UI.text, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{rec.text}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={secHead}>설문</div>
+      {surveys.length === 0 ? empty("진행 중인 설문이 없어요") : (
+        <div>
+          {surveys.map((sv) => (
+            <StudentSurveyCard key={sv.id} survey={sv} myResponse={surveyResponses[sv.id]} student={student} onSubmitted={onSurveySubmitted} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+// 더보기 → 시험 정보: 기존 D-Day 칸과 시험 범위 칸을 그대로 쓴다(둘 다 남색 바탕용 글자색이라 남색 카드 안에 넣는다). 처음부터 펼쳐 둔다.
+function ExamInfoScreen({ student, items, examRanges }) {
+  const list = Array.isArray(items) ? items.filter(Boolean) : [];
+  const naesin = list.find((x) => x && x.type === "내신") || null;
+  const code = getStudentSchoolCodeForRange(student || {});
+  const rangeInfo = naesin ? getExamRangeTextForStudent(examRanges, code, { name: naesin.name, date: naesin.start, kind: naesin.kind, semester: naesin.semester }) : null;
+  if (list.length === 0) {
+    return <div style={{ background: UI.card, border: `1px solid ${UI.line}`, borderRadius: 14, padding: "24px 16px", fontSize: 14, color: UI.dim, textAlign: "center", lineHeight: 1.6 }}>다가오는 시험이 없어요<br /><span style={{ fontSize: 12.5 }}>선생님이 시험 일정을 등록하면 여기에 보여요</span></div>;
+  }
+  return (
+    <div>
+      <div style={{ background: UI.navy, borderRadius: 16, padding: "14px 14px 2px", color: "#fff" }}>
+        <StudentExamDdaySection items={list} defaultOpen />
+        <StudentExamRangeCard student={student} items={list} examRanges={examRanges} defaultOpen />
+      </div>
+      {naesin && !rangeInfo && (
+        <div style={{ marginTop: 10, fontSize: 12.5, color: UI.sub, textAlign: "center" }}>이번 내신 시험 범위는 아직 등록되지 않았어요</div>
+      )}
+    </div>
+  );
+}
+// 더보기 → 앱 설정: 알림 · 홈 화면 추가 · 앱 업데이트. 마플보카 학습 설정(초기화·캐시)은 단어 화면 안에 그대로 둔다(계획서 10절).
+function AppSettingsScreen({ student, swUpdate, onApplyUpdate }) {
+  const st = swUpdate?.state || "";
+  let updBody;
+  if (!st) updBody = <SettingStatus tone="ok">지금 최신 화면이에요</SettingStatus>;
+  else if (st === "failed") updBody = <SettingStatus tone="warn">업데이트를 적용하지 못했어요 — 이 앱의 다른 창을 모두 닫고 다시 열어 주세요</SettingStatus>;
+  else updBody = (
+    <>
+      <SettingStatus tone="dim">{st === "applying" ? "업데이트 준비 중…" : "새 버전이 있어요"}</SettingStatus>
+      {swUpdate.msg && <div style={{ ...SETTING_DESC, marginTop: 8, color: UI.warnFg, fontWeight: 700 }}>{swUpdate.msg}</div>}
+      <div><button type="button" onClick={onApplyUpdate} disabled={st === "applying"} style={{ ...SETTING_BTN, opacity: st === "applying" ? 0.6 : 1 }}>{st === "applying" ? "준비 중…" : "업데이트"}</button></div>
+    </>
+  );
+  return (
+    <div>
+      <PushSettingCard student={student} />
+      <PwaInstallCard />
+      <div style={SETTING_CARD}>
+        <div style={SETTING_TITLE}>🆕 앱 업데이트</div>
+        <div style={SETTING_DESC}>새 버전이 나오면 여기와 위쪽 띠에 [업데이트] 단추가 나와요. 시험·영상 중에는 적용되지 않아요.</div>
+        {updBody}
+      </div>
+    </div>
+  );
+}
 export default function App() {
   const params = new URLSearchParams(window.location.search);
   const studentId = params.get("id");
@@ -4927,8 +5163,7 @@ export default function App() {
   const [surveyResponses, setSurveyResponses] = useState({}); // [설문] 본인 응답(svyr3)
   const [tab, setTab] = useState("home"); // [0812 대시보드] 첫 화면 = 홈 카드판
   const [vocaOpenLast, setVocaOpenLast] = useState(false); // [0812] 홈 단어장 카드로 들어왔는지 — 단어장 탭이 열릴 때 한 번 소비
-  const [videoPicker, setVideoPicker] = useState(false); // [0813] 홈 강의영상 카드의 "강의 고르기" 창 열림 여부
-  const [pickerMore, setPickerMore] = useState(false); // [0813] 고르기 창에서 "추가 강의" 펼침 여부
+  // [104차수 09-08] 옛 홈 "강의 고르기" 창(videoPicker·pickerMore — 0813-2에 이미 은퇴해 false && 로 잠들어 있던 것)은 새 홈과 함께 지웠다.
   const [vocaOpenTask, setVocaOpenTask] = useState(null); // [0813] 홈 "수업 단어 공부" 카드 → 마플보카에 보낼 {book, lecs}. 보내면 비운다
   const [vocaHwTask, setVocaHwTask] = useState(null);     // [숙제 5차수 0818] 홈 카드 → 마플보카 숙제 TEST {book, lecs, date, deadline}. 보내면 비운다
   const [showAttQr, setShowAttQr] = useState(false);
@@ -5136,6 +5371,8 @@ export default function App() {
     if (tab === "voca" && vocaHwBusyRef.current) return window.confirm("단어 숙제 TEST를 풀던 중이에요.\n지금 나가면 처음부터 다시 풀어요. 그래도 나갈까요?");
     return true;
   };
+  // [103차수] 남색 머리글 요소 — 탭을 바꿀 때 "본문 시작점(탭 줄 바로 아래)"까지만 올려 보내는 기준. 훅이라 early return보다 위에 있어야 한다.
+  const headerRef = useRef(null);
 
   // [PASS] 새로 완주한 책 감지 → 앱 진입 시 축하 연출 (책당 딱 1번, 이 폰 기준)
   // ※ 반드시 위의 student·todos·progressTree state 선언 "뒤"에 있어야 함 — 앞에 두면 TDZ 크래시로 앱이 안 열림
@@ -6004,6 +6241,54 @@ export default function App() {
     return true;
   };
 
+  // ─── [103차수 09-08] 화면 이동은 전부 이 한 함수로 (계획서 5절) ───
+  //   위 탭·홈 바로가기·더보기 목록·"‹ 더보기"·[복습하기]가 모두 goTab을 부른다. 그래서
+  //   ① 오답 TEST·단어 숙제 TEST 도중의 나가기 확인창(confirmLeaveTab)이 어디서 이동하든 똑같이 걸리고
+  //   ② 확인을 취소하면 iframe 신호(숙제 TEST 시작·마지막 책 열기)·고른 강의·화면 상태를 하나도 바꾸지 않는다(확인 뒤에만 실행)
+  //   ③ 이미 있는 화면을 또 누르면 아무것도 안 한다 — 단어 탭 재클릭이 "숙제 TEST 시작" 신호를 또 보내던 일(96차수 수정)이 다시 생기지 않는다
+  //   더보기 하위 화면(일정·오답·모의·진도·공지·시험·설정)은 tab 값은 따로 두고 위 탭에서는 "더보기"가 켜진 것으로 보인다(topTabOf).
+  const MORE_SUB_KEYS = ["cal", "vocabWrong", "mock", "progress", "notices", "examInfo", "settings"];
+  const topTabOf = (key) => (MORE_SUB_KEYS.includes(key) ? "more" : key);
+  // 탭을 바꿀 때 본문 시작점(붙박이 탭 줄 바로 아래)까지만 올린다. 그보다 위에 있으면 그대로 둔다(머리글이 보이는 중이면 안 움직임).
+  const scrollToContentTop = () => {
+    try {
+      const h = headerRef.current;
+      const y = h ? Math.max(0, Math.round(h.getBoundingClientRect().bottom + window.scrollY)) : 0;
+      if (window.scrollY > y) window.scrollTo({ top: y, behavior: "auto" });
+    } catch (e) {}
+  };
+  // 고른 강의 카드가 화면에 그려진 다음 그 위치로 내려간다. 위 탭 줄이 붙박이라 TAB_BAR_H만큼 여유를 둔다(숫자는 TAB_BAR_H 한 곳).
+  // 혹시 실패해도 화면이 안 움직일 뿐, 오류는 나지 않는다. 두 번 시도(늦게 그려지는 폰 대비).
+  const scrollToVideoCard = (vid) => {
+    const go = () => {
+      try {
+        const el = document.getElementById("video-card-" + vid);
+        if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - (TAB_BAR_H + 22), behavior: "smooth" });
+      } catch (e) {}
+    };
+    setTimeout(go, 150); setTimeout(go, 600);
+  };
+  const goTab = (nextKey, opts = {}) => {
+    if (nextKey === tab) return true;                       // 같은 화면 — 아무것도 안 한다(iframe 신호도 안 보낸다)
+    if (!confirmLeaveTab(nextKey)) return false;            // 나가기 취소 — 아래 아무것도 실행하지 않는다
+    if (nextKey === "voca") {
+      // [0825 5차수] 단어 숙제가 남아 있으면 숙제 TEST부터, 통과했거나 숙제가 없으면 책장(마지막 책)
+      // [94차수 09-05] 선생님 화면(보기 전용)은 도장을 못 읽으므로 늘 책장으로만 — 숙제 TEST를 열지 않는다
+      if (taskVoca && !vocaHwRec && !IS_TEACHER_MODE) startVocaHwTest();
+      else setVocaOpenLast(true);
+    }
+    if (nextKey === "videos") {
+      if (opts.videoBook !== undefined) setSelectedVideoBook(opts.videoBook);
+      if (opts.playVideo) {
+        if (viewingVideo?.id !== opts.playVideo.id) toggleVideo(opts.playVideo);   // 이미 열려 있으면 다시 누르지 않는다(닫힘 방지)
+        scrollToVideoCard(opts.playVideo.id);
+      }
+    }
+    setTab(nextKey);
+    scrollToContentTop();
+    return true;
+  };
+
   // 다가올 등원일 텍스트 (헤더 표시용)
   const upcomingAtt = computeUpcomingAttendance(student, makeups, customHolidays);
   const upcomingAttText = upcomingAtt
@@ -6012,12 +6297,66 @@ export default function App() {
     .join(", ");
   const examDdays = buildStudentExamDdays(student, exams, 2);
 
+  // ─── [103차수 09-08] 더보기·홈 요약에 쓰는 파생값 — 전부 이미 받은 자료에서 계산(서버 추가 요청 없음) ───
+  // 진행 중 설문(기간 안) — 공지·설문 화면과 더보기 숫자가 같은 목록을 쓴다 (워커도 거르지만 캐시 번들 대비 이중 안전장치)
+  const activeSurveys = surveys.filter((sv) => sv && !(sv.startDate && todayStrForTab < sv.startDate) && !(sv.endDate && todayStrForTab > sv.endDate));
+  // "응답할 설문" = 아직 내 응답이 없는 것. 공지는 읽음 기록이 없으므로 개수만 세고 "안 읽음"이라고 하지 않는다(계획서 6절)
+  const unansweredSurveys = activeSurveys.filter((sv) => { const r = surveyResponses[sv.id]; return !(r && (Array.isArray(r.choices) ? r.choices.length > 0 : r.choice != null)); });
+  const noticeSubParts = [];
+  if (pinnedMessages.length) noticeSubParts.push(`공지 ${pinnedMessages.length}개`);
+  if (unansweredSurveys.length) noticeSubParts.push(`응답할 설문 ${unansweredSurveys.length}개`);
+  else if (activeSurveys.length) noticeSubParts.push(`설문 ${activeSurveys.length}개 응답 완료`);
+  const noticeSub = noticeSubParts.length ? noticeSubParts.join(" · ") : "새 공지가 없어요";
+  const nearestExam = nearestExamOf(examDdays);
+  const wrongCount = Object.values(vocabWrongWords || {}).reduce((n, m) =>
+    n + Object.values(m?.words || {}).filter(w => (w.status || "active") === "active" && Array.isArray(w.correctAnswers) && w.correctAnswers.length > 0).length, 0);
+  const attNoticeAll = computeAttNotice(student, makeups, customHolidays);
+  const moreGroups = [
+    { title: "안내", items: [
+      { key: "notices", icon: "📣", title: "공지·설문", sub: noticeSub, subTone: unansweredSurveys.length ? "warn" : undefined },
+      { key: "examInfo", icon: "📋", title: "시험 정보", sub: nearestExam ? `${nearestExam.name} ${nearestExam.ddayLabel} · 시험 범위` : "다가오는 시험 없음" },
+    ] },
+    { title: "학습", items: [
+      { key: "cal", icon: "📅", title: "수업 일정", sub: attNoticeAll.today
+          ? `오늘 ${fmtTime(attNoticeAll.today.time)} 등원${attTag(attNoticeAll.today)}`
+          : attNoticeAll.next ? `다음 수업 ${fmtAttDayParen(attNoticeAll.next.dateObj)} ${fmtTime(attNoticeAll.next.time)}${attTag(attNoticeAll.next)}` : "등원·보충 일정" },
+      // 오답 복습은 예전 "오답" 탭과 같은 조건(틀린 단어가 있을 때만)으로 나온다
+      ...(hasVocabWrong ? [{ key: "vocabWrong", icon: "📝", title: "오답 복습",
+          sub: vocabWarn.overdue > 0 ? `기한 지난 단어 ${vocabWarn.overdue}개` : vocabWarn.dueThisWeek > 0 ? `이번 주 마감 ${vocabWarn.dueThisWeek}개 · ${vocabWarn.sundayLabel}까지` : `남은 단어 ${wrongCount}개`,
+          subTone: vocabWarn.overdue > 0 ? "warn" : undefined }] : []),
+      // [0812 대시보드] 모의고사는 중학생에게도 보여준다(원장 결정). 회차가 없으면 빈 안내만 뜬다.
+      { key: "mock", icon: "✏️", title: "모의고사", sub: "응시·점수 기록" },
+      ...((progressTree?.lanes || []).length ? [{ key: "progress", icon: "📈", title: "학습 진도", sub: "교재별 진행 상황" }] : []),
+    ] },
+    { title: "앱", items: [{ key: "settings", icon: "⚙️", title: "앱 설정", sub: "알림 · 홈 화면 추가 · 업데이트" }] },
+  ];
+  // [106차수 09-08] 홈 "강의" 줄과 강의 탭 대표 카드가 같은 강의를 가리키게 — 여기서 한 번만 계산한다.
+  //   마지막에 보던 강의 = 시청 기록(lastAt)이 가장 최근인 영상. 시작 강의 = 이 날짜 숙제 "수강" 중 가장 앞 번호, 없으면 보던 강의(buildVideoPickerV2 그대로).
+  const watchBySid = videoWatch[String(studentId)] || videoWatch[Number(studentId)] || {};
+  let lastVideo = null; let lastVideoAt = 0;
+  studentVideos.forEach(v => {
+    const rec = watchBySid[v.id];
+    const t = rec && rec.lastAt ? new Date(rec.lastAt).getTime() : 0;
+    if (t > lastVideoAt) { lastVideoAt = t; lastVideo = v; }
+  });
+  const allTaskItems = stepGroups.flatMap(s => s.items);
+  const picker = buildVideoPickerV2(lastVideo, allTaskItems, studentVideos);
+  // 위 탭 5개 — 순서·자리 고정(강의가 없는 학생도 강의 탭은 있고 안에서 "등록된 강의가 없어요"). 단어 탭은 VOCA_TAB_ENABLED를 따른다.
+  // [0825 8차수] 단어 숙제가 남아 있는 동안 "단어" 탭은 빨간 칸 — 누르면 바로 숙제 TEST. [94차수] 선생님 화면은 빨간 칸 없음
+  const topTabs = [
+    { key: "home", label: "홈" },
+    { key: "tasks", label: "숙제" },
+    ...(VOCA_TAB_ENABLED ? [{ key: "voca", label: "단어", alert: !!(taskVoca && !vocaHwRec && !IS_TEACHER_MODE) }] : []),
+    { key: "videos", label: "강의" },
+    { key: "more", label: "더보기" },
+  ];
+
   const F = "'Pretendard Variable', -apple-system, sans-serif";
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f6f7fb", fontFamily: F }}>
-      {/* [PWA] 홈 화면 설치 안내 배너 — 설치본/닫음/PC에선 자동 숨김 */}
-      <PwaInstallBanner />
+    <div style={{ minHeight: "100vh", background: UI.bg, fontFamily: F, color: UI.text }}>
+      {/* [103차수] 카카오톡 안에서 열었을 때만 "브라우저로 열기" 띠. 홈 화면 추가·알림 안내는 더보기 → 앱 설정으로 이사(원장 결정 09-08) */}
+      <KakaoOpenBanner />
       {/* [마스터] 지금 남의 화면을 보고 있다는 표시 + 홈 복귀. 학생에게는 절대 안 뜬다(열쇠 없음). */}
       {IS_MASTER_MODE && (
         <div style={{ background: "#16213e", borderBottom: "1px solid #c9a227", padding: "9px 24px" }}>
@@ -6048,92 +6387,9 @@ export default function App() {
           </div>
         </div>
       )}
-      <div style={{ background: "#182848", padding: "20px 24px 24px", color: "#fff" }}>
-        <div style={{ maxWidth: MAX_W, margin: "0 auto" }}>
-        {/* 브랜드 로고 락업 */}
-        <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 16 }}>
-          <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 19, border: "2px solid rgba(255,255,255,0.6)", borderRadius: 4, fontSize: 11, fontWeight: 700, letterSpacing: -0.5 }}>MP</span>
-          <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: -0.3 }}>마플영어</span>
-          {/* [마스터] 원장이 학생 화면에서 출석 QR을 띄워 잘못 찍히는 일이 없도록 숨긴다. */}
-          {IS_STAFF_VIEW ? (
-            <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.45)" }}>출석 QR 숨김</span>
-          ) : !attToken ? (
-            /* [4차] 열쇠값 없는 링크 — QR을 만들어도 데스크에서 안 읽힌다. 미리 안내로 바꾼다. */
-            <span style={{ marginLeft: "auto", flexShrink: 0, whiteSpace: "nowrap", fontSize: 11, fontWeight: 700, color: "rgba(255,214,120,0.95)" }}>QR 없음 — 선생님께 문의</span>
-          ) : (
-            <button onClick={() => setShowAttQr(true)} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 9, border: "1px solid rgba(255,255,255,0.25)", background: "rgba(255,255,255,0.12)", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ display: "block" }}><path d="M3 3h8v8H3V3zm2 2v4h4V5H5zm8-2h8v8h-8V3zm2 2v4h4V5h-4zM3 13h8v8H3v-8zm2 2v4h4v-4H5zm8-2h3v3h-3v-3zm5 0h3v3h-3v-3zm-5 5h3v3h-3v-3zm5 0h3v3h-3v-3z"/></svg> 출석 QR
-            </button>
-          )}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
-          {/* 아바타 + 코너 브래킷 (로고 시그니처) */}
-          <div style={{ position: "relative", width: 48, height: 48, flexShrink: 0 }}>
-            <div style={{ width: 48, height: 48, borderRadius: 14, background: "rgba(255,255,255,0.14)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 700, border: "1px solid rgba(255,255,255,0.12)" }}>
-              {student.name?.[0] || "?"}
-            </div>
-            <span style={{ position: "absolute", top: -3, left: -3, width: 10, height: 10, borderTop: "2px solid #fff", borderLeft: "2px solid #fff", borderTopLeftRadius: 3 }} />
-            <span style={{ position: "absolute", bottom: -3, right: -3, width: 10, height: 10, borderBottom: "2px solid #fff", borderRight: "2px solid #fff", borderBottomRightRadius: 3 }} />
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: -0.5 }}>
-              {student.name}
-              <span style={{ fontSize: 13, fontWeight: 500, color: "rgba(255,255,255,0.5)", marginLeft: 8 }}>
-                {student.school || ""} {student.grade || ""}
-              </span>
-            </div>
-            {/* [0812 대시보드] 다가올 등원일 표시는 원장 결정으로 머리글에서 뺌 — 등원일은 일정 탭 달력에 그대로 있음 */}
-            {false && (
-            <div style={{ marginTop: 3, color: "rgba(255,255,255,0.65)" }}>
-              <FitText text={upcomingAttText || "예정된 등원일이 없어요"} maxFont={13} minFont={9} />
-            </div>
-            )}
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
-            <button
-              onClick={() => loadData({ manual: true })}
-              disabled={refreshing}
-              title={lastLoadedAt ? `마지막 동기화: ${lastLoadedAt.toLocaleTimeString()}${syncSource ? ` · ${syncSource}` : ""}` : "새로고침"}
-              style={{
-                width: 38, height: 38, borderRadius: 12, border: "1px solid rgba(255,255,255,0.16)",
-                background: refreshing ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.12)",
-                color: "#fff", cursor: refreshing ? "default" : "pointer", fontSize: 17, fontWeight: 700,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                opacity: refreshing ? 0.65 : 1,
-              }}
-            >
-              {refreshing ? "…" : "↻"}
-            </button>
-            {lastLoadedAt && (
-              <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", textAlign: "center", marginTop: 3, whiteSpace: "nowrap" }}>
-                {syncSource === "local-backup"
-                  ? <span style={{ color: "#ffd678" }}>옛 저장본</span>   /* [98차수] 서버에서 못 받고 폰 저장본을 쓰는 중 */
-                  : `${lastLoadedAt.toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})} 동기화`}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <StudentExamDdaySection items={examDdays} />
-        <StudentExamRangeCard student={student} items={examDdays} examRanges={examRanges} />
-
-        {pinnedMessages.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {pinnedMessages.map(([dateKey, rec]) => (
-              <div key={dateKey} style={{ background: "rgba(255,255,255,0.09)", borderRadius: 10, padding: "12px 14px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                  <span style={{ fontSize: 12 }}>📌</span>
-                  <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)" }}>
-                    {fmtDateShort(dateKey) ? `${fmtDateShort(dateKey)} · ` : ""}{rec.author || "선생님"}
-                  </span>
-                </div>
-                <div style={{ fontSize: 14, color: "rgba(255,255,255,0.9)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{rec.text}</div>
-              </div>
-            ))}
-          </div>
-        )}
-        </div>
-      </div>
+      {/* [103차수] 작은 머리글 — 아바타·시험 D-Day·시험 범위·고정 공지는 더보기(시험 정보 / 공지·설문)로 이사(계획서 4절) */}
+      <StudentHeader innerRef={headerRef} student={student} attToken={attToken} onQr={() => setShowAttQr(true)}
+        refreshing={refreshing} onRefresh={() => loadData({ manual: true })} lastLoadedAt={lastLoadedAt} syncSource={syncSource} />
 
       {showAttQr && student && attToken && (
         <AttQrModal
@@ -6177,146 +6433,38 @@ export default function App() {
         </div>
       )}
 
-      {/* 주간 오답 복습 경고: 기한 초과(빨강) 우선, 없으면 이번 주 마감(노랑) */}
-      {vocabWarn.hasWarning && (
-        <div style={{
-          padding: "12px 24px",
-          background: vocabWarn.overdue > 0 ? "#fdecea" : "#fff8e1",
-          borderBottom: `1px solid ${vocabWarn.overdue > 0 ? "#f5c2bd" : "#ffe49c"}`,
-        }}>
-          <div style={{ maxWidth: MAX_W, margin: "0 auto", display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 18, flexShrink: 0 }}>{vocabWarn.overdue > 0 ? "🚨" : "📌"}</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              {vocabWarn.overdue > 0 ? (
-                <>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: "#c0392b" }}>
-                    기한이 지난 복습 단어 {vocabWarn.overdue}개가 있어요
-                  </div>
-                  <div style={{ fontSize: 12, color: "#a14a40", marginTop: 2 }}>
-                    지금 바로 끝내자! {vocabWarn.dueThisWeek > 0 && `· 이번 주 마감 ${vocabWarn.dueThisWeek}개`}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: "#9a6b00" }}>
-                    이번 주 복습 단어 {vocabWarn.dueThisWeek}개 — {vocabWarn.sundayLabel}까지!
-                  </div>
-                  <div style={{ fontSize: 12, color: "#a3791a", marginTop: 2 }}>
-                    지난주에 틀린 단어예요. 일요일 전에 통과하면 끝 (D-{vocabWarn.dday})
-                  </div>
-                </>
-              )}
-            </div>
-            {hasVocabWrong && (
-              <button onClick={() => { if (!confirmLeaveTab("vocabWrong")) return; setTab("vocabWrong"); }} style={{
-                flexShrink: 0, padding: "7px 13px", borderRadius: 9, border: "none", cursor: "pointer",
-                background: vocabWarn.overdue > 0 ? "#c0392b" : "#9a6b00", color: "#fff",
-                fontSize: 12, fontWeight: 800,
-              }}>복습하기</button>
-            )}
-          </div>
-        </div>
-      )}
+      {/* [103차수] 주간 오답 복습 경고 띠(모든 탭 위)는 없앴다 — 같은 경고가 홈 오답 줄과 더보기 → 오답 복습에 한 번만 나온다(계획서 6절) */}
 
       {/* [PASS] 교재 완주 축하 오버레이 — 새 완주가 있을 때만 */}
       {passQueue.length > 0 && <BookPassCelebration books={passQueue} onClose={() => setPassQueue([])} />}
 
-      {/* [푸시] 알림 켜기 배너 — [96차수 09-05 · 원장 결정] 탭 줄 위에서 홈 카드 아래로 옮겼다.
-          설치 배너·설문·오답 경고와 함께 뜨는 날은 숙제 카드가 화면 아래로 밀렸기 때문. 홈 탭 맨 아래에서 그린다. */}
-
-      {/* [설문] 진행 중 설문 — 선택지를 누르면 제출, 마감 전까지 변경 가능 */}
-      {(() => {
-        // [설문 기간] 시작 전·기간 종료 설문은 표시하지 않는다 (워커도 거르지만 캐시 번들 대비 이중 안전장치)
-        const t = new Date(); const z = (n) => String(n).padStart(2, "0");
-        const today = `${t.getFullYear()}-${z(t.getMonth() + 1)}-${z(t.getDate())}`;
-        const list = surveys.filter((sv) => sv && !(sv.startDate && today < sv.startDate) && !(sv.endDate && today > sv.endDate));
-        if (!list.length) return null;
-        return (
-          <div style={{ maxWidth: MAX_W, margin: "12px auto 0", padding: "0 16px", boxSizing: "border-box" }}>
-            {list.map((sv) => (
-              <StudentSurveyCard key={sv.id} survey={sv} myResponse={surveyResponses[sv.id]} student={student}
-                onSubmitted={(svId, resp) => setSurveyResponses((prev) => ({ ...prev, [svId]: resp }))} />
-            ))}
-          </div>
-        );
-      })()}
-
-      <div style={{ background: "#fff", borderBottom: "1px solid #eee", position: "sticky", top: 0, zIndex: 10 }}>
-        {/* [수정 07-31] 탭이 최대 6개까지 늘어나면 폰에서 글자가 두 줄로 접혔다.
-            폭을 똑같이 나누는 대신, 글자 폭만큼 차지하고 넘치면 옆으로 미는 방식으로 바꾼다. */}
-        <style>{`.mplTabScroll::-webkit-scrollbar{display:none}`}</style>
-        <div className="mplTabScroll" style={{
-          maxWidth: MAX_W, margin: "0 auto", display: "flex",
-          overflowX: "auto", WebkitOverflowScrolling: "touch",
-          scrollbarWidth: "none",
-        }}>
-        {/* [0819 탭줄 정리] 원장 결정
-            ① 순서 = 매일 쓰는 것(홈·단어·숙제·강의·오답)을 앞으로, 가끔 보는 것(일정·모의·진도)을 뒤로
-            ② 이름 = 두 글자로 줄여 글자가 접히지 않게
-            오답·진도·강의 탭은 예전처럼 있을 때만 나타난다(없는 학생에겐 아예 안 보임). */}
-        {[
-          { key: "home", label: "홈" },
-          ...(VOCA_TAB_ENABLED ? [{ key: "voca", label: "단어" }] : []),
-          { key: "tasks", label: "숙제" },
-          ...(studentVideos.length > 0 ? [{ key: "videos", label: "강의" }] : []),
-          ...(hasVocabWrong ? [{ key: "vocabWrong", label: "오답" }] : []),
-          { key: "cal", label: "일정" },
-          // [0812 대시보드] 모의고사 탭은 중학생에게도 보여준다(원장 결정). 회차가 없으면 빈 안내만 뜬다.
-          { key: "mock", label: "모의" },
-          ...((progressTree?.lanes || []).length ? [{ key: "progress", label: "진도" }] : []),
-        ].map((t) => (
-          <button key={t.key} onClick={() => {
-            // [95·97차수] 오답 TEST(하나라도 풀었음)·단어 숙제 TEST(마플보카가 "시험 중") 도중에 다른 탭으로 나가면
-            //   푼 게 사라진다 — 확인창을 한 번 띄운다 (안쪽 [← 목록]·[그만두기]엔 원래 확인이 있었지만 위 탭 줄로 나가면 건너뛰었다)
-            if (!confirmLeaveTab(t.key)) return;
-            // [96차수 09-05] 이미 단어 탭인데 "단어"를 또 누르면 아무것도 안 한다 — 예전엔 "숙제 TEST 시작" 신호를 또 보내서
-            //   풀던 시험이 처음부터 다시 시작됐다(마플보카 실측: 열린 창을 닫고 새로 시작, 틀린·다시 시작 횟수도 0으로).
-            if (t.key === "voca" && tab === "voca") return;
-            if (t.key === "voca") {
-              // [0825 5차수] 단어 숙제가 남아 있으면 숙제 TEST부터, 통과했거나 숙제가 없으면 예전처럼 책장(마지막 책)
-              // [94차수 09-05] 선생님 화면(보기 전용)은 도장을 못 읽으므로 늘 책장으로만 — 숙제 TEST를 열지 않는다
-              if (taskVoca && !vocaHwRec && !IS_TEACHER_MODE) startVocaHwTest();
-              else setVocaOpenLast(true);
-            }
-            setTab(t.key);
-          }} style={(() => {
-            // [0825 8차수] 단어 숙제가 남아 있는 동안 "단어" 탭도 빨간 칸 — 누르면 바로 숙제 TEST가 시작된다
-            // [94차수 09-05] 선생님 화면에서는 도장을 못 읽어 늘 "남음"으로 보였다 → 선생님 화면은 빨간 칸을 안 쓴다
-            const vocaAlert = t.key === "voca" && taskVoca && !vocaHwRec && !IS_TEACHER_MODE;
-            return {
-              // [0819] 한 칸을 화면 너비의 23%로 고정한다 — 넷이 꽉 차고 다섯째가 조금 보여서
-              //        "옆으로 밀면 더 있다"는 것이 눈에 띈다. 글자를 꾸겨 넣지 않아 크게 보인다.
-              flex: "0 0 23%", whiteSpace: "nowrap", textAlign: "center",
-              padding: "15px 4px", border: "none", cursor: "pointer",
-              background: vocaAlert ? "#fdecea" : "transparent", fontSize: 15,
-              fontWeight: vocaAlert ? 800 : tab === t.key ? 700 : 500,
-              color: vocaAlert ? "#b03a2e" : tab === t.key ? "#182848" : "#9aa0ab",
-              borderBottom: tab === t.key ? (vocaAlert ? "2.5px solid #b03a2e" : "2.5px solid #182848") : "2.5px solid transparent",
-            };
-          })()}>{t.label}</button>
-        ))}
-        </div>
-      </div>
+      {/* [103차수] 진행 중 설문 카드는 탭 줄 위에서 더보기 → 공지·설문으로 이사. 홈에는 요약 줄(응답할 설문 n개)만 둔다 */}
+      {/* [103차수] 위 탭 5개 — 홈·숙제·단어·강의·더보기. 더보기 하위 화면에서는 "더보기"가 켜져 보인다(topTabOf). 이동은 goTab 하나로 */}
+      <StudentTabBar tabs={topTabs} activeKey={topTabOf(tab)} onPick={(k) => goTab(k)} />
 
       <div style={{ padding: "16px 16px 100px" }}>
         <div style={{ maxWidth: MAX_W, margin: "0 auto" }}>
-        {/* [0812 대시보드] 홈 — 오늘 숙제(1단계 내용)·단어장·강의영상·오답숙제·모의고사 카드.
-            데이터는 전부 이미 계산된 것 재사용(stepGroups·guessVocaBooks·videoWatch·vocabWarn). 서버 추가 요청 없음. */}
+        {/* ═══ [104차수 09-08 디자인 개편] 홈 — 시안 images/01-home.png, 계획서 6절 ═══
+            순서: 등원+D-Day 한 줄 → "오늘 할 일" 제목+날짜 → 오늘 숙제 카드(1단계 항목 전부) → 이어서 할 공부(단어/강의/오답) → 공지·시험 정보·학습 진도 바로가기.
+            데이터는 전부 이미 계산된 것 재사용(stepGroups·taskVoca·vocaHwRec·buildVideoPickerV2·vocabWarn·pinnedMessages·examDdays). 서버 추가 요청 없음.
+            학생이 눌러서 완료하는 체크박스는 없다 — 상태(확인 전/확인 완료/재시)만 보여준다. 모든 이동은 goTab. */}
         {tab === "home" && (() => {
           const step1Items = (stepGroups.find(s => s.key === "step1")?.items) || [];
-          // [0813] 등원 안내 — 이미 있는 등원일 계산 규칙 재사용. 서버 추가 요청 없음
-          const attNotice = computeAttNotice(student, makeups, customHolidays);
+          // 카드 안 "확인 n/m" = 이 카드의 항목 기준(재시는 분모·분자에서 제외 — 숙제 탭 진행률과 같은 규칙). 5단계 전체 숫자와 섞지 않는다.
+          const step1Countable = step1Items.filter(it => !isFailed(it));
+          const step1Done = step1Countable.filter(it => isCheckedView(it)).length;
+          const dateIsToday = isToday(activeDate);
+          const dateIsPast = !dateIsToday && activeDate < todayStrForTab;
+          const dateIsFuture = !dateIsToday && activeDate > todayStrForTab;
+          const hwCardTitle = dateIsPast ? "지난 숙제" : dateIsFuture ? "다음 숙제" : "오늘 숙제";
           // [0814] 책 이름표는 위쪽 VOCA_BOOK_LABELS 한 곳에서만 가져온다(두 벌로 갈라지지 않게)
           const vocaIds = guessVocaBooks(progressTree, videos);
-          // [0813] 카드 제목 = 이 폰에서 마지막으로 연 책(누르면 실제로 열리는 책과 이름이 같게).
-          //        기록이 없으면 배정 첫 책 이름, 그것도 없으면 "내 단어장".
+          // [0813] 단어 줄 제목 = 이 폰에서 마지막으로 연 책(누르면 실제로 열리는 책과 이름이 같게). 기록이 없으면 배정 첫 책, 그것도 없으면 "내 단어장".
           let vocaLastId = "";
           try { vocaLastId = localStorage.getItem("maplevoca_lastbook") || ""; } catch (e) { vocaLastId = ""; }
           const vocaLastName = vocaFullLabel(vocaLastId);
           const vocaTitle = vocaLastName || (vocaIds.length ? (vocaFullLabel(vocaIds[0]) || "내 단어장") : "내 단어장");
-          // [94차수 09-05] 2번 카드 상태 3가지 — 학생: 숙제 남음(빨강)·통과(초록) / 선생님 화면: 판정 없음(흰색).
-          //   선생님이 학생 화면을 열면 통과 도장을 못 읽어온다(학생 열쇠 t가 없음). 예전엔 이때도 "아직 안 봄"(빨강)으로
-          //   나와서 이미 통과한 학생까지 안 본 것처럼 보였고, 카드를 누르면 학생 숙제 TEST까지 열렸다.
+          // [94차수 09-05] 단어 줄 상태 3가지 — 학생: 숙제 남음(빨강)·통과(초록) / 선생님 화면: 판정 없음(흰색).
           const hwTodo = !!taskVoca && !vocaHwRec && !IS_TEACHER_MODE;
           const hwDone = !!taskVoca && !!vocaHwRec && !IS_TEACHER_MODE;
           const hwStaff = !!taskVoca && IS_TEACHER_MODE;
@@ -6325,255 +6473,306 @@ export default function App() {
                 ? `내신 단어 ${fmtLecRange(taskVoca.lessons)}과`                          /* [내신 4차수] */
                 : `${vocaShortLabel(taskVoca.book)} ${VOCA_UNIT_WORDS[taskVoca.book] || "DAY"} ${fmtLecRange(taskVoca.lecs)}`)
             : vocaTitle;
-          // 마지막에 보던 강의 = 시청 기록(lastAt)이 가장 최근인 영상
-          const watchBySid = videoWatch[String(studentId)] || videoWatch[Number(studentId)] || {};
-          let lastVideo = null; let lastVideoAt = 0;
-          studentVideos.forEach(v => {
-            const rec = watchBySid[v.id];
-            const t = rec && rec.lastAt ? new Date(rec.lastAt).getTime() : 0;
-            if (t > lastVideoAt) { lastVideoAt = t; lastVideo = v; }
-          });
-          const wrongCount = Object.values(vocabWrongWords || {}).reduce((n, m) =>
-            n + Object.values(m?.words || {}).filter(w => (w.status || "active") === "active" && Array.isArray(w.correctAnswers) && w.correctAnswers.length > 0).length, 0);
-          // [0813] 강의 고르기 창 = 시작 강의 하나(숙제 "수강" 중 가장 앞 번호, 없으면 보던 강의) + 추가 강의
-          const allTaskItems = stepGroups.flatMap(s => s.items);
-          const picker = buildVideoPickerV2(lastVideo, allTaskItems, studentVideos);
-          // 고른 강의 카드가 화면에 그려진 다음 그 위치로 내려간다. 위 탭 줄이 붙박이(sticky)라 70px 여유를 둔다.
-          // 혹시 실패해도 화면이 안 움직일 뿐, 오류는 나지 않는다. 두 번 시도(늦게 그려지는 폰 대비).
-          const scrollToVideoCard = (vid) => {
-            const go = () => {
-              try {
-                const el = document.getElementById("video-card-" + vid);
-                if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 70, behavior: "smooth" });
-              } catch (e) {}
-            };
-            setTimeout(go, 150); setTimeout(go, 600);
+          // [106차수] 시작 강의(picker)·최근 강의(lastVideo)는 App 쪽에서 한 번 계산해 홈과 강의 탭이 같이 쓴다
+          const openVideosFromRow = () => {
+            // [0813-2 원장 지시] 고르기 창 없이 곧바로 강의 탭 — 시작 강의를 펼치고 그 자리까지 내려간다. 못 고르면 전체 목록만.
+            if (picker.main) goTab("videos", { videoBook: null, playVideo: picker.main.video });
+            else goTab("videos", { videoBook: null });
           };
-          const playFromPicker = (v) => {
-            setVideoPicker(false);
-            // 책 칸(sub-tab) 선택을 비워 두면 지금 펼친 강의의 책이 저절로 열린다.
-            // 그래야 다른 책 강의를 골라도 그 카드가 화면에 실제로 그려지고 스크롤이 먹는다.
-            setSelectedVideoBook(null);
-            if (viewingVideo?.id !== v.id) toggleVideo(v); // 이미 열려 있으면 다시 누르지 않는다(닫힘 방지)
-            setTab("videos");
-            scrollToVideoCard(v.id);
+          // ── 모양 ──
+          const card = { background: UI.card, border: `1px solid ${UI.line}`, borderRadius: 16, overflow: "hidden" };
+          const secTitle = { fontSize: 19, fontWeight: 800, color: UI.text, letterSpacing: -0.3 };
+          const rowBtn = (extra = {}) => ({ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "13px 14px", minHeight: 60, boxSizing: "border-box", border: "none", background: "transparent", cursor: "pointer", textAlign: "left", fontFamily: "inherit", ...extra });
+          const rowIcon = (bg) => ({ width: 40, height: 40, borderRadius: 12, background: bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19, flexShrink: 0 });
+          const pill = (kind) => ({ flexShrink: 0, padding: "9px 14px", minHeight: 38, borderRadius: 10, fontSize: 13.5, fontWeight: 800, display: "inline-flex", alignItems: "center", whiteSpace: "nowrap",
+            ...(kind === "fill" ? { background: UI.blue, color: "#fff" }
+              : kind === "red" ? { background: "#fff", color: UI.warnFg, border: `1.5px solid ${UI.warnFg}` }
+              : kind === "redfill" ? { background: "#C0392B", color: "#fff" }
+              : { background: "#fff", color: UI.blue, border: `1.5px solid ${UI.blue}` }) });
+          const statusChip = (st) => {
+            const c = st === "done" ? { bg: UI.okBg, fg: UI.okFg, t: "확인 완료" } : st === "fail" ? { bg: UI.warnBg, fg: UI.warnFg, t: "재시" } : { bg: "#EEF1F5", fg: "#556072", t: "확인 전" };
+            return <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 800, padding: "5px 9px", borderRadius: 8, background: c.bg, color: c.fg, whiteSpace: "nowrap" }}>{c.t}</span>;
           };
-          const openVideosFromCard = () => {
-            // [0813-2 원장 지시] 고르기 창을 띄우지 않는다. 눌렀으면 곧바로 강의 탭으로 가서
-            // 시작 강의(오늘 숙제 "수강" 중 가장 앞 번호, 없으면 보던 강의)를 펼치고 그 자리까지 내려간다.
-            // 볼 강의를 하나도 못 고르면 예전처럼 전체 목록만 연다.
-            if (picker.main) { playFromPicker(picker.main.video); return; }
-            setSelectedVideoBook(null);
-            setTab("videos");
-          };
-          const cardBox = { background: "#fff", border: "1px solid #e8eaef", borderRadius: 14, padding: "13px 14px", cursor: "pointer", textAlign: "left", fontFamily: "inherit", display: "block", width: "100%" };
-          const cardLabel = { fontSize: 12, fontWeight: 800, color: "#7f8fa6" };
-          const cardMain = { fontSize: 14.5, fontWeight: 800, color: "#1a1a2e", marginTop: 6, lineHeight: 1.35 };
-          const cardSub = { fontSize: 11.5, color: "#9aa0ab", marginTop: 4, fontWeight: 600 };
+          const docIcon = (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="M8 13h8M8 17h6" /></svg>
+          );
           return (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {/* [0813] 등원 안내 — 오늘 등원일이면 파란 띠 + 다음 수업 줄, 아니면 다음 수업 한 줄. 등원일이 없으면 안 보임 */}
-              {attNotice.today ? (
-                <div style={{ background: "#e8f1fd", border: "1px solid #c5dcf6", borderRadius: 14, padding: "12px 15px" }}>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: "#0c447c", lineHeight: 1.4 }}>
-                    🏫 오늘은 {fmtTime(attNotice.today.time)}까지 등원입니다!{attTag(attNotice.today)}
-                  </div>
-                  {attNotice.next && (
-                    <div style={{ fontSize: 11.5, fontWeight: 700, color: "#3a72b0", marginTop: 4 }}>
-                      다음 수업 · {fmtAttDayParen(attNotice.next.dateObj)} {fmtTime(attNotice.next.time)}{attTag(attNotice.next)}
-                    </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {/* ① 등원 안내 + 가장 가까운 시험 D-Day (둘 다 없으면 이 줄 자체가 없다. 일정이 없으면 시간을 만들어 내지 않는다) */}
+              {(attNoticeAll.today || attNoticeAll.next || nearestExam) && (
+                <div style={{ background: "#E8F1FD", border: "1px solid #C5DCF6", borderRadius: 14, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+                  {(attNoticeAll.today || attNoticeAll.next) ? (
+                    <button type="button" onClick={() => goTab("cal")} style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", padding: 0, textAlign: "left", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 8 }}>
+                      <span aria-hidden="true" style={{ fontSize: 18, flexShrink: 0 }}>📅</span>
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ display: "block", fontSize: 14.5, fontWeight: 800, color: "#0c447c", lineHeight: 1.35, wordBreak: "keep-all" }}>
+                          {attNoticeAll.today
+                            ? `오늘 ${fmtTime(attNoticeAll.today.time)}까지 등원${attTag(attNoticeAll.today)}`
+                            : `다음 수업 ${fmtAttDayParen(attNoticeAll.next.dateObj)} ${fmtTime(attNoticeAll.next.time)}${attTag(attNoticeAll.next)}`}
+                        </span>
+                        {attNoticeAll.today && attNoticeAll.next && (
+                          <span style={{ display: "block", fontSize: 11.5, fontWeight: 700, color: "#3a72b0", marginTop: 2 }}>다음 수업 · {fmtAttDayParen(attNoticeAll.next.dateObj)} {fmtTime(attNoticeAll.next.time)}{attTag(attNoticeAll.next)}</span>
+                        )}
+                      </span>
+                    </button>
+                  ) : <span style={{ flex: 1 }} />}
+                  {nearestExam && (
+                    <button type="button" onClick={() => goTab("examInfo")} title={`${nearestExam.name} ${nearestExam.ddayLabel}`}
+                      style={{ flexShrink: 0, maxWidth: "48%", border: "none", borderRadius: 9, background: "#D6E6FA", color: "#1C4F8A", padding: "7px 10px", minHeight: 34, fontSize: 12.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{nearestExam.name}</span>
+                      <span style={{ flexShrink: 0, color: nearestExam.ongoing ? "#B8860B" : "#1C4F8A" }}>{nearestExam.ddayLabel}</span>
+                    </button>
                   )}
                 </div>
-              ) : attNotice.next ? (
-                <div style={{ background: "#fff", border: "1px solid #e8eaef", borderRadius: 14, padding: "11px 15px", fontSize: 12.5, fontWeight: 700, color: "#5c6470", lineHeight: 1.4 }}>
-                  📅 다음 수업은 {fmtAttDayParen(attNotice.next.dateObj)} {fmtTime(attNotice.next.time)}입니다{attTag(attNotice.next)}
+              )}
+
+              {/* ② 오늘 할 일 + 지금 보여주는 숙제 날짜 (오늘이 아니면 지난/다음 표시 — 원장 결정 0813 유지) */}
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 2 }}>
+                <span style={secTitle}>오늘 할 일</span>
+                <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 600, color: UI.sub, whiteSpace: "nowrap" }}>
+                  {allDates.length > 0 ? fmtDateKR(activeDate) : fmtDateKR(todayStrForTab)}
+                  {dateIsPast && <span style={{ marginLeft: 5, fontSize: 10.5, fontWeight: 800, color: UI.warnFg, background: UI.warnBg, borderRadius: 6, padding: "1px 6px" }}>지난 숙제</span>}
+                  {dateIsFuture && <span style={{ marginLeft: 5, fontSize: 10.5, fontWeight: 800, color: "#0c5a9e", background: "#e8f2fc", borderRadius: 6, padding: "1px 6px" }}>다음 숙제</span>}
+                </span>
+              </div>
+
+              {/* ③ 숙제 카드 — 1단계 항목을 원래 순서대로 전부. 항목 텍스트는 원문 그대로(화살표 뒤는 설명 배지, 단추 아님) */}
+              <div style={card}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "14px 16px 10px" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: UI.text, letterSpacing: -0.3, lineHeight: 1.2 }}>{hwCardTitle}</div>
+                    <div style={{ fontSize: 12.5, color: UI.sub, marginTop: 4 }}>선생님 확인 기준</div>
+                  </div>
+                  {step1Countable.length > 0 && (
+                    <span style={{ flexShrink: 0, fontSize: 14, fontWeight: 800, padding: "7px 11px", borderRadius: 9, background: step1Done === step1Countable.length ? UI.okBg : UI.blueBg, color: step1Done === step1Countable.length ? UI.okFg : "#1C4F8A", whiteSpace: "nowrap" }}>
+                      확인 {step1Done}/{step1Countable.length}
+                    </span>
+                  )}
                 </div>
-              ) : null}
-              <button onClick={() => setTab("tasks")} style={{ ...cardBox, padding: "14px 16px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 12, fontWeight: 800, color: "#e84393" }}>1. 오늘 숙제</span>
-                  <span style={{ marginLeft: "auto", fontSize: 11.5, color: "#9aa0ab", fontWeight: 600 }}>
-                    {fmtDateKR(activeDate)}{isToday(activeDate) ? " · 오늘" : ""}
-                    {/* [0813] 오늘이 아닌 날짜를 보여줄 때는 지난/다음 표시로 헷갈림 방지 — 원장 결정 */}
-                    {!isToday(activeDate) && activeDate < todayStrForTab && <span style={{ marginLeft: 5, fontSize: 10.5, fontWeight: 700, color: "#b03a2e", background: "#fdecea", borderRadius: 6, padding: "1px 6px" }}>지난 숙제</span>}
-                    {!isToday(activeDate) && activeDate > todayStrForTab && <span style={{ marginLeft: 5, fontSize: 10.5, fontWeight: 700, color: "#0c5a9e", background: "#e8f2fc", borderRadius: 6, padding: "1px 6px" }}>다음 숙제</span>}
-                  </span>
-                </div>
-                {step1Items.length === 0 ? (
-                  <div style={{ marginTop: 10, fontSize: 13, color: "#9aa0ab" }}>이 날짜에 등록된 숙제가 없어요</div>
+                {allDates.length === 0 ? (
+                  <div style={{ padding: "6px 16px 18px", fontSize: 13.5, color: UI.dim, lineHeight: 1.6 }}>등록된 숙제가 아직 없어요<br /><span style={{ fontSize: 12.5 }}>선생님이 숙제를 적으면 여기에 보여요</span></div>
+                ) : step1Items.length === 0 ? (
+                  <div style={{ padding: "6px 16px 14px", fontSize: 13.5, color: UI.dim }}>이 날짜에 등록된 숙제가 없어요 — 단어 TEST·오늘 수업 등은 아래 [숙제 전체 보기]에서</div>
                 ) : (
-                  <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 7 }}>
+                  <div style={{ padding: "0 16px" }}>
                     {step1Items.map((item, i) => {
-                      const done = isCheckedView(item); const fail = isFailed(item);   // [0825 5차수] 앱 단어 자동 완료 포함
+                      const st = isFailed(item) ? "fail" : isCheckedView(item) ? "done" : "none";   // [0825 5차수] 앱 단어 자동 완료 포함
+                      const reason = st === "fail" && getFailReason ? getFailReason(item) : "";
+                      const parts = String(item.text || "").split(/\s*(?:->|→)\s*/);
+                      const mainText = stripBox(parts[0] || item.text || "");
+                      const badgeText = parts.length >= 2 ? parts.slice(1).join(" → ").trim() : "";
                       return (
-                        <div key={item.key || i} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                          <span style={{ flexShrink: 0, width: 17, height: 17, marginTop: 1, borderRadius: 5, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, border: done ? "1px solid #1B8A5A" : fail ? "1px solid #e74c3c" : "1.5px solid #d4d7de", background: done ? "#1B8A5A" : fail ? "#fdecea" : "#fff", color: done ? "#fff" : fail ? "#e74c3c" : "transparent" }}>{done ? "✓" : fail ? "✗" : "·"}</span>
-                          <span style={{ fontSize: 13.5, color: fail ? "#b03a2e" : "#2A2A28", lineHeight: 1.45, textDecoration: done ? "line-through" : "none", opacity: done ? 0.55 : 1 }}>{stripBox(item.text || "")}</span>
+                        <div key={item.key || i} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 0", borderTop: i ? "1px solid #EEF1F5" : "none" }}>
+                          <span aria-hidden="true" style={{ flexShrink: 0, width: 36, height: 36, borderRadius: 10, background: st === "done" ? UI.okBg : st === "fail" ? UI.warnBg : "#F1F3F7", color: st === "done" ? UI.okFg : st === "fail" ? UI.warnFg : "#5A6478", display: "flex", alignItems: "center", justifyContent: "center", marginTop: 1 }}>{docIcon}</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 15.5, fontWeight: 700, lineHeight: 1.45, color: st === "done" ? "#5A6478" : UI.text, wordBreak: "break-word" }}>{mainText}</div>
+                            {badgeText && <span style={{ display: "inline-block", marginTop: 5, background: UI.blueBg, color: UI.blue, fontSize: 11.5, padding: "3px 9px", borderRadius: 8, fontWeight: 700 }}>{badgeText}</span>}
+                            {reason && <div style={{ marginTop: 4, fontSize: 12.5, color: "#b3564c", lineHeight: 1.4 }}>{reason}</div>}
+                          </div>
+                          {statusChip(st)}
                         </div>
                       );
                     })}
                   </div>
                 )}
-                <div style={{ marginTop: 10, fontSize: 11.5, color: "#9aa0ab" }}>누르면 숙제 탭 — 단어 TEST·수업 준비 등 나머지 단계도 보여요</div>
-              </button>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <button onClick={() => {
-                  // [숙제 5차수 0818] 숙제에 단어장 범위가 있으면 숙제 TEST(객관식 클리어)를 바로 시작.
-                  // date = 이 숙제의 수업 날짜(activeDate) — 전날 미리 해도 그 수업 칸에 도장이 찍힌다.
-                  // deadline = 그 수업 날짜의 등원 시각. 등원 정보가 없으면 빈 값(서버는 그 경우 늦음 판정 안 함).
-                  // [0825 5차수] 이미 통과한 날은 숙제 TEST를 다시 열지 않고 책장으로 — 단어 탭과 같은 동작
-                  // [94차수 09-05] 선생님 화면(hwStaff)은 판정이 없으므로 늘 책장으로만 간다
-                  if (hwTodo) { startVocaHwTest(); setTab("voca"); return; }
-                  setVocaOpenLast(true); setTab("voca");
-                }} style={{ ...cardBox,
-                  /* [0825 7차수] 글이 아니라 색으로 — 통과=초록 칸, 숙제 남음=빨간 칸, 숙제 없는 날=흰 칸 (4번 오답 카드와 같은 말투) */
-                  /* [94차수 09-05] 선생님 화면은 판정을 모르는 상태라 흰 칸 */
-                  background: hwDone ? "#e8f7ee" : hwTodo ? "#fdecea" : "#fff",
-                  border: hwDone ? "1px solid #a8dcbd" : hwTodo ? "1px solid #f5c2bd" : "1px solid #e8eaef" }}>
-                  <div style={{ ...cardLabel, color: hwDone ? "#1B8A5A" : hwTodo ? "#b03a2e" : cardLabel.color }}>
-                    📚 2. 단어 숙제{hwDone ? " · 통과 ✓" : hwTodo ? " · 아직 안 봄" : hwStaff ? " · 확인은 원장앱에서" : ""}
-                  </div>
-                  <div style={{ ...cardMain, color: hwDone ? "#14603f" : hwTodo ? "#b03a2e" : cardMain.color }}>{hwRangeText}</div>
-                  <div style={{ ...cardSub, color: hwDone ? "#3e8f66" : hwTodo ? "#c0655c" : cardSub.color, fontWeight: (hwDone || hwTodo) ? 700 : cardSub.fontWeight }}>{hwDone
-                    ? "통과 완료! 누르면 단어장"
-                    : hwTodo ? "누르면 숙제 TEST 시작"
-                    : hwStaff ? "선생님 화면에선 시험이 안 열려요 · 누르면 단어장"
-                    : vocaLastName ? "이어서 공부하기" : "공부하러 가기"}</div>
-                </button>
-                {studentVideos.length > 0 && (
-                  <button onClick={openVideosFromCard} style={cardBox}>
-                    <div style={cardLabel}>🎬 3. 강의 영상</div>
-                    {/* [0814] 제목 = 눌렀을 때 실제로 열리는 강의(picker.main)와 같게 맞춘다.
-                        예전에는 "마지막 본 강의" 이름을 적어 두고 숙제 강의를 여는 바람에 이름과 동작이 달랐다. */}
-                    <div style={cardMain}>{picker.main ? (picker.main.video.title || picker.main.video.subject || "강의") : `강의 ${studentVideos.length}개`}</div>
-                    <div style={cardSub}>{picker.main ? (picker.main.kind === "task" ? "오늘 숙제 강의" : "이어보기") : "보러 가기"}</div>
+                <div style={{ padding: "6px 16px 16px" }}>
+                  <button type="button" onClick={() => goTab("tasks")}
+                    style={{ width: "100%", minHeight: 48, borderRadius: 12, border: "1.5px solid #C5DCF6", background: "#EEF3FC", color: "#1C4F8A", fontSize: 15.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+                    숙제 전체 보기 →
                   </button>
+                </div>
+              </div>
+
+              {/* ④ 이어서 할 공부 — 단어 / 강의 / 오답 세 줄. 줄 전체가 단추 하나(단추 안에 단추 없음). 오답 경고는 여기 한 번만 */}
+              <div style={{ ...secTitle, marginTop: 4 }}>이어서 할 공부</div>
+              <div style={card}>
+                {VOCA_TAB_ENABLED && (
+                  <button type="button" onClick={() => goTab("voca")}
+                    style={rowBtn({ background: hwTodo ? UI.warnBg : hwDone ? UI.okBg : "transparent" })}>
+                    <span aria-hidden="true" style={rowIcon(hwTodo ? "#FBD5D0" : hwDone ? "#CDEBD9" : UI.blueBg)}>📘</span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: "block", fontSize: 15.5, fontWeight: 800, color: hwTodo ? UI.warnFg : hwDone ? "#14603f" : UI.text }}>
+                        {hwTodo ? "단어 숙제" : hwDone ? "단어 공부" : hwStaff ? "단어 숙제" : "단어 공부"}
+                      </span>
+                      <span style={{ display: "block", fontSize: 12.5, marginTop: 2, color: hwTodo ? "#c0655c" : hwDone ? "#3e8f66" : UI.sub, fontWeight: (hwTodo || hwDone) ? 700 : 500, lineHeight: 1.4 }}>
+                        {hwTodo ? `${hwRangeText} · 아직 안 봄`
+                          : hwDone ? `오늘 단어 숙제 통과 ✓ · ${vocaTitle}`
+                          : hwStaff ? `${hwRangeText} · 확인은 원장앱에서`
+                          : vocaTitle}
+                      </span>
+                    </span>
+                    <span style={pill(hwTodo ? "redfill" : hwDone ? "outline" : "fill")}>{hwTodo ? "숙제 TEST 시작" : hwDone ? "단어 공부" : hwStaff ? "단어장" : "공부하기"}</span>
+                  </button>
+                )}
+                {studentVideos.length > 0 ? (
+                  <button type="button" onClick={openVideosFromRow} style={rowBtn({ borderTop: VOCA_TAB_ENABLED ? "1px solid #EEF1F5" : "none" })}>
+                    <span aria-hidden="true" style={rowIcon(UI.blueBg)}>▶️</span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: "block", fontSize: 15.5, fontWeight: 800, color: UI.text }}>{picker.main ? (picker.main.kind === "task" ? "숙제 강의" : "보던 강의 이어보기") : "강의"}</span>
+                      {/* [0814] 제목 = 눌렀을 때 실제로 열리는 강의(picker.main)와 같게 */}
+                      <span style={{ display: "block", fontSize: 12.5, marginTop: 2, color: UI.sub, lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {picker.main ? (picker.main.video.title || picker.main.video.subject || "강의") : `강의 ${studentVideos.length}개`}
+                      </span>
+                    </span>
+                    <span style={pill("outline")}>강의 보기</span>
+                  </button>
+                ) : (
+                  <div style={{ ...rowBtn({ borderTop: VOCA_TAB_ENABLED ? "1px solid #EEF1F5" : "none" }), cursor: "default" }} aria-disabled="true">
+                    <span aria-hidden="true" style={rowIcon("#F1F3F7")}>▶️</span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: "block", fontSize: 15.5, fontWeight: 800, color: UI.dim }}>강의</span>
+                      <span style={{ display: "block", fontSize: 12.5, marginTop: 2, color: UI.dim }}>등록된 강의가 없어요</span>
+                    </span>
+                  </div>
                 )}
                 {hasVocabWrong && (
-                  <button onClick={() => setTab("vocabWrong")} style={{ ...cardBox, background: vocabWarn.overdue > 0 ? "#fdecea" : "#fff8e1", border: vocabWarn.overdue > 0 ? "1px solid #f5c2bd" : "1px solid #ffe49c" }}>
-                    <div style={{ ...cardLabel, color: vocabWarn.overdue > 0 ? "#b03a2e" : "#8a5a00" }}>📝 4. 오답 숙제</div>
-                    <div style={{ ...cardMain, color: vocabWarn.overdue > 0 ? "#b03a2e" : "#6b4a00" }}>남은 단어 {wrongCount}개</div>
-                    <div style={{ ...cardSub, color: vocabWarn.overdue > 0 ? "#c0655c" : "#a3822f", fontWeight: 700 }}>
-                      {vocabWarn.overdue > 0 ? `기한 지난 단어 ${vocabWarn.overdue}개` : vocabWarn.dueThisWeek > 0 ? `${vocabWarn.sundayLabel}까지` : "틀린 단어 다시 풀기"}
-                    </div>
+                  <button type="button" onClick={() => goTab("vocabWrong")}
+                    style={rowBtn({ borderTop: "1px solid #EEF1F5", background: vocabWarn.overdue > 0 ? UI.warnBg : "transparent" })}>
+                    <span aria-hidden="true" style={rowIcon(vocabWarn.overdue > 0 ? "#FBD5D0" : "#FFF3D6")}>{vocabWarn.overdue > 0 ? "❗" : "📝"}</span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: "block", fontSize: 15.5, fontWeight: 800, color: vocabWarn.overdue > 0 ? UI.warnFg : UI.text }}>
+                        {vocabWarn.overdue > 0 ? `기한 지난 오답 ${vocabWarn.overdue}개` : vocabWarn.dueThisWeek > 0 ? `이번 주 복습 단어 ${vocabWarn.dueThisWeek}개` : "오답 복습"}
+                      </span>
+                      <span style={{ display: "block", fontSize: 12.5, marginTop: 2, color: vocabWarn.overdue > 0 ? "#c0655c" : UI.sub, fontWeight: vocabWarn.overdue > 0 ? 700 : 500, lineHeight: 1.4 }}>
+                        {vocabWarn.overdue > 0 ? `남은 단어 ${wrongCount}개를 복습해요${vocabWarn.dueThisWeek > 0 ? ` · 이번 주 마감 ${vocabWarn.dueThisWeek}개` : ""}`
+                          : vocabWarn.dueThisWeek > 0 ? `${vocabWarn.sundayLabel}까지 (D-${vocabWarn.dday}) · 남은 단어 ${wrongCount}개`
+                          : `남은 단어 ${wrongCount}개`}
+                      </span>
+                    </span>
+                    <span style={pill(vocabWarn.overdue > 0 ? "red" : "outline")}>복습하기</span>
                   </button>
                 )}
-                <button onClick={() => setTab("mock")} style={cardBox}>
-                  <div style={cardLabel}>✏️ 5. 모의고사</div>
-                  <div style={cardMain}>응시 · 점수 기록</div>
-                  <div style={cardSub}>열린 회차 보기</div>
-                </button>
               </div>
-              {/* [푸시] 알림 켜기 배너 — 허용 전인 폰에만 보인다. [96차수] 홈 카드 아래 자리(위 탭 줄에서 이사) */}
-              {student && <PushEnableBanner student={student} wrapStyle={{ maxWidth: "none", margin: 0, padding: 0 }} />}
-              {/* [0813] 강의 고르기 창 — 시작 강의 하나 크게, 앞뒤 강의는 "추가 강의"를 눌러야 펼쳐짐. 바깥을 누르면 닫힌다 */}
-              {/* [0813-2] 고르기 창 은퇴 — 카드를 누르면 창 없이 바로 강의 탭으로 간다. 되살리려면 false && 를 지우면 된다. */}
-              {false && videoPicker && picker.main && (
-                <div onClick={() => setVideoPicker(false)} style={{ position: "fixed", inset: 0, background: "rgba(20,25,40,0.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-                  <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 340, padding: "16px 15px", boxSizing: "border-box" }}>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: "#1a1a2e" }}>어떤 강의를 볼까요?</div>
-                    <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-                      <button onClick={() => playFromPicker(picker.main.video)} style={{ textAlign: "left", fontFamily: "inherit", cursor: "pointer", borderRadius: 12, padding: "12px 13px", border: "1px solid #c5dcf6", background: "#eef5fd" }}>
-                        <div style={{ fontSize: 14, fontWeight: 800, color: "#0c447c", lineHeight: 1.35 }}>▶ {picker.main.video.title || picker.main.video.subject || "강의"}</div>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: "#3a72b0", marginTop: 3 }}>{picker.main.kind === "task" ? "오늘 숙제 · 여기서 시작" : "보던 강의 이어보기"}</div>
-                      </button>
-                      {picker.extras.length > 0 && !pickerMore && (
-                        <button onClick={() => setPickerMore(true)} style={{ fontFamily: "inherit", cursor: "pointer", borderRadius: 10, padding: "9px 0", border: "1px solid #e8eaef", background: "#fff", fontSize: 12.5, fontWeight: 700, color: "#5c6470" }}>추가 강의 ▾</button>
-                      )}
-                      {pickerMore && picker.extras.map(({ video: v, isTask, isResume }) => (
-                        <button key={v.id} onClick={() => playFromPicker(v)} style={{ textAlign: "left", fontFamily: "inherit", cursor: "pointer", borderRadius: 10, padding: "9px 12px", border: "1px solid #e8eaef", background: "#fff", display: "flex", alignItems: "center", gap: 6 }}>
-                          <span style={{ fontSize: 12.5, fontWeight: 700, color: "#2A2A28" }}>▶ {getVideoShortLabel(v)}</span>
-                          {isTask && <span style={{ fontSize: 10.5, fontWeight: 700, color: "#8a5a00", background: "#fff4d6", borderRadius: 6, padding: "2px 6px" }}>오늘 숙제</span>}
-                          {isResume && <span style={{ fontSize: 10.5, fontWeight: 700, color: "#3a72b0", background: "#eef5fd", borderRadius: 6, padding: "2px 6px" }}>보던 강의</span>}
-                        </button>
-                      ))}
-                      <button onClick={() => { setVideoPicker(false); setSelectedVideoBook(null); setTab("videos"); }} style={{ border: "none", background: "none", fontFamily: "inherit", cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: "#8a8f9c", padding: "8px 0 2px" }}>전체 강의 목록 보기 ›</button>
-                    </div>
-                  </div>
-                </div>
-              )}
+
+              {/* ⑤ 공지·설문 / 시험 정보 / 학습 진도 — 서로 다른 목적지는 따로 한 줄씩(계획서 6절) */}
+              <div style={card}>
+                {[
+                  { key: "notices", icon: "📣", label: "공지", count: pinnedMessages.length, sub: unansweredSurveys.length ? `응답할 설문 ${unansweredSurveys.length}개` : (activeSurveys.length ? `설문 ${activeSurveys.length}개 응답 완료` : ""), tone: unansweredSurveys.length ? "warn" : "" },
+                  { key: "examInfo", icon: "📋", label: "시험 정보", count: 0, sub: nearestExam ? `${nearestExam.name} ${nearestExam.ddayLabel}` : "다가오는 시험 없음", tone: "" },
+                  ...((progressTree?.lanes || []).length ? [{ key: "progress", icon: "📈", label: "학습 진도", count: 0, sub: "교재별 진행 상황", tone: "" }] : []),
+                ].map((r, i) => (
+                  <button key={r.key} type="button" onClick={() => goTab(r.key)}
+                    style={rowBtn({ minHeight: 52, padding: "11px 14px", borderTop: i ? "1px solid #EEF1F5" : "none" })}>
+                    <span aria-hidden="true" style={{ fontSize: 18, width: 26, textAlign: "center", flexShrink: 0 }}>{r.icon}</span>
+                    <span style={{ fontSize: 15, fontWeight: 800, color: UI.text, flexShrink: 0 }}>{r.label}</span>
+                    {r.count > 0 && <span style={{ flexShrink: 0, minWidth: 22, height: 22, padding: "0 7px", borderRadius: 7, background: UI.blueBg, color: UI.blue, fontSize: 12.5, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{r.count}</span>}
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: r.tone === "warn" ? UI.warnFg : UI.sub, fontWeight: r.tone ? 700 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.sub}</span>
+                    <span aria-hidden="true" style={{ color: "#B4BCC9", fontSize: 18, flexShrink: 0 }}>›</span>
+                  </button>
+                ))}
+              </div>
             </div>
           );
         })()}
-        {tab === "tasks" && (
-          <>
-            {allDates.length > 0 && (
-              <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 12, WebkitOverflowScrolling: "touch" }}>
-                {allDates.map((d) => (
-                  <button key={d} onClick={() => setSelectedDate(d)} style={{
-                    flexShrink: 0, padding: "9px 17px", borderRadius: 10, border: d === activeDate ? "1px solid #182848" : "1px solid #e5e7ec",
-                    cursor: "pointer", fontSize: 13, fontWeight: 600,
-                    background: d === activeDate ? "#182848" : "#fff",
-                    color: d === activeDate ? "#fff" : "#6b7280",
-                    whiteSpace: "nowrap",
-                  }}>{isToday(d) ? "오늘" : fmtDateShort(d)}</button>
-                ))}
-              </div>
-            )}
-            {/* [0825 4차수] 밤 10시 공개 안내 — 수업날 낮에는 다음 숙제가 안 보이는 이유를 알려준다 */}
-            {todoRevealHeld && (
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#8a6d1a", background: "#FFF7E0", borderRadius: 9, padding: "8px 12px", margin: "0 0 4px", lineHeight: 1.5 }}>
-                다음 숙제는 오늘 밤 10시에 열려요
-              </div>
-            )}
-            {allDates.length > 0 && (
-              <div style={{ fontSize: 16, fontWeight: 700, color: "#2A2A28", margin: "12px 0 6px" }}>
-                {fmtDateKR(activeDate)}
-                {isToday(activeDate) && <span style={{ fontSize: 12, color: "#2A6FDB", marginLeft: 8, fontWeight: 800 }}>오늘</span>}
-              </div>
-            )}
-            {/* [추가 07-30] 학생은 체크할 수 없다. 눌러도 반응이 없어 고장으로 오해하던 것을 안내 한 줄로 막는다. */}
-            {allDates.length > 0 && (
-              <div style={{ display: "flex", alignItems: "center", gap: 6, margin: totalTasks > 0 ? "0 0 10px" : "0 0 16px", fontSize: 12, color: "#999", lineHeight: 1.5 }}>
-                <span>체크와 통과 도장은 조교 선생님이 찍어줘요</span>
-              </div>
-            )}
-            {/* [추가 07-31] 진행률은 이미 계산해 놓고 화면에 안 쓰고 있었다(재시 항목은 분모에서 제외됨). */}
-            {allDates.length > 0 && totalTasks > 0 && (
-              <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 16px" }}>
-                <div style={{ flex: 1, height: 7, borderRadius: 4, background: "#e9ecf2", overflow: "hidden" }}>
-                  <div style={{ width: `${pct}%`, height: "100%", borderRadius: 4, background: pct === 100 ? "#00b894" : "#2A6FDB", transition: "width .3s" }} />
+        {/* ═══ [105차수 09-08 디자인 개편] 숙제 탭 — 시안 images/02-homework.png, 계획서 7절 ═══
+            순서: 날짜 알약(공개된 날짜만) → 제목+날짜 → 선생님 확인 현황(원본 진행률 그대로) → 5단계 카드(항목 있으면 펼침, 없으면 "오늘 없음" 한 줄) → 밤 10시 안내.
+            단계 순서·이름·조교/강사 배지·항목 키·원문·상태 판정(isCheckedView·isFailed·getFailReason)은 전부 원본. 학생 수동 완료 없음. */}
+        {tab === "tasks" && (() => {
+          const dateIsToday = isToday(activeDate);
+          const dateIsPast = !dateIsToday && activeDate < todayStrForTab;
+          const titleWord = allDates.length === 0 ? "숙제와 수업" : dateIsToday ? "오늘의 숙제와 수업" : dateIsPast ? "지난 숙제와 수업" : "다음 숙제와 수업";
+          const pillLabel = (d) => { const q = String(d).split("-"); const md = q.length === 3 ? `${Number(q[1])}월 ${Number(q[2])}일` : d; return isToday(d) ? `${md} · 오늘` : md; };
+          return (
+            <>
+              {allDates.length > 0 && (
+                <div role="tablist" aria-label="숙제 날짜" style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, marginBottom: 12, WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
+                  {allDates.map((d) => {
+                    const on = d === activeDate;
+                    return (
+                      <button key={d} type="button" role="tab" aria-selected={on} onClick={() => setSelectedDate(d)} style={{
+                        flex: "1 0 auto", minHeight: 44, padding: "9px 16px", borderRadius: 999, border: on ? `1.5px solid ${UI.navy}` : `1.5px solid ${UI.line}`,
+                        cursor: "pointer", fontSize: 14, fontWeight: on ? 800 : 600, fontFamily: "inherit",
+                        background: on ? UI.navy : "#fff", color: on ? "#fff" : UI.sub, whiteSpace: "nowrap",
+                      }}>{pillLabel(d)}</button>
+                    );
+                  })}
                 </div>
-                <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 800, color: pct === 100 ? "#00b894" : "#666" }}>
-                  {doneTasks}/{totalTasks}
-                </span>
-              </div>
-            )}
+              )}
+              <div style={{ fontSize: 20, fontWeight: 800, color: UI.text, letterSpacing: -0.3 }}>{titleWord}</div>
+              {allDates.length > 0 && (
+                <div style={{ fontSize: 14, color: UI.sub, marginTop: 4, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <span>{fmtDateKR(activeDate)}</span>
+                  {/* [0813] 오늘이 아닌 날짜를 보여줄 때는 지난/다음 표시로 헷갈림 방지 — 원장 결정 */}
+                  {dateIsPast && <span style={{ fontSize: 10.5, fontWeight: 800, color: UI.warnFg, background: UI.warnBg, borderRadius: 6, padding: "1px 6px" }}>지난 숙제</span>}
+                  {!dateIsToday && !dateIsPast && <span style={{ fontSize: 10.5, fontWeight: 800, color: "#0c5a9e", background: "#e8f2fc", borderRadius: 6, padding: "1px 6px" }}>다음 숙제</span>}
+                </div>
+              )}
+              {/* 선생님 확인 현황 — 원본 진행률(재시 항목은 분모·분자 제외, 앱 단어 자동 완료 포함). [추가 07-30] 학생은 체크할 수 없다는 안내 유지 */}
+              {allDates.length > 0 && totalTasks > 0 && (
+                <div style={{ margin: "14px 0 6px" }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: UI.text }}>선생님 확인 현황</span>
+                    <span style={{ marginLeft: "auto", fontSize: 15, fontWeight: 800, color: pct === 100 ? UI.okFg : UI.text, fontVariantNumeric: "tabular-nums" }}>{doneTasks}/{totalTasks}</span>
+                  </div>
+                  <div role="progressbar" aria-valuemin={0} aria-valuemax={totalTasks} aria-valuenow={doneTasks} aria-label="선생님 확인 현황"
+                    style={{ height: 8, borderRadius: 4, background: "#E4E8EF", overflow: "hidden", marginTop: 8 }}>
+                    <div style={{ width: `${pct}%`, height: "100%", borderRadius: 4, background: pct === 100 ? "#00b894" : UI.blue, transition: "width .3s" }} />
+                  </div>
+                </div>
+              )}
+              {allDates.length > 0 && (
+                <div style={{ fontSize: 12.5, color: UI.sub, margin: totalTasks > 0 ? "0 0 14px" : "8px 0 14px", lineHeight: 1.5 }}>체크와 통과 도장은 조교 선생님이 찍어줘요</div>
+              )}
 
-            {/* 5단계 렌더링 (빈 단계는 StepSection 내부에서 "오늘 없음"으로 표시)
-                [94차수 09-05] 투두가 하나도 없는 학생(allDates가 빈 목록)에게는 다섯 칸 대신 아래 안내만 보여준다 —
-                예전엔 stepGroups가 늘 5칸이라 "등록된 과제가 아직 없어요" 안내가 절대 안 나오고 "오늘 없음" 다섯 칸만 보였다. */}
-            {allDates.length > 0 && stepGroups.map((step, idx) => (
-              <StepSection
-                key={step.key}
-                step={step}
-                displayNum={idx + 1}
-                stampDate={(() => { const q = String(activeDate || "").split("-"); return q.length === 3 ? `${Number(q[1])}/${Number(q[2])}` : ""; })()}
-                isChecked={isCheckedView}
-                isFailed={isFailed}
-                getFailReason={getFailReason}
-                studentVideos={studentVideos}
-                viewingVideo={viewingVideo}
-                toggleVideo={toggleVideo}
-              />
-            ))}
+              {/* 5단계 카드. key에 날짜를 넣어 날짜를 바꾸면 접힘 상태가 새로 시작된다(새 날짜 내용을 바로 보게).
+                  [94차수 09-05] 투두가 하나도 없는 학생(allDates 빈 목록)에게는 다섯 칸 대신 아래 안내만 */}
+              {allDates.length > 0 && stepGroups.map((step, idx) => (
+                <StepSection
+                  key={`${step.key}:${activeDate}`}
+                  step={step}
+                  displayNum={idx + 1}
+                  stampDate={(() => { const q = String(activeDate || "").split("-"); return q.length === 3 ? `${Number(q[1])}/${Number(q[2])}` : ""; })()}
+                  isChecked={isCheckedView}
+                  isFailed={isFailed}
+                  getFailReason={getFailReason}
+                  studentVideos={studentVideos}
+                  viewingVideo={viewingVideo}
+                  toggleVideo={toggleVideo}
+                />
+              ))}
+              {/* [0825 4차수] 밤 10시 공개 안내 — 수업날 낮에는 다음 숙제가 안 보이는 이유를 알려준다 (시안대로 맨 아래 한 줄) */}
+              {allDates.length > 0 && todoRevealHeld && (
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: UI.sub, textAlign: "center", padding: "4px 0 8px" }}>다음 숙제는 오늘 밤 10시에 열려요</div>
+              )}
 
-            {allDates.length === 0 && (
-              <div style={{ textAlign: "center", padding: "60px 20px", color: "#bbb" }}>
-                <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
-                <div style={{ fontSize: 15, fontWeight: 600, color: "#999" }}>등록된 과제가 아직 없어요</div>
-                <div style={{ fontSize: 12.5, color: "#bbb", marginTop: 8, lineHeight: 1.6 }}>선생님이 숙제를 적으면 여기에 보여요</div>
-              </div>
-            )}
-          </>
+              {allDates.length === 0 && (
+                <div style={{ textAlign: "center", padding: "50px 20px", color: UI.dim }}>
+                  <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: UI.sub }}>등록된 과제가 아직 없어요</div>
+                  <div style={{ fontSize: 12.5, marginTop: 8, lineHeight: 1.6 }}>선생님이 숙제를 적으면 여기에 보여요</div>
+                </div>
+              )}
+            </>
+          );
+        })()}
+        {/* [103차수] 더보기 — 목록 + 하위 화면(기존 화면을 MoreSubFrame 안에 그대로 넣는다). "‹ 더보기"도 goTab이라 나가기 확인창이 똑같이 걸린다 */}
+        {tab === "more" && <MoreMenu groups={moreGroups} onPick={(k) => goTab(k)} />}
+        {tab === "notices" && (
+          <MoreSubFrame title="공지·설문" onBack={() => goTab("more")}>
+            <NoticesScreen pinnedMessages={pinnedMessages} surveys={activeSurveys} surveyResponses={surveyResponses} student={student}
+              onSurveySubmitted={(svId, resp) => setSurveyResponses((prev) => ({ ...prev, [svId]: resp }))} />
+          </MoreSubFrame>
+        )}
+        {tab === "examInfo" && (
+          <MoreSubFrame title="시험 정보" onBack={() => goTab("more")}>
+            <ExamInfoScreen student={student} items={examDdays} examRanges={examRanges} />
+          </MoreSubFrame>
+        )}
+        {tab === "settings" && (
+          <MoreSubFrame title="앱 설정" onBack={() => goTab("more")}>
+            <AppSettingsScreen student={student} swUpdate={swUpdate} onApplyUpdate={applyAppUpdate} />
+          </MoreSubFrame>
         )}
         {tab === "cal" && (
-          <StudentCalendarTab student={student} makeups={makeups} customHolidays={customHolidays} exams={exams} attLog={attLog} attStatus={attStatus} />
+          <MoreSubFrame title="수업 일정" onBack={() => goTab("more")}>
+            <StudentCalendarTab student={student} makeups={makeups} customHolidays={customHolidays} exams={exams} attLog={attLog} attStatus={attStatus} />
+          </MoreSubFrame>
         )}
 
         {tab === "mock" && (
-          <MockExamTab studentId={studentId} onBusy={(b) => { mockBusyRef.current = !!b; }} />
+          <MoreSubFrame title="모의고사" onBack={() => goTab("more")}>
+            <MockExamTab studentId={studentId} onBusy={(b) => { mockBusyRef.current = !!b; }} />
+          </MoreSubFrame>
         )}
 
         {VOCA_TAB_ENABLED && tab === "voca" && (() => {
@@ -6594,19 +6793,43 @@ export default function App() {
           if (nsp.sc) q.set("sc", nsp.sc);
           if (nsp.nsl.length) q.set("nsl", nsp.nsl.join(","));
           const src = `${VOCA_APP_URL}?${q.toString()}`;
+          // [107차수 09-08] 통과 안내 = 부모가 이미 아는 확실한 도장(vocaHwRec)으로만 표시(계획서 8.5 — 새 판정 문·저장소 없음).
+          //   확인 중(null)·조회 실패·선생님 화면(IS_TEACHER_MODE)은 통과로 취급하지 않는다. 숙제가 없는 날은 아무 말도 안 한다.
+          const hwPassed = !!taskVoca && !!vocaHwRec && !IS_TEACHER_MODE;
           return (
-            <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden", border: "1px solid #eceef2" }}>
-              <VocaFrame title="단어장" src={src} openLast={vocaOpenLast} onOpenLastDone={() => setVocaOpenLast(false)}
-              onHwState={(busy) => { vocaHwBusyRef.current = !!busy; }}
-                openTask={vocaOpenTask} onOpenTaskDone={() => setVocaOpenTask(null)}
-                hwTask={vocaHwTask} onHwTaskDone={() => setVocaHwTask(null)} />
+            <div>
+              {hwPassed && (
+                <div role="status" style={{ display: "flex", alignItems: "center", gap: 8, background: UI.okBg, border: "1px solid #BFE5CE", borderRadius: 12, padding: "11px 14px", marginBottom: 12, fontSize: 14, fontWeight: 800, color: UI.okFg }}>
+                  <span aria-hidden="true" style={{ width: 20, height: 20, borderRadius: "50%", background: UI.okFg, color: "#fff", fontSize: 12, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>✓</span>
+                  {isToday(activeDate) ? "오늘 단어 숙제 통과" : `${fmtDateKR(activeDate)} 단어 숙제 통과`}
+                </div>
+              )}
+              {/* [107차수] 마플보카가 학생앱 안에서는 같은 배경색(새 디자인)을 쓰므로 흰 테두리 상자를 없애고 그대로 이어 붙인다 */}
+              <div style={{ margin: "0 -16px" }}>
+                <VocaFrame title="단어장" src={src} topOffset={TAB_BAR_H + 12} openLast={vocaOpenLast} onOpenLastDone={() => setVocaOpenLast(false)}
+                onHwState={(busy) => { vocaHwBusyRef.current = !!busy; }}
+                  openTask={vocaOpenTask} onOpenTaskDone={() => setVocaOpenTask(null)}
+                  hwTask={vocaHwTask} onHwTaskDone={() => setVocaHwTask(null)} />
+              </div>
             </div>
           );
         })()}
 
-        {tab === "videos" && (() => {
-          // ─── 영상 탭 책별 자동 분류 ───
-          // 책(subject)별로 그룹핑. 책이 1개면 평면 리스트 (sub-tab 없음). 2개 이상이면 sub-tab으로 분류.
+        {tab === "videos" && studentVideos.length === 0 && (
+          /* [103차수] 강의 탭은 자리를 고정한다(학생마다 메뉴가 흔들리지 않게). 강의가 없으면 안에서만 빈 안내 */
+          <div style={{ textAlign: "center", padding: "60px 20px", color: UI.dim }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>🎬</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: UI.sub }}>등록된 강의가 없어요</div>
+            <div style={{ fontSize: 12.5, marginTop: 8, lineHeight: 1.6 }}>선생님이 강의를 등록하면 여기에 보여요</div>
+          </div>
+        )}
+        {/* ═══ [106차수 09-08 디자인 개편] 강의 탭 — 시안 images/04-lectures.png, 계획서 9절 ═══
+            위: 대표 강의 카드(오늘 숙제 강의 → 없으면 최근 본 강의). "오늘 숙제" 배지는 실제 매칭일 때만.
+            아래: 교재별 강의(교재 알약 + 목록, 교재가 2개 이상일 때만 알약·"전체"). 재생목록은 실제 있을 때만 목록에 있다.
+            플레이어는 한 번에 하나만 — 지금 보는 영상이 대표 강의면 위 카드 안에, 아니면 그 목록 줄 안에 그린다(같은 영상을 두 곳에 안 만든다).
+            재생·시청 기록은 원본 toggleVideo·TrackedYoutubePlayer 그대로: 카드/줄을 열어도 기록되지 않고, 플레이어의 ▶를 눌러야 기록된다. */}
+        {tab === "videos" && studentVideos.length > 0 && (() => {
+          // ─── 교재별 분류(원본 규칙) ───
           const videoGroups = {};
           studentVideos.forEach(v => {
             const key = v.subject || "기타";
@@ -6615,103 +6838,138 @@ export default function App() {
           });
           const bookNames = Object.keys(videoGroups);
           const hasMultipleBooks = bookNames.length >= 2;
-          // 활성 책: 사용자가 고른 책을 우선 적용. 선택값이 없을 때만 현재 재생 중인 영상의 책으로 자동 이동.
-          // subject가 없는 영상은 "기타" 그룹으로 묶기 때문에 viewingVideo도 같은 규칙으로 찾는다.
+          const ALL_KEY = "__all__";
+          // 활성 책: 학생이 고른 책 우선(전체 포함). 선택값이 없을 때만 현재 재생 중인 영상의 책, 그것도 없으면 첫 책.
           let activeBook = null;
           if (hasMultipleBooks) {
             const viewingVideoBook = viewingVideo ? (viewingVideo.subject || "기타") : null;
-            if (selectedVideoBook && videoGroups[selectedVideoBook]) {
-              activeBook = selectedVideoBook;
-            } else if (viewingVideoBook && videoGroups[viewingVideoBook]) {
-              activeBook = viewingVideoBook;
-            } else {
-              activeBook = bookNames[0];
-            }
+            if (selectedVideoBook === ALL_KEY) activeBook = ALL_KEY;
+            else if (selectedVideoBook && videoGroups[selectedVideoBook]) activeBook = selectedVideoBook;
+            else if (viewingVideoBook && videoGroups[viewingVideoBook]) activeBook = viewingVideoBook;
+            else activeBook = bookNames[0];
           }
-          const visibleVideos = hasMultipleBooks ? (videoGroups[activeBook] || []) : studentVideos;
+          const visibleVideos = !hasMultipleBooks ? studentVideos : activeBook === ALL_KEY ? studentVideos : (videoGroups[activeBook] || []);
+          // ─── 대표 강의 = 홈과 같은 규칙(buildVideoPickerV2: 오늘 숙제 "수강" 강의 → 없으면 최근 본 강의) ───
+          const featured = picker.main ? picker.main.video : null;
+          const featuredKind = picker.main ? picker.main.kind : "";
+          const featuredOpen = !!featured && viewingVideo?.id === featured.id;
+          const taskIds = collectTaskVideoIds(allTaskItems, studentVideos);   // "오늘 숙제" 배지는 실제 매칭에만
+          const playerFor = (v) => (
+            v.type === "playlist" && v.playlistUrl ? (
+              <div style={{ borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", background: "#000" }}><TrackedYoutubePlayer video={v} /></div>
+            ) : v.url && v.url.includes("youtu") ? (
+              <div style={{ borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", background: "#000" }}><TrackedYoutubePlayer video={v} /></div>
+            ) : (
+              <div style={{ background: "#f5f5f5", borderRadius: 10, aspectRatio: "16/9", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <a href={v.url} target="_blank" rel="noreferrer" style={{ background: "#ff0033", color: "#fff", padding: "10px 24px", borderRadius: 10, textDecoration: "none", fontSize: 14, fontWeight: 600 }}>▶ 영상 보기</a>
+              </div>
+            )
+          );
+          const card = { background: UI.card, border: `1px solid ${UI.line}`, borderRadius: 16, overflow: "hidden" };
+          const saveBox = (pendingVideoCount > 0 || lastVideoSaveStatus) ? (
+            <div role="status" style={{ marginTop: 12, padding: "10px 12px", borderRadius: 10, background: pendingVideoCount > 0 ? "#fff7ed" : UI.okBg, border: pendingVideoCount > 0 ? "1px solid #fed7aa" : "1px solid #BFE5CE", color: pendingVideoCount > 0 ? "#c2410c" : UI.okFg, fontSize: 12.5, fontWeight: 700, lineHeight: 1.5 }}>
+              {pendingVideoCount > 0 ? `영상 기록 저장 대기 ${pendingVideoCount}개 · 인터넷 연결 후 자동 재전송됩니다.` : lastVideoSaveStatus}
+            </div>
+          ) : null;
           return (
           <div>
-            {/* 책별 sub-tab (책 ≥ 2개일 때만) */}
+            <div style={{ fontSize: 20, fontWeight: 800, color: UI.text, letterSpacing: -0.3 }}>강의</div>
+            <div style={{ fontSize: 13.5, color: UI.sub, marginTop: 4 }}>{featured ? "오늘 볼 강의부터 확인하세요" : "교재별 강의를 확인하세요"}</div>
+
+            {/* 대표 강의 카드 */}
+            {featured && (
+              <div id={"video-card-" + featured.id} style={{ ...card, marginTop: 12, border: featuredOpen ? `2px solid ${UI.blue}` : card.border }}>
+                <div style={{ padding: "14px 16px 0", display: "flex", alignItems: "center", gap: 8 }}>
+                  {featuredKind === "task"
+                    ? <span style={{ fontSize: 12, fontWeight: 800, padding: "5px 10px", borderRadius: 8, background: UI.blue, color: "#fff" }}>오늘 숙제</span>
+                    : <span style={{ fontSize: 12, fontWeight: 800, padding: "5px 10px", borderRadius: 8, background: UI.blueBg, color: UI.blue }}>이전에 보던 강의</span>}
+                  {featured.subject && <span style={{ marginLeft: "auto", fontSize: 12.5, color: UI.sub, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{featured.subject}</span>}
+                </div>
+                <div style={{ padding: "10px 16px 0", fontSize: 19, fontWeight: 800, color: UI.text, lineHeight: 1.35, letterSpacing: -0.3, wordBreak: "keep-all", overflowWrap: "anywhere" }}>{featured.title || "강의"}</div>
+                <div style={{ padding: "12px 16px 0" }}>
+                  {featuredOpen ? playerFor(featured) : (
+                    <button type="button" onClick={() => toggleVideo(featured)} aria-label={`${featured.title || "강의"} 열기`}
+                      style={{ width: "100%", aspectRatio: "16/9", borderRadius: 12, border: "none", background: UI.navy, color: "#fff", cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                      <span aria-hidden="true" style={{ width: 58, height: 58, borderRadius: "50%", background: "rgba(255,255,255,0.18)", border: "2px solid rgba(255,255,255,0.7)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>▶</span>
+                      <span style={{ fontSize: 14.5, fontWeight: 800 }}>{featured.type === "playlist" ? "재생목록 열기" : "강의 열기"}</span>
+                    </button>
+                  )}
+                </div>
+                <div style={{ padding: "10px 16px 14px", fontSize: 12.5, color: UI.sub, textAlign: "center" }}>
+                  {featuredOpen ? "플레이어의 재생 버튼을 누르면 실제 재생시간만 기록돼요" : "열어서 재생 버튼을 누르면 시청 시간이 기록돼요"}
+                </div>
+              </div>
+            )}
+            {saveBox}
+
+            {/* 교재별 강의 */}
+            <div style={{ fontSize: 17, fontWeight: 800, color: UI.text, margin: "20px 0 10px" }}>교재별 강의</div>
             {hasMultipleBooks && (
-              <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 14, paddingBottom: 4, WebkitOverflowScrolling: "touch" }}>
-                {bookNames.map(bn => {
+              <div role="tablist" aria-label="교재" style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 6, marginBottom: 8, WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
+                {[...bookNames, ALL_KEY].map(bn => {
                   const isActive = bn === activeBook;
-                  const count = videoGroups[bn].length;
+                  const label = bn === ALL_KEY ? "전체" : bn;
+                  const count = bn === ALL_KEY ? studentVideos.length : videoGroups[bn].length;
                   return (
-                    <button key={bn} onClick={() => setSelectedVideoBook(bn)} style={{
-                      flexShrink: 0, padding: "8px 14px", borderRadius: 20,
-                      border: isActive ? "1.5px solid #2A6FDB" : "1px solid #e0e0e0",
-                      background: isActive ? "#1C66A5" : "#fff",
-                      color: isActive ? "#fff" : "#555",
-                      fontSize: 13, fontWeight: 700, cursor: "pointer",
-                      whiteSpace: "nowrap", transition: "all 0.15s",
+                    <button key={bn} type="button" role="tab" aria-selected={isActive} onClick={() => setSelectedVideoBook(bn)} style={{
+                      flexShrink: 0, minHeight: 40, padding: "8px 14px", borderRadius: 999,
+                      border: isActive ? `1.5px solid ${UI.navy}` : `1.5px solid ${UI.line}`,
+                      background: isActive ? UI.navy : "#fff", color: isActive ? "#fff" : UI.sub,
+                      fontSize: 13.5, fontWeight: isActive ? 800 : 600, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit",
                     }}>
-                      {bn} <span style={{ fontSize: 11, opacity: 0.85, marginLeft: 3 }}>({count})</span>
+                      {label} <span style={{ fontSize: 11.5, opacity: 0.85, marginLeft: 2 }}>({count})</span>
                     </button>
                   );
                 })}
               </div>
             )}
-            {(pendingVideoCount > 0 || lastVideoSaveStatus) && (
-              <div style={{ marginBottom: 12, padding: "9px 12px", borderRadius: 10, background: pendingVideoCount > 0 ? "#fff7ed" : "#f0fdf4", border: pendingVideoCount > 0 ? "1px solid #fed7aa" : "1px solid #bbf7d0", color: pendingVideoCount > 0 ? "#c2410c" : "#047857", fontSize: 12, fontWeight: 700, lineHeight: 1.5 }}>
-                {pendingVideoCount > 0 ? `영상 기록 저장 대기 ${pendingVideoCount}개 · 인터넷 연결 후 자동 재전송됩니다.` : lastVideoSaveStatus}
-              </div>
-            )}
-            <div style={{ fontSize: 13, color: "#999", marginBottom: 16 }}>
-              강의를 누른 뒤 재생 버튼을 눌러야 실제 재생시간이 기록됩니다.{hasMultipleBooks ? ` (${activeBook}: ${visibleVideos.length}개)` : ""}
-            </div>
-            {visibleVideos.map((v) => {
-              const isOpen = viewingVideo?.id === v.id;
-              return (
-                <div key={v.id} id={"video-card-" + v.id} style={{
-                  background: "#fff", borderRadius: 14, marginBottom: 12,
-                  boxShadow: isOpen ? "0 4px 16px rgba(74,108,247,0.15)" : "0 1px 4px rgba(0,0,0,0.04)",
-                  border: isOpen ? "2px solid #1C66A5" : "2px solid transparent",
-                  overflow: "hidden", transition: "box-shadow 0.2s, border-color 0.2s",
-                }}>
-                  {/* 카드 헤더 (클릭으로 토글) */}
-                  <div onClick={() => toggleVideo(v)} style={{
-                    padding: 16, cursor: "pointer",
-                    display: "flex", alignItems: "center", gap: 14,
-                  }}>
-                    <div style={{ width: 48, height: 48, borderRadius: 12, flexShrink: 0, background: v.type === "playlist" ? "linear-gradient(135deg, #e74c3c, #e67e22)" : "linear-gradient(135deg, #667eea, #764ba2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{v.type === "playlist" ? "📋" : "▶️"}</div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: "#2A2A28" }}>{v.title}</div>
-                      <div style={{ fontSize: 12, color: "#bbb", marginTop: 3 }}>{v.type === "playlist" ? "재생목록 전체 보기" : (v.subject || "")}</div>
-                    </div>
-                    <div style={{ color: isOpen ? "#1C66A5" : "#ccc", fontSize: 18, transform: isOpen ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>›</div>
+            <div style={card}>
+              {visibleVideos.map((v, i) => {
+                const isOpen = viewingVideo?.id === v.id;
+                const isFeatured = !!featured && v.id === featured.id;
+                const inCardAbove = isOpen && isFeatured;                  // 위 대표 카드에서 재생 중 — 여기엔 플레이어를 또 만들지 않는다
+                const isTask = taskIds.has(v.id);
+                const isPl = v.type === "playlist";
+                return (
+                  <div key={v.id} id={isFeatured ? undefined : "video-card-" + v.id} style={{ borderTop: i ? "1px solid #EEF1F5" : "none", background: isOpen && !inCardAbove ? "#F7FAFF" : "transparent" }}>
+                    <button type="button" aria-expanded={isOpen}
+                      onClick={() => { if (inCardAbove) { scrollToVideoCard(v.id); return; } toggleVideo(v); }}
+                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", minHeight: 64, boxSizing: "border-box", border: "none", background: "transparent", cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
+                      <span aria-hidden="true" style={{ width: 44, height: 44, borderRadius: 12, flexShrink: 0, background: isOpen ? UI.navy : UI.blueBg, color: isOpen ? "#fff" : UI.navy, display: "flex", alignItems: "center", justifyContent: "center", fontSize: isPl ? 20 : 16 }}>{isPl ? "📋" : "▶"}</span>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 15.5, fontWeight: 700, color: UI.text, lineHeight: 1.4, wordBreak: "keep-all", overflowWrap: "anywhere" }}>{v.title}</span>
+                          {isTask && <span style={{ fontSize: 11, fontWeight: 800, padding: "2px 7px", borderRadius: 6, background: UI.blueBg, color: UI.blue, border: `1px solid #C5DCF6`, whiteSpace: "nowrap" }}>오늘 숙제</span>}
+                        </span>
+                        <span style={{ display: "block", fontSize: 12.5, color: UI.sub, marginTop: 3 }}>
+                          {isPl ? "재생목록 전체 보기 · 교재의 강의를 순서대로 확인해요" : (v.subject || "")}
+                          {inCardAbove && <span style={{ color: UI.blue, fontWeight: 700 }}> · 위 카드에서 재생 중</span>}
+                        </span>
+                      </span>
+                      <span aria-hidden="true" style={{ color: isOpen ? UI.blue : "#B4BCC9", fontSize: 18, flexShrink: 0, transform: isOpen && !inCardAbove ? "rotate(90deg)" : "none", transition: "transform .15s" }}>›</span>
+                    </button>
+                    {/* 펼쳐진 영상 (인라인) — 대표 카드에서 재생 중인 영상은 여기서 그리지 않는다 */}
+                    {isOpen && !inCardAbove && (
+                      <div style={{ padding: "0 14px 14px" }}>{playerFor(v)}</div>
+                    )}
                   </div>
-
-                  {/* 펼쳐진 영상 (인라인) */}
-                  {isOpen && (
-                    <div style={{ padding: "0 16px 16px" }}>
-                      {v.type === "playlist" && v.playlistUrl ? (
-                        <div style={{ borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", background: "#000" }}>
-                          <TrackedYoutubePlayer video={v} />
-                        </div>
-                      ) : v.url && v.url.includes("youtu") ? (
-                        <div style={{ borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", background: "#000" }}>
-                          <TrackedYoutubePlayer video={v} />
-                        </div>
-                      ) : (
-                        <div style={{ background: "#f5f5f5", borderRadius: 10, aspectRatio: "16/9", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                          <a href={v.url} target="_blank" rel="noreferrer" style={{ background: "#ff0033", color: "#fff", padding: "10px 24px", borderRadius: 10, textDecoration: "none", fontSize: 14, fontWeight: 600 }}>▶ 영상 보기</a>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+            <div style={{ fontSize: 12.5, color: UI.dim, marginTop: 10, textAlign: "center" }}>강의를 누른 뒤 재생 버튼을 눌러야 실제 재생시간이 기록됩니다.{hasMultipleBooks && activeBook !== ALL_KEY ? ` (${activeBook}: ${visibleVideos.length}개)` : ""}</div>
           </div>
           );
         })()}
         {tab === "vocabWrong" && (
-          <VocabWrongTab vocabWrongWords={vocabWrongWords} studentId={studentId}
-            onProgress={(busy) => { vocabTestBusyRef.current = !!busy; }} />
+          <MoreSubFrame title="오답 복습" onBack={() => goTab("more")}>
+            <VocabWrongTab vocabWrongWords={vocabWrongWords} studentId={studentId}
+              onProgress={(busy) => { vocabTestBusyRef.current = !!busy; }} />
+          </MoreSubFrame>
         )}
         {tab === "progress" && (
-          <StudentProgressTree student={student} todos={todos} progressTree={progressTree} />
+          <MoreSubFrame title="학습 진도" onBack={() => goTab("more")}>
+            <StudentProgressTree student={student} todos={todos} progressTree={progressTree} />
+          </MoreSubFrame>
         )}
         </div>
       </div>
@@ -7633,6 +7891,15 @@ function videoNumberOf(v) {
   const use = nums.length ? nums : all;
   return use.length ? use[use.length - 1] : null;
 }
+// [106차수] 이 날짜 숙제와 실제로 매칭된 강의 id 모음 — 강의 탭 목록의 "오늘 숙제" 배지는 이 안에 있는 영상에만 붙는다(최근 영상이라는 이유로는 안 붙임)
+function collectTaskVideoIds(taskItems, studentVideos) {
+  const ids = new Set();
+  (taskItems || []).forEach(item => {
+    const { matched } = matchVideosForTask(item?.text || "", studentVideos);
+    matched.forEach(v => ids.add(v.id));
+  });
+  return ids;
+}
 function buildVideoPickerV2(lastVideo, taskItems, studentVideos) {
   const taskMatched = [];
   const seen = new Set();
@@ -7687,8 +7954,10 @@ function extractPlaylistId(url) {
 }
 
 // ─── HomeworkItem: 숙제 항목 한 줄 (영상 매칭 + 인라인 플레이어 + 폴백) ───
-// [디자인 수정] 영상 매칭 ▶ 버튼들을 텍스트 행에서 분리하여 별도 줄(체크박스와 좌측 정렬)에 배치.
-// 이전엔 매칭 영상이 4개 이상이면 텍스트가 한 글자씩 세로로 쪼개지는 버그가 있었음.
+// [105차수 09-08 디자인 개편] 시안 images/02-homework.png — 체크박스 모양 대신 오른쪽 상태 배지(확인 완료 / 확인 전 / 재시).
+//   · 원문은 그대로. "->" / "→" 뒤는 예전처럼 설명 배지(단추 아님 — 계획서 3·7절).
+//   · 통과 도장은 "확인 완료" 배지 + 작은 "통과 M/D"로 정돈(뜻·날짜 유지). 재시는 배지 + 사유 줄.
+//   · 강의는 실제 매칭(matchVideosForTask)된 것에만 "연결 강의 보기" 단추 — 여러 개면 전부. "다른 강의 보기" 폴백·인라인 플레이어는 그대로.
 function HomeworkItem({ item, stampDate, isLast, isCheckedFn, isFailedFn, getFailReasonFn, studentVideos, viewingVideo, toggleVideo }) {
   const [showAll, setShowAll] = useState(false);
   const done = isCheckedFn(item);
@@ -7707,136 +7976,83 @@ function HomeworkItem({ item, stampDate, isLast, isCheckedFn, isFailedFn, getFai
   // 폴백 라벨용 책 이름 (보통 1개 책만 매칭됨)
   const bookSubject = bookCandidates[0]?.subject || matched[0]?.subject || "";
 
-  // 들여쓰기: 체크박스(22) + gap(12) + 좌측 padding(16) = 50px. fail reason과 동일한 정렬.
-  const INDENT_LEFT = 50;
+  // "->" 또는 "→" 화살표 뒤의 부분을 설명 배지로 분리 (예: "...채점·고치기 -> 틀린 문제 피드백")
+  const arrowSplit = String(item.text || "").split(/\s*(?:->|→)\s*/);
+  const hasBadge = arrowSplit.length >= 2 && arrowSplit[0].trim() && arrowSplit.slice(1).join("").trim();
+  const mainText = hasBadge ? arrowSplit[0].trim() : item.text;
+  const badgeText = hasBadge ? arrowSplit.slice(1).join(" → ").trim() : "";
+
+  const st = fail ? "fail" : done ? "done" : "none";
+  const chip = st === "done" ? { bg: UI.okBg, fg: UI.okFg, t: "확인 완료" } : st === "fail" ? { bg: UI.warnBg, fg: UI.warnFg, t: "재시" } : { bg: "#EEF1F5", fg: "#556072", t: "확인 전" };
+  const playBtn = (v, small = false) => {
+    const isOpen = viewingVideo?.id === v.id;
+    const isMatched = matched.some(m => m.id === v.id);
+    return (
+      <button key={v.id} type="button" onClick={(e) => { e.stopPropagation(); toggleVideo(v); }} aria-pressed={isOpen}
+        style={{
+          padding: small ? "7px 11px" : "9px 13px", minHeight: small ? 36 : 40, borderRadius: 9,
+          border: isOpen ? `1.5px solid ${UI.blue}` : small && isMatched ? "1px solid #fde047" : `1.5px solid ${isMatched || !small ? "#C5DCF6" : UI.line}`,
+          background: isOpen ? UI.blueBg : small && isMatched ? "#fef9c3" : "#fff",
+          color: isOpen ? UI.blue : small && isMatched ? "#854d0e" : small ? UI.sub : UI.blue,
+          fontSize: small ? 12 : 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit",
+          display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap",
+        }}>
+        <span aria-hidden="true" style={{ fontSize: 10 }}>{isOpen ? "▼" : "▶"}</span>
+        {!small && matched.length === 1 ? `연결 강의 보기 · ${getVideoShortLabel(v)}` : getVideoShortLabel(v)}
+      </button>
+    );
+  };
 
   return (
-    <div style={{ borderBottom: !isLast ? "1px solid #f2f3f6" : "none", background: "#fff" }}>
-      {/* 항목 행 (체크박스 + 텍스트만). 영상 ▶ 버튼이 같이 있으면 다음 줄에 자리를 비워줘야 하므로 paddingBottom을 줄인다. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: showVideoButtons ? "14px 16px 8px" : "14px 16px" }}>
-        <div style={{
-          width: 22, height: 22, borderRadius: 8, flexShrink: 0,
-          border: done ? "none" : fail ? "2px solid #E24B4A" : "2px solid #d4d7de",
-          background: done ? "#182848" : fail ? "#fdf0ef" : "#fff",
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}>
-          {done && <span style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>✓</span>}
-          {fail && <span style={{ color: "#E24B4A", fontSize: 13, fontWeight: 700 }}>✕</span>}
+    <div style={{ borderBottom: !isLast ? "1px solid #EEF1F5" : "none", background: "#fff" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "13px 14px" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 15.5, fontWeight: 700, lineHeight: 1.45, color: st === "done" ? "#5A6478" : UI.text, wordBreak: "break-word" }}>{mainText}</div>
+          {badgeText && <span style={{ display: "inline-block", marginTop: 5, background: UI.blueBg, color: UI.blue, fontSize: 11.5, padding: "3px 9px", borderRadius: 8, fontWeight: 700 }}>{badgeText}</span>}
+          {/* 미완료 사유 (fail이고 사유가 있을 때만) */}
+          {fail && failReason && <div style={{ marginTop: 4, fontSize: 12.5, color: "#b3564c", lineHeight: 1.4 }}>{failReason}</div>}
+          {/* 매칭된 영상 단추들: 실제 매칭이 있을 때만. 여러 개면 전부 고를 수 있다 */}
+          {showVideoButtons && (
+            <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {matched.map(v => playBtn(v))}
+            </div>
+          )}
         </div>
-        {(() => {
-          // "->" 또는 "→" 화살표 뒤의 부분을 보라색 뱃지로 분리 (예: "...준비 -> 수업-랜덤 해석 test")
-          const arrowSplit = item.text.split(/\s*(?:->|→)\s*/);
-          if (arrowSplit.length >= 2 && arrowSplit[0].trim() && arrowSplit.slice(1).join('').trim()) {
-            const mainText = arrowSplit[0].trim();
-            const badgeText = arrowSplit.slice(1).join(' → ').trim();
-            return (
-              <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0 }}>
-                <span style={{ fontSize: 15, lineHeight: 1.5, color: done ? "#9aa0ab" : "#23252B", textDecoration: done ? "line-through" : "none" }}>{mainText}</span>
-                <span style={{ background: "#eef3fc", color: "#2A6FDB", fontSize: 11, padding: "3px 9px", borderRadius: 8, fontWeight: 700, whiteSpace: "nowrap" }}>{badgeText}</span>
-              </div>
-            );
-          }
-          return (
-            <span style={{ flex: 1, fontSize: 15, lineHeight: 1.5, color: done ? "#9aa0ab" : "#23252B", textDecoration: done ? "line-through" : "none", minWidth: 0 }}>{item.text}</span>
-          );
-        })()}
-        {/* [도장] 조교가 원장앱에서 체크 완료한 항목 = "통과" 도장 마크 (학생은 직접 체크 불가 — 도장은 조교 서명) */}
-        {done && (
-          <span aria-hidden="true" style={{
-            flexShrink: 0, width: 40, height: 40, borderRadius: "50%",
-            border: "2.5px solid #E24B4A", background: "rgba(252,235,235,0.55)",
-            color: "#E24B4A", transform: "rotate(-10deg)",
-            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-          }}>
-            <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1.5 }}>통과</span>
-            {stampDate ? <span style={{ fontSize: 8, fontWeight: 700, marginTop: 0.5 }}>{stampDate}</span> : null}
-          </span>
-        )}
-        {/* [도장] 미완료(재시) — 애니메이션 없이 뱃지만 (확정안) */}
-        {fail && (
-          <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: "#E24B4A", background: "#fdf0ef", padding: "4px 9px", borderRadius: 7, whiteSpace: "nowrap" }}>재시</span>
-        )}
+        <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
+          <span style={{ fontSize: 12, fontWeight: 800, padding: "5px 9px", borderRadius: 8, background: chip.bg, color: chip.fg, whiteSpace: "nowrap" }}>{chip.t}</span>
+          {/* [도장] 조교가 원장앱에서 체크 완료한 항목 = "통과" 도장(날짜) — 학생은 직접 체크 불가, 도장은 조교 서명 */}
+          {done && stampDate && <span aria-label={`통과 ${stampDate}`} style={{ fontSize: 10.5, fontWeight: 800, color: UI.okFg, letterSpacing: 0.3 }}>통과 {stampDate}</span>}
+        </div>
       </div>
-
-      {/* 매칭된 영상 ▶ 버튼들: 텍스트 아래 별도 줄. 체크박스와 좌측 정렬되도록 padding-left로 들여씀. */}
-      {showVideoButtons && (
-        <div style={{ padding: `0 16px 12px ${INDENT_LEFT}px`, display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {matched.map(v => {
-            const isOpen = viewingVideo?.id === v.id;
-            return (
-              <button key={v.id} onClick={(e) => { e.stopPropagation(); toggleVideo(v); }} style={{
-                padding: "5px 11px", borderRadius: 7,
-                border: isOpen ? "1.5px solid #2A6FDB" : "1px solid #d0d4e0",
-                background: isOpen ? "#eef3fc" : "#fff",
-                color: isOpen ? "#2A6FDB" : "#555",
-                fontSize: 12, fontWeight: 700, cursor: "pointer",
-                display: "inline-flex", alignItems: "center", gap: 4, transition: "all 0.15s", whiteSpace: "nowrap",
-              }}>
-                <span style={{ fontSize: 10 }}>{isOpen ? "▼" : "▶"}</span> {getVideoShortLabel(v)}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* 미완료 사유 표시 (fail이고 사유가 있을 때만) — 텍스트와 정렬되도록 padding-left 50 (체크박스 22 + gap 12 + padding 16) */}
-      {fail && failReason && (
-        <div style={{ padding: `0 16px 12px ${INDENT_LEFT}px`, fontSize: 12.5, color: "#b3564c", lineHeight: 1.4 }}>
-          {failReason}
-        </div>
-      )}
 
       {/* 폴백 안내/버튼: 매칭이 있어도 작은 링크로 항상 노출 (숫자 잘못 입력 안전망) */}
       {showFallback && (hasMatch ? (
-        <div style={{ padding: "0 16px 10px", textAlign: "right" }}>
-          <button onClick={() => setShowAll(s => !s)} style={{
-            border: "none", background: "transparent", color: "#9ca3af",
-            fontSize: 11, padding: 0, cursor: "pointer", fontWeight: 600,
-          }}>
+        <div style={{ padding: "0 14px 10px", textAlign: "right" }}>
+          <button type="button" onClick={() => setShowAll(s => !s)} aria-expanded={showAll} style={{ border: "none", background: "transparent", color: UI.dim, fontSize: 12, padding: "4px 0", cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>
             다른 강의 보기 {showAll ? "▴" : "▾"}
           </button>
         </div>
       ) : (
-        <div style={{ padding: "2px 16px 12px" }}>
-          <div style={{ fontSize: 11, color: "#999", marginBottom: 6, fontStyle: "italic" }}>
-            매칭되는 강의를 못 찾았어요. 직접 찾아보세요:
-          </div>
-          <button onClick={() => setShowAll(s => !s)} style={{
-            border: "1px solid #e0e0e0", background: "#f9fafb", color: "#374151",
-            fontSize: 12, padding: "6px 12px", borderRadius: 7, cursor: "pointer", fontWeight: 600,
-          }}>
+        <div style={{ padding: "0 14px 12px" }}>
+          <div style={{ fontSize: 12, color: UI.dim, marginBottom: 6 }}>매칭되는 강의를 못 찾았어요. 직접 찾아보세요:</div>
+          <button type="button" onClick={() => setShowAll(s => !s)} aria-expanded={showAll} style={{ border: `1px solid ${UI.line}`, background: "#f9fafb", color: "#374151", fontSize: 12.5, padding: "8px 12px", minHeight: 36, borderRadius: 8, cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>
             {bookSubject} 전체 강의 {showAll ? "닫기 ▴" : `보기 ▾ (${bookCandidates.length})`}
           </button>
         </div>
       ))}
 
-      {/* 폴백 펼침: 책의 모든 영상 ▶ 버튼 그리드 (매칭됐던 영상은 노란 배경으로 강조) */}
+      {/* 폴백 펼침: 책의 모든 영상 단추 (매칭됐던 영상은 노란 배경으로 강조) */}
       {showFallback && showAll && (
-        <div style={{ padding: "0 16px 12px", display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {bookCandidates.map(v => {
-            const isOpen = viewingVideo?.id === v.id;
-            const isMatched = matched.some(m => m.id === v.id);
-            return (
-              <button key={v.id} onClick={(e) => { e.stopPropagation(); toggleVideo(v); }} style={{
-                padding: "4px 9px", borderRadius: 6,
-                border: isOpen ? "1.5px solid #2A6FDB" : (isMatched ? "1px solid #fde047" : "1px solid #e0e0e0"),
-                background: isOpen ? "#eef3fc" : (isMatched ? "#fef9c3" : "#fff"),
-                color: isOpen ? "#2A6FDB" : (isMatched ? "#854d0e" : "#666"),
-                fontSize: 11, fontWeight: 600, cursor: "pointer",
-                display: "inline-flex", alignItems: "center", gap: 3, transition: "all 0.15s", whiteSpace: "nowrap",
-              }}>
-                <span style={{ fontSize: 9 }}>{isOpen ? "▼" : "▶"}</span> {getVideoShortLabel(v)}
-              </button>
-            );
-          })}
+        <div style={{ padding: "0 14px 12px", display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {bookCandidates.map(v => playBtn(v, true))}
         </div>
       )}
 
-      {/* 인라인 영상 플레이어 */}
+      {/* 인라인 영상 플레이어 — 이 항목에서 고른 영상 하나만 */}
       {isAnyOpen && (() => {
         const v = openVideo;
         return (
-          <div style={{ padding: "0 16px 16px", background: "#fafbff" }}>
+          <div style={{ padding: "0 14px 14px", background: "#fafbff" }}>
             {v.type === "playlist" && v.playlistUrl ? (
               <div style={{ borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", background: "#000" }}>
                 <TrackedYoutubePlayer video={v} />
@@ -7857,53 +8073,60 @@ function HomeworkItem({ item, stampDate, isLast, isCheckedFn, isFailedFn, getFai
   );
 }
 
-// ─── StepSection: 단계별 카드 (라벨 + 배지 + notice + 체크리스트) ───
+// ─── StepSection: 단계별 카드 (번호 + 라벨 + 배지 + 접기 + notice + 항목) ───
+// [105차수] 항목이 있으면 기본 펼침(학생이 접을 수 있고, 날짜가 바뀌면 부모가 key를 바꿔 다시 펼친다). 비어 있으면 "오늘 없음" 한 줄.
+//   미완료 필수 항목을 자동으로 감추지 않는다(접힘은 학생이 직접 누를 때만).
 function StepSection({ step, displayNum, stampDate, isChecked, isFailed, getFailReason, studentVideos = [], viewingVideo, toggleVideo }) {
-  const { label, color, bg, badges = [], notice, items } = step;
+  const { label, badges = [], notice, items } = step;
+  const [open, setOpen] = useState(true);
+  const hasItems = items.length > 0;
+  const pending = hasItems ? items.filter(it => !(isFailed && isFailed(it)) && !isChecked(it)).length : 0;
+  const headId = `step-head-${step.key}`;
+  const bodyId = `step-body-${step.key}`;
   return (
-    <div style={{ marginBottom: 20 }}>
-      {/* 헤더: 라벨 탭 + 배지 (한 줄) */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: "#6b7280", padding: "0 2px 8px", letterSpacing: 0.5 }}>
-          {displayNum} · {label}
-        </div>
-        {badges.map(b => {
-          const bs = BADGE_STYLES[b] || { bg: "#eee", fg: "#666" };
-          return (
-            <span key={b} style={{ background: bs.bg, color: bs.fg, fontSize: 11, padding: "3px 8px", borderRadius: 10, fontWeight: 600 }}>
-              {b}
-            </span>
-          );
-        })}
-      </div>
+    <div style={{ background: UI.card, border: `1px solid ${UI.line}`, borderRadius: 16, marginBottom: 12, overflow: "hidden" }}>
+      {/* 헤더: 번호 + 라벨 + 배지 + (오늘 없음 | 접기 화살표) */}
+      <button type="button" id={headId} onClick={() => { if (hasItems) setOpen(o => !o); }} aria-expanded={hasItems ? open : undefined} aria-controls={hasItems ? bodyId : undefined} disabled={!hasItems}
+        style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "13px 14px", minHeight: 56, boxSizing: "border-box", border: "none", background: "transparent", cursor: hasItems ? "pointer" : "default", textAlign: "left", fontFamily: "inherit", color: UI.text }}>
+        <span aria-hidden="true" style={{ width: 30, height: 30, borderRadius: "50%", background: hasItems ? UI.blue : "#C9D2E0", color: "#fff", fontSize: 15, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{displayNum}</span>
+        <span style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.3, flexShrink: 0 }}>{label}</span>
+        <span style={{ display: "flex", gap: 5, flexWrap: "wrap", minWidth: 0 }}>
+          {badges.map(b => {
+            const bs = BADGE_STYLES[b] || { bg: "#eee", fg: "#666" };
+            return <span key={b} style={{ background: bs.bg, color: bs.fg, fontSize: 11, padding: "3px 8px", borderRadius: 8, fontWeight: 700, whiteSpace: "nowrap" }}>{b}</span>;
+          })}
+        </span>
+        <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          {!hasItems && <span style={{ fontSize: 13, color: UI.dim, fontWeight: 600 }}>오늘 없음</span>}
+          {hasItems && !open && <span style={{ fontSize: 12.5, color: UI.sub, fontWeight: 700 }}>{pending > 0 ? `확인할 항목 ${pending}개` : `항목 ${items.length}개 · 확인 완료`}</span>}
+          <span aria-hidden="true" style={{ color: hasItems ? UI.sub : "#C9D2E0", fontSize: 12, transform: hasItems && open ? "rotate(180deg)" : "none", transition: "transform .15s" }}>▼</span>
+        </span>
+      </button>
 
-      {/* 본문 카드 */}
-      <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #eceef2", overflow: "hidden" }}>
-        {notice && (
-          <div style={{ fontSize: 12, color: "#a16207", background: "#fffbeb", padding: "8px 14px", borderBottom: "1px solid #f5f5f5", lineHeight: 1.5 }}>
-            {notice}
-          </div>
-        )}
-        {items.length === 0 ? (
-          <div style={{ padding: "18px 16px", fontSize: 13, color: "#bbb", textAlign: "center", fontStyle: "italic" }}>
-            오늘 없음
-          </div>
-        ) : items.map((item, i) => (
-          <HomeworkItem
-            key={item.key || item.legacyKey || `${item.type}_${item.idx}`}
-            item={item}
-            stampDate={stampDate}
-            isLast={i === items.length - 1}
-            isCheckedFn={isChecked}
-            isFailedFn={isFailed}
-            getFailReasonFn={getFailReason}
-            studentVideos={studentVideos}
-            viewingVideo={viewingVideo}
-            toggleVideo={toggleVideo}
-          />
-        ))}
-      </div>
+      {/* 본문 */}
+      {hasItems && open && (
+        <div id={bodyId} role="region" aria-labelledby={headId} style={{ borderTop: "1px solid #EEF1F5" }}>
+          {notice && (
+            <div style={{ fontSize: 12.5, color: "#a16207", background: "#fffbeb", padding: "9px 14px", borderBottom: "1px solid #FDF0C8", lineHeight: 1.5 }}>
+              <span aria-hidden="true">⚠️ </span>{notice.replace(/^→\s*/, "")}
+            </div>
+          )}
+          {items.map((item, i) => (
+            <HomeworkItem
+              key={item.key || item.legacyKey || `${item.type}_${item.idx}`}
+              item={item}
+              stampDate={stampDate}
+              isLast={i === items.length - 1}
+              isCheckedFn={isChecked}
+              isFailedFn={isFailed}
+              getFailReasonFn={getFailReason}
+              studentVideos={studentVideos}
+              viewingVideo={viewingVideo}
+              toggleVideo={toggleVideo}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
- 
