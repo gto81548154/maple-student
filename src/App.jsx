@@ -6,7 +6,7 @@ import { flushSync } from "react-dom";
 import QRCodeLib from "qrcode";
 // [0824 3차수] 배포 확인용 차수 표시 — 원장앱 APP_BUILD와 같은 장치. 학생 화면에는 안 띄우고
 //   마스터 홈(원장 전용) 머리글에만 뜬다(원장 결정). 새 차수 파일을 만들 때마다 이 글자를 같이 바꿀 것.
-const STUDENT_APP_BUILD = "학생앱 107차수 · 2026-09-08";
+const STUDENT_APP_BUILD = "학생앱 109차수 · 2026-09-08";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -552,12 +552,29 @@ function SettingStatus({ tone = "ok", children }) {
   return <span style={{ display: "inline-block", marginTop: 9, fontSize: 12, fontWeight: 800, padding: "4px 9px", borderRadius: 7, background: c.bg, color: c.fg }}>{children}</span>;
 }
 const SETTING_BTN = { marginTop: 10, display: "inline-block", padding: "10px 16px", borderRadius: 9, border: "none", background: "#2466D9", color: "#fff", fontSize: 13.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", minHeight: 44 };
+// [108차수 · 검토 3번] 알림 "등록"(서버에 구독 저장) 결과 — 브라우저 권한과는 다른 상태다. App의 자동 갱신과 설정 카드가 같이 쓴다.
+//   state: "" 모름 / "ok" 등록됨 / "fail" 등록 실패(권한은 허용됨). 카드가 열려 있으면 바로 다시 그린다.
+const PUSH_SUB = { state: "", msg: "" };
+const PUSH_SUB_LISTENERS = new Set();
+const setPushSubState = (state, msg = "") => { PUSH_SUB.state = state; PUSH_SUB.msg = msg; PUSH_SUB_LISTENERS.forEach((f) => { try { f(); } catch (e) {} }); };
 // 알림(푸시) 설정 카드 — 폰의 실제 권한 상태를 그대로 보여준다. 가짜 스위치 없음.
+//   권한(브라우저)과 등록(서버 저장)을 따로 본다: 권한은 허용됐는데 등록이 실패하면 "권한 허용됨 · 알림 등록 실패" + [다시 연결](권한을 또 묻지 않고 등록만 다시).
 function PushSettingCard({ student }) {
   const [perm, setPerm] = useState(() => { try { return ("Notification" in window) ? Notification.permission : "unsupported"; } catch (e) { return "unsupported"; } });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [sub, setSub] = useState({ ...PUSH_SUB });
+  useEffect(() => {
+    const f = () => setSub({ ...PUSH_SUB });
+    PUSH_SUB_LISTENERS.add(f); f();
+    return () => { PUSH_SUB_LISTENERS.delete(f); };
+  }, []);
   const support = pushSupport();
+  // 등록만 다시(권한은 이미 허용된 상태에서 부른다)
+  const subscribeOnly = async () => {
+    await registerMaplSw();
+    await subscribeMaplPush(student);
+  };
   const enable = async () => {
     if (busy) return;
     setBusy(true); setMsg("");
@@ -566,9 +583,16 @@ function PushSettingCard({ student }) {
       const p = await Notification.requestPermission();
       setPerm(p);
       if (p !== "granted") { setMsg(p === "denied" ? "알림이 차단됐어요. 폰 설정에서 허용한 뒤 다시 열어 주세요." : "알림을 허용하지 않았어요."); setBusy(false); return; }
-      await subscribeMaplPush(student);
-      setMsg("알림이 켜졌어요! 새 설문·공지가 오면 알려드릴게요.");
+      try { await subscribeMaplPush(student); setPushSubState("ok", ""); setMsg("알림이 켜졌어요! 새 설문·공지가 오면 알려드릴게요."); }
+      catch (e) { setPushSubState("fail", String(e?.message || e)); setMsg(""); }
     } catch (e) { setMsg("알림 설정에 실패했어요: " + (e?.message || e)); }
+    setBusy(false);
+  };
+  const retry = async () => {
+    if (busy) return;
+    setBusy(true); setMsg("");
+    try { await subscribeOnly(); setPushSubState("ok", ""); setMsg("알림이 연결됐어요!"); }
+    catch (e) { setPushSubState("fail", String(e?.message || e)); }
     setBusy(false);
   };
   let body;
@@ -579,6 +603,14 @@ function PushSettingCard({ student }) {
       <>
         <SettingStatus tone="dim">이 브라우저에서는 알림을 지원하지 않아요</SettingStatus>
         {IS_IOS_UA && !isPwaStandalone() && <div style={{ ...SETTING_DESC, marginTop: 8 }}>아이폰은 먼저 홈 화면에 추가한 뒤, 그 아이콘으로 열면 알림을 켤 수 있어요.</div>}
+      </>
+    );
+  } else if (perm === "granted" && sub.state === "fail") {
+    body = (
+      <>
+        <SettingStatus tone="warn">권한 허용됨 · 알림 등록 실패</SettingStatus>
+        <div style={{ ...SETTING_DESC, marginTop: 8, color: UI.warnFg, fontWeight: 700 }}>서버에 알림 주소를 저장하지 못했어요{sub.msg ? `: ${sub.msg}` : ""}. 인터넷을 확인하고 다시 연결해 주세요.</div>
+        <div><button type="button" onClick={retry} disabled={busy} style={{ ...SETTING_BTN, opacity: busy ? 0.6 : 1, cursor: busy ? "default" : "pointer" }}>{busy ? "연결 중..." : "다시 연결"}</button></div>
       </>
     );
   } else if (perm === "granted") {
@@ -605,7 +637,7 @@ function PushSettingCard({ student }) {
       <div style={SETTING_TITLE}>🔔 새 설문·공지 알림</div>
       <div style={SETTING_DESC}>중요한 안내가 오면 폰으로 바로 알려드려요</div>
       {body}
-      {msg && <div style={{ ...SETTING_DESC, marginTop: 8, color: perm === "granted" ? "#1B8A5A" : "#B03A2E", fontWeight: 700 }}>{msg}</div>}
+      {msg && <div style={{ ...SETTING_DESC, marginTop: 8, color: (perm === "granted" && sub.state !== "fail") ? "#1B8A5A" : "#B03A2E", fontWeight: 700 }}>{msg}</div>}
     </div>
   );
 }
@@ -1229,6 +1261,23 @@ const computeAttNotice = (student, makeups, customHolidays) => {
     nextEntry = attEntryForDay(student, mks, allHol, d);
   }
   return { today: todayEntry, next: nextEntry };
+};
+// [109차수 09-08] 홈 위 칸의 "이번 주 7일" 줄 재료 — 오늘이 항상 맨 왼쪽, 하루 지나면 저절로 한 칸씩 넘어간다(원장 결정).
+//   판정은 computeAttNotice와 같은 attEntryForDay 하나를 쓴다(공휴일·등원 취소·보충·방학 규칙이 어긋나지 않게).
+//   entry가 있으면 그날 등원(연한 파란 칸), 없으면 빈 날(하얀 칸). 시간을 만들어 내지 않는다.
+const computeAttWeek = (student, makeups, customHolidays, days = 7) => {
+  if (!student) return [];
+  const allHol = { ...HOLIDAYS, ...(customHolidays || {}) };
+  const mks = (makeups || []).filter(m => String(m.studentId) === String(student.id));
+  const base = new Date();
+  base.setHours(0, 0, 0, 0);
+  const out = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(base);
+    d.setDate(d.getDate() + i);
+    out.push({ date: fmtYMD(d), dateObj: d, entry: attEntryForDay(student, mks, allHol, d), isToday: i === 0 });
+  }
+  return out;
 };
 // 날짜 → "8월 19일 (수)"
 const fmtAttDayParen = (d) => `${d.getMonth() + 1}월 ${d.getDate()}일 (${DK[d.getDay()]})`;
@@ -5199,6 +5248,11 @@ export default function App() {
   const [viewStartTime, setViewStartTime] = useState(null);
   const [videoWatch, setVideoWatch] = useState({});
   const [selectedVideoBook, setSelectedVideoBook] = useState(null); // 영상 탭 책별 sub-tab 선택값 (null이면 첫 책 자동)
+  // [108차수 09-08 · 검토 1번] 강의 탭 대표 강의는 탭에 "들어갈 때" 한 번 정해서 고정한다(영상 id).
+  //   107차수는 매 렌더마다 "최근 본 강의"로 다시 계산했는데, 다른 영상을 15초 보면 자동 저장으로 그 영상이 최근 강의가 되어
+  //   대표 카드로 자리를 옮기면서 플레이어가 새로 만들어졌다(재생 끊김). 이제 시청 기록이 바뀌어도 대표 카드는 안 움직인다.
+  //   탭을 나갔다 다시 들어오면(goTab) 그때 다시 정한다. null = 대표 카드 없음(목록만).
+  const [videosFeaturedId, setVideosFeaturedId] = useState(null);
   const [pendingVideoCount, setPendingVideoCount] = useState(() => getPendingVideoWatch().length); // 저장 실패/대기 기록 개수
   const [lastVideoSaveStatus, setLastVideoSaveStatus] = useState(""); // 최근 영상 기록 저장 상태 표시
   const [refreshing, setRefreshing] = useState(false); // 수동 새로고침 상태
@@ -5407,7 +5461,9 @@ export default function App() {
       if (!reg) return;
       if (Notification.permission === "granted") {
         // 허용은 되어 있는데 구독이 끊겼거나 새 기기인 경우를 대비해 매 실행마다 저장을 갱신한다
-        try { await subscribeMaplPush(student); } catch (e) { console.warn("푸시 구독 갱신 실패:", e?.message || e); }
+        // [108차수 · 검토 3번] 결과를 앱 설정 카드가 볼 수 있게 남긴다(성공/실패)
+        try { await subscribeMaplPush(student); setPushSubState("ok", ""); }
+        catch (e) { console.warn("푸시 구독 갱신 실패:", e?.message || e); setPushSubState("fail", String(e?.message || e)); }
       }
     })();
   }, [student?.id]);
@@ -6214,6 +6270,8 @@ export default function App() {
   // [0814] 원장앱 교재명·별칭 표(진도 맵에서 뽑음)를 같이 넘긴다 — 새 훅 없이 그때그때 계산(교재 수십 개라 가볍다)
   const vocaAliasIndex = buildVocaAliasIndex(progressTree);
   const taskVoca = findTaskVocaRange(stepGroups.flatMap(s => s.items), vocaAliasIndex);
+  // [108차수 · 검토 4번] 단어 숙제 통과 문구 — 보고 있는 숙제 날짜(activeDate)가 오늘이 아니면 그 날짜를 적는다. 홈 단어 줄·단어 탭 안내가 같이 쓴다.
+  const vocaPassLabel = isToday(activeDate) ? "오늘 단어 숙제 통과" : `${fmtDateShort(activeDate)} 단어 숙제 통과`;
   // [0825 5차수] 숙제 TEST 바로 시작 — 예전 홈 2번 카드 안에 있던 코드를 밖으로 꺼내 단어 탭과 같이 쓴다.
   // date = 이 숙제의 수업 날짜(activeDate) — 전날 미리 해도 그 수업 칸에 도장이 찍힌다.
   // deadline = 그 수업 날짜의 등원 시각. 등원 정보가 없으면 빈 값(서버는 그 경우 늦음 판정 안 함).
@@ -6279,6 +6337,8 @@ export default function App() {
     }
     if (nextKey === "videos") {
       if (opts.videoBook !== undefined) setSelectedVideoBook(opts.videoBook);
+      // [108차수] 대표 강의는 들어가는 순간의 시작 강의(홈에서 고른 영상 → 없으면 오늘 숙제 강의 → 최근 본 강의)로 고정
+      setVideosFeaturedId(opts.playVideo ? opts.playVideo.id : (picker.main ? picker.main.video.id : null));
       if (opts.playVideo) {
         if (viewingVideo?.id !== opts.playVideo.id) toggleVideo(opts.playVideo);   // 이미 열려 있으면 다시 누르지 않는다(닫힘 방지)
         scrollToVideoCard(opts.playVideo.id);
@@ -6311,15 +6371,18 @@ export default function App() {
   const wrongCount = Object.values(vocabWrongWords || {}).reduce((n, m) =>
     n + Object.values(m?.words || {}).filter(w => (w.status || "active") === "active" && Array.isArray(w.correctAnswers) && w.correctAnswers.length > 0).length, 0);
   const attNoticeAll = computeAttNotice(student, makeups, customHolidays);
+  // [109차수 09-08] 홈 위 칸 "이번 주 7일" 줄(오늘부터) + 더보기·홈 바로가기 "수업 일정" 줄이 같이 쓰는 한 줄 설명
+  const attWeek = computeAttWeek(student, makeups, customHolidays);
+  const calSub = attNoticeAll.today
+    ? `오늘 ${fmtTime(attNoticeAll.today.time)} 등원${attTag(attNoticeAll.today)}`
+    : attNoticeAll.next ? `다음 수업 ${fmtAttDayParen(attNoticeAll.next.dateObj)} ${fmtTime(attNoticeAll.next.time)}${attTag(attNoticeAll.next)}` : "등원·보충 일정";
   const moreGroups = [
     { title: "안내", items: [
       { key: "notices", icon: "📣", title: "공지·설문", sub: noticeSub, subTone: unansweredSurveys.length ? "warn" : undefined },
       { key: "examInfo", icon: "📋", title: "시험 정보", sub: nearestExam ? `${nearestExam.name} ${nearestExam.ddayLabel} · 시험 범위` : "다가오는 시험 없음" },
     ] },
     { title: "학습", items: [
-      { key: "cal", icon: "📅", title: "수업 일정", sub: attNoticeAll.today
-          ? `오늘 ${fmtTime(attNoticeAll.today.time)} 등원${attTag(attNoticeAll.today)}`
-          : attNoticeAll.next ? `다음 수업 ${fmtAttDayParen(attNoticeAll.next.dateObj)} ${fmtTime(attNoticeAll.next.time)}${attTag(attNoticeAll.next)}` : "등원·보충 일정" },
+      { key: "cal", icon: "📅", title: "수업 일정", sub: calSub },
       // 오답 복습은 예전 "오답" 탭과 같은 조건(틀린 단어가 있을 때만)으로 나온다
       ...(hasVocabWrong ? [{ key: "vocabWrong", icon: "📝", title: "오답 복습",
           sub: vocabWarn.overdue > 0 ? `기한 지난 단어 ${vocabWarn.overdue}개` : vocabWarn.dueThisWeek > 0 ? `이번 주 마감 ${vocabWarn.dueThisWeek}개 · ${vocabWarn.sundayLabel}까지` : `남은 단어 ${wrongCount}개`,
@@ -6445,7 +6508,7 @@ export default function App() {
       <div style={{ padding: "16px 16px 100px" }}>
         <div style={{ maxWidth: MAX_W, margin: "0 auto" }}>
         {/* ═══ [104차수 09-08 디자인 개편] 홈 — 시안 images/01-home.png, 계획서 6절 ═══
-            순서: 등원+D-Day 한 줄 → "오늘 할 일" 제목+날짜 → 오늘 숙제 카드(1단계 항목 전부) → 이어서 할 공부(단어/강의/오답) → 공지·시험 정보·학습 진도 바로가기.
+            순서: 등원+D-Day 칸(109차수: 아래에 7일 줄) → "오늘 할 일" 제목+날짜 → 오늘 숙제 카드(1단계 항목 전부) → 이어서 할 공부(단어/강의/오답) → 공지·시험 정보·수업 일정·학습 진도 바로가기.
             데이터는 전부 이미 계산된 것 재사용(stepGroups·taskVoca·vocaHwRec·buildVideoPickerV2·vocabWarn·pinnedMessages·examDdays). 서버 추가 요청 없음.
             학생이 눌러서 완료하는 체크박스는 없다 — 상태(확인 전/확인 완료/재시)만 보여준다. 모든 이동은 goTab. */}
         {tab === "home" && (() => {
@@ -6498,33 +6561,63 @@ export default function App() {
           );
           return (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {/* ① 등원 안내 + 가장 가까운 시험 D-Day (둘 다 없으면 이 줄 자체가 없다. 일정이 없으면 시간을 만들어 내지 않는다) */}
-              {(attNoticeAll.today || attNoticeAll.next || nearestExam) && (
-                <div style={{ background: "#E8F1FD", border: "1px solid #C5DCF6", borderRadius: 14, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10 }}>
-                  {(attNoticeAll.today || attNoticeAll.next) ? (
-                    <button type="button" onClick={() => goTab("cal")} style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", padding: 0, textAlign: "left", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 8 }}>
-                      <span aria-hidden="true" style={{ fontSize: 18, flexShrink: 0 }}>📅</span>
-                      <span style={{ minWidth: 0 }}>
-                        <span style={{ display: "block", fontSize: 14.5, fontWeight: 800, color: "#0c447c", lineHeight: 1.35, wordBreak: "keep-all" }}>
-                          {attNoticeAll.today
-                            ? `오늘 ${fmtTime(attNoticeAll.today.time)}까지 등원${attTag(attNoticeAll.today)}`
-                            : `다음 수업 ${fmtAttDayParen(attNoticeAll.next.dateObj)} ${fmtTime(attNoticeAll.next.time)}${attTag(attNoticeAll.next)}`}
-                        </span>
-                        {attNoticeAll.today && attNoticeAll.next && (
-                          <span style={{ display: "block", fontSize: 11.5, fontWeight: 700, color: "#3a72b0", marginTop: 2 }}>다음 수업 · {fmtAttDayParen(attNoticeAll.next.dateObj)} {fmtTime(attNoticeAll.next.time)}{attTag(attNoticeAll.next)}</span>
-                        )}
-                      </span>
-                    </button>
-                  ) : <span style={{ flex: 1 }} />}
-                  {nearestExam && (
-                    <button type="button" onClick={() => goTab("examInfo")} title={`${nearestExam.name} ${nearestExam.ddayLabel}`}
-                      style={{ flexShrink: 0, maxWidth: "48%", border: "none", borderRadius: 9, background: "#D6E6FA", color: "#1C4F8A", padding: "7px 10px", minHeight: 34, fontSize: 12.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 5, minWidth: 0 }}>
-                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{nearestExam.name}</span>
-                      <span style={{ flexShrink: 0, color: nearestExam.ongoing ? "#B8860B" : "#1C4F8A" }}>{nearestExam.ddayLabel}</span>
-                    </button>
-                  )}
-                </div>
-              )}
+              {/* ① 등원 안내 + 가장 가까운 시험 D-Day (둘 다 없으면 이 칸 자체가 없다. 일정이 없으면 시간을 만들어 내지 않는다)
+                  [109차수 09-08 · 원장 결정] 칸 하나를 위·아래 둘로: 위 = 연한 파란 줄("다음 수업은 … 5시입니다" / "오늘 5시까지 등원입니다" + D-Day 알약),
+                  아래 = 하얀 바탕에 오늘부터 7일 칸(오늘이 늘 맨 왼쪽, 등원하는 날만 연한 파란 칸, 오늘은 "오늘" 글자 + 남색 테두리) + "달력 ›".
+                  이유: 캘린더 탭이 없어진 뒤 학생이 이 칸을 눌러야 달력이 열린다는 걸 모를 것 같아서 — 달력이 홈에 조금 보이게 하고 누르는 곳을 글자로 알린다.
+                  위 줄 글자와 아래 7일 줄이 각각 goTab("cal")(달력), D-Day 알약은 goTab("examInfo")(시험 정보) — 목적지는 108차수와 같다. */}
+              {(attNoticeAll.today || attNoticeAll.next || nearestExam) && (() => {
+                const hasAtt = !!(attNoticeAll.today || attNoticeAll.next);
+                const todayMonth = new Date().getMonth();
+                return (
+                  <div style={{ border: "1px solid #C5DCF6", borderRadius: 14, overflow: "hidden", background: "#fff" }}>
+                    <div style={{ background: "#E8F1FD", padding: hasAtt ? "9px 12px" : "10px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+                      {hasAtt ? (
+                        <button type="button" onClick={() => goTab("cal")} style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", padding: 0, textAlign: "left", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 7 }}>
+                          <span aria-hidden="true" style={{ fontSize: 16, flexShrink: 0 }}>📅</span>
+                          <span style={{ minWidth: 0 }}>
+                            {/* [109차수] "입니다"를 붙인 완성 문장(원장 결정). 보충 꼬리표 " (보충)"는 문장 뒤에 그대로 */}
+                            <span style={{ display: "block", fontSize: 13.5, fontWeight: 800, color: "#0c447c", lineHeight: 1.35, wordBreak: "keep-all" }}>
+                              {attNoticeAll.today
+                                ? `오늘 ${fmtTime(attNoticeAll.today.time)}까지 등원입니다${attTag(attNoticeAll.today)}`
+                                : `다음 수업은 ${fmtAttDayParen(attNoticeAll.next.dateObj)} ${fmtTime(attNoticeAll.next.time)}입니다${attTag(attNoticeAll.next)}`}
+                            </span>
+                            {attNoticeAll.today && attNoticeAll.next && (
+                              <span style={{ display: "block", fontSize: 11.5, fontWeight: 700, color: "#3a72b0", marginTop: 2 }}>다음 수업 · {fmtAttDayParen(attNoticeAll.next.dateObj)} {fmtTime(attNoticeAll.next.time)}{attTag(attNoticeAll.next)}</span>
+                            )}
+                          </span>
+                        </button>
+                      ) : <span style={{ flex: 1 }} />}
+                      {nearestExam && (
+                        <button type="button" onClick={() => goTab("examInfo")} title={`${nearestExam.name} ${nearestExam.ddayLabel}`}
+                          style={{ flexShrink: 0, maxWidth: "48%", border: "none", borderRadius: 8, background: "#D6E6FA", color: "#1C4F8A", padding: "5px 9px", minHeight: 30, fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 4, minWidth: 0 }}>
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{nearestExam.name}</span>
+                          <span style={{ flexShrink: 0, color: nearestExam.ongoing ? "#B8860B" : "#1C4F8A" }}>{nearestExam.ddayLabel}</span>
+                        </button>
+                      )}
+                    </div>
+                    {/* 아래: 오늘부터 7일. 줄 전체가 단추 하나(달력 열기). 시간표가 아예 없는 학생(hasAtt=false)에게는 이 줄이 없다 */}
+                    {hasAtt && attWeek.length > 0 && (
+                      <button type="button" onClick={() => goTab("cal")} aria-label="이번 주 수업 일정 — 누르면 달력이 열려요" data-testid="home-att-week"
+                        style={{ width: "100%", display: "flex", alignItems: "center", gap: 4, padding: "7px 10px 8px", border: "none", borderTop: "1px solid #DCE7F5", background: "#fff", cursor: "pointer", fontFamily: "inherit", textAlign: "center", boxSizing: "border-box" }}>
+                        {attWeek.map((d) => {
+                          const cls = !!d.entry;   // 그날 등원(정규·보충·방학 시간표) — 공휴일·등원 취소는 attEntryForDay가 이미 뺐다
+                          const otherMonth = d.dateObj.getMonth() !== todayMonth;   // 달이 바뀌면 "10/1"처럼 달을 같이 적는다
+                          return (
+                            <span key={d.date} data-att={cls ? "1" : "0"} data-today={d.isToday ? "1" : "0"}
+                              style={{ flex: 1, minWidth: 0, borderRadius: 8, padding: "3px 0 4px", lineHeight: 1.15, boxSizing: "border-box",
+                                background: cls ? "#E8F1FD" : "#fff", border: `1.5px solid ${d.isToday ? UI.navy : cls ? "#C5DCF6" : UI.line}` }}>
+                              <span style={{ display: "block", fontSize: 9.5, fontWeight: d.isToday ? 800 : 700, color: d.isToday ? UI.navy : cls ? "#3a72b0" : UI.sub, whiteSpace: "nowrap" }}>{d.isToday ? "오늘" : DK[d.dateObj.getDay()]}</span>
+                              <span style={{ display: "block", fontSize: 12.5, fontWeight: 800, color: cls ? "#0c447c" : UI.text, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{otherMonth ? `${d.dateObj.getMonth() + 1}/${d.dateObj.getDate()}` : d.dateObj.getDate()}</span>
+                            </span>
+                          );
+                        })}
+                        <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 800, color: UI.blue, paddingLeft: 5, whiteSpace: "nowrap" }}>달력 ›</span>
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* ② 오늘 할 일 + 지금 보여주는 숙제 날짜 (오늘이 아니면 지난/다음 표시 — 원장 결정 0813 유지) */}
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 2 }}>
@@ -6596,7 +6689,7 @@ export default function App() {
                       </span>
                       <span style={{ display: "block", fontSize: 12.5, marginTop: 2, color: hwTodo ? "#c0655c" : hwDone ? "#3e8f66" : UI.sub, fontWeight: (hwTodo || hwDone) ? 700 : 500, lineHeight: 1.4 }}>
                         {hwTodo ? `${hwRangeText} · 아직 안 봄`
-                          : hwDone ? `오늘 단어 숙제 통과 ✓ · ${vocaTitle}`
+                          : hwDone ? `${vocaPassLabel} ✓ · ${vocaTitle}`
                           : hwStaff ? `${hwRangeText} · 확인은 원장앱에서`
                           : vocaTitle}
                       </span>
@@ -6644,11 +6737,13 @@ export default function App() {
                 )}
               </div>
 
-              {/* ⑤ 공지·설문 / 시험 정보 / 학습 진도 — 서로 다른 목적지는 따로 한 줄씩(계획서 6절) */}
+              {/* ⑤ 공지·설문 / 시험 정보 / 수업 일정(109차수) / 학습 진도 — 서로 다른 목적지는 따로 한 줄씩(계획서 6절) */}
               <div style={card}>
                 {[
                   { key: "notices", icon: "📣", label: "공지", count: pinnedMessages.length, sub: unansweredSurveys.length ? `응답할 설문 ${unansweredSurveys.length}개` : (activeSurveys.length ? `설문 ${activeSurveys.length}개 응답 완료` : ""), tone: unansweredSurveys.length ? "warn" : "" },
                   { key: "examInfo", icon: "📋", label: "시험 정보", count: 0, sub: nearestExam ? `${nearestExam.name} ${nearestExam.ddayLabel}` : "다가오는 시험 없음", tone: "" },
+                  // [109차수 09-08 · 원장 결정] 달력 가는 길을 하나 더 — 더보기 → 수업 일정과 같은 곳. 설명 줄(calSub)도 더보기와 같은 글자
+                  { key: "cal", icon: "📅", label: "수업 일정", count: 0, sub: calSub, tone: "" },
                   ...((progressTree?.lanes || []).length ? [{ key: "progress", icon: "📈", label: "학습 진도", count: 0, sub: "교재별 진행 상황", tone: "" }] : []),
                 ].map((r, i) => (
                   <button key={r.key} type="button" onClick={() => goTab(r.key)}
@@ -6801,7 +6896,7 @@ export default function App() {
               {hwPassed && (
                 <div role="status" style={{ display: "flex", alignItems: "center", gap: 8, background: UI.okBg, border: "1px solid #BFE5CE", borderRadius: 12, padding: "11px 14px", marginBottom: 12, fontSize: 14, fontWeight: 800, color: UI.okFg }}>
                   <span aria-hidden="true" style={{ width: 20, height: 20, borderRadius: "50%", background: UI.okFg, color: "#fff", fontSize: 12, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>✓</span>
-                  {isToday(activeDate) ? "오늘 단어 숙제 통과" : `${fmtDateKR(activeDate)} 단어 숙제 통과`}
+                  {vocaPassLabel}
                 </div>
               )}
               {/* [107차수] 마플보카가 학생앱 안에서는 같은 배경색(새 디자인)을 쓰므로 흰 테두리 상자를 없애고 그대로 이어 붙인다 */}
@@ -6850,10 +6945,11 @@ export default function App() {
           }
           const visibleVideos = !hasMultipleBooks ? studentVideos : activeBook === ALL_KEY ? studentVideos : (videoGroups[activeBook] || []);
           // ─── 대표 강의 = 홈과 같은 규칙(buildVideoPickerV2: 오늘 숙제 "수강" 강의 → 없으면 최근 본 강의) ───
-          const featured = picker.main ? picker.main.video : null;
-          const featuredKind = picker.main ? picker.main.kind : "";
-          const featuredOpen = !!featured && viewingVideo?.id === featured.id;
+          // [108차수] 대표 강의 = 탭에 들어올 때 고정한 영상(videosFeaturedId). 시청 기록이 바뀌어도 여기서는 다시 계산하지 않는다.
           const taskIds = collectTaskVideoIds(allTaskItems, studentVideos);   // "오늘 숙제" 배지는 실제 매칭에만
+          const featured = videosFeaturedId ? (studentVideos.find(v => v.id === videosFeaturedId) || null) : null;
+          const featuredKind = featured ? (taskIds.has(featured.id) ? "task" : "resume") : "";
+          const featuredOpen = !!featured && viewingVideo?.id === featured.id;
           const playerFor = (v) => (
             v.type === "playlist" && v.playlistUrl ? (
               <div style={{ borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", background: "#000" }}><TrackedYoutubePlayer video={v} /></div>
@@ -8080,7 +8176,11 @@ function StepSection({ step, displayNum, stampDate, isChecked, isFailed, getFail
   const { label, badges = [], notice, items } = step;
   const [open, setOpen] = useState(true);
   const hasItems = items.length > 0;
-  const pending = hasItems ? items.filter(it => !(isFailed && isFailed(it)) && !isChecked(it)).length : 0;
+  // [108차수 · 검토 2번] 확인 전·재시·완료를 따로 센다. 재시가 하나라도 있으면 "확인 완료"라고 쓰지 않는다.
+  const failN = hasItems ? items.filter(it => isFailed && isFailed(it)).length : 0;
+  const doneN = hasItems ? items.filter(it => !(isFailed && isFailed(it)) && isChecked(it)).length : 0;
+  const pending = hasItems ? items.length - failN - doneN : 0;
+  const foldSummary = [pending > 0 ? `확인할 항목 ${pending}개` : "", failN > 0 ? `재시 ${failN}개` : ""].filter(Boolean).join(" · ") || `${items.length}개 모두 확인 완료`;
   const headId = `step-head-${step.key}`;
   const bodyId = `step-body-${step.key}`;
   return (
@@ -8098,7 +8198,7 @@ function StepSection({ step, displayNum, stampDate, isChecked, isFailed, getFail
         </span>
         <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
           {!hasItems && <span style={{ fontSize: 13, color: UI.dim, fontWeight: 600 }}>오늘 없음</span>}
-          {hasItems && !open && <span style={{ fontSize: 12.5, color: UI.sub, fontWeight: 700 }}>{pending > 0 ? `확인할 항목 ${pending}개` : `항목 ${items.length}개 · 확인 완료`}</span>}
+          {hasItems && !open && <span style={{ fontSize: 12.5, color: UI.sub, fontWeight: 700 }}>{foldSummary}</span>}
           <span aria-hidden="true" style={{ color: hasItems ? UI.sub : "#C9D2E0", fontSize: 12, transform: hasItems && open ? "rotate(180deg)" : "none", transition: "transform .15s" }}>▼</span>
         </span>
       </button>
