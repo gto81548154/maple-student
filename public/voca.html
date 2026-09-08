@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>마플보카 — 보카바이블 A·B</title>
+<title>마플보카</title>
 <style>
 :root{
   --paper:#F3F2F2; --card:#FFFFFF; --ink:#201E1D; --ink-soft:#6E6A66;
@@ -11,6 +11,118 @@
   --teal:#1E7A4E; --teal-soft:#E9F1EC; --gold:#EC3013; --gold-soft:#FCE9E4;
   --focus:#EC3013; --on-fill:#fff;
 }
+
+/* ═══ [107차수 09-08 디자인 개편] 학생앱 안(iframe) 새 디자인 = html.stu ═══
+ * 학생앱이 iframe으로 열었고 선별 탭(?pick=1)이 아닐 때만 켜진다(아래 head 스크립트).
+ * 단독 실행·선별 탭은 이 블록의 영향을 전혀 받지 않는다. 동작(JS)은 같고 모양만 남색·파랑·흰 카드·둥근 모서리로 바뀐다.
+ * 블랙홀(html.bh)은 아래에 있어 색을 덮어쓴다(어두운 모드 유지). */
+html.stu{
+  --paper:#F5F6FA; --card:#FFFFFF; --ink:#232B3B; --ink-soft:#647084;
+  --line:#E4E8EF; --crimson:#2466D9; --crimson-soft:#EEF3FC;
+  --teal:#1B8A5A; --teal-soft:#E8F6EE; --gold:#D99A00; --gold-soft:#FFF3D6;
+  --focus:#2466D9; --on-fill:#fff; --navy:#182848;
+}
+html.stu body{font-family:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR","Segoe UI",sans-serif}
+html.stu .wrap{padding:0 16px 40px}
+html.stu header{border-bottom:none; background:var(--paper); padding:14px 0 6px; margin-bottom:12px}
+html.stu .brand{font-size:19px; color:var(--ink)}
+html.stu .brand small{font-size:12px}
+html.stu .hbtn{border:1.5px solid var(--line); border-radius:10px; padding:9px 12px; min-height:40px; font-size:13px; background:var(--card); color:var(--ink)}
+html.stu #btnSet{background:var(--card); color:var(--ink-soft); border-color:var(--line); width:40px; padding:0; font-size:0; line-height:0}
+html.stu #btnSet::before{content:"⚙"; font-size:20px; line-height:40px}
+html.stu.vhome #btnShelf{display:none !important}
+/* 책 카드 + 진도 */
+html.stu #homeCard{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px; margin-bottom:18px}
+html.stu #bookCard{display:flex; gap:14px; align-items:stretch}
+html.stu .bkcover{flex:none; width:96px; min-height:126px; border-radius:10px; background:linear-gradient(160deg,#2C6FD9,#1B4FB0); color:#fff; padding:12px 10px; display:flex; flex-direction:column; justify-content:space-between; box-shadow:0 2px 8px rgba(24,40,72,.18)}
+html.stu .bkcover .bkct{font-size:13.5px; font-weight:800; line-height:1.35; word-break:keep-all; overflow-wrap:anywhere}
+html.stu .bkcover .bkmp{font-size:10px; font-weight:800; letter-spacing:.5px; opacity:.8; text-align:right}
+html.stu .bkmain{flex:1; min-width:0; display:flex; flex-direction:column}
+html.stu .bkrow{display:flex; align-items:flex-start; gap:8px}
+html.stu .bktitle{flex:1; min-width:0; font-size:18px; font-weight:800; letter-spacing:-.02em; line-height:1.3; word-break:keep-all; overflow-wrap:anywhere}
+html.stu .bkchange{flex:none; border:1.5px solid var(--line); border-radius:10px; padding:8px 11px; min-height:38px; font-size:13px; font-weight:700; color:var(--ink); background:var(--card)}
+html.stu .bksub{font-size:13px; color:var(--ink-soft); margin-top:4px}
+html.stu #homeCard .stat{border:none; border-top:1px solid var(--line); border-radius:0; padding:14px 0 0; margin:14px 0 0; gap:10px; flex-wrap:wrap; align-items:flex-start}
+html.stu .stat .nums{order:1; flex:1 1 60%}
+html.stu .stampwrap{order:2; flex-direction:column; align-items:flex-end; gap:8px}
+html.stu .statlabel{display:block; font-size:13.5px; font-weight:700; color:var(--ink); margin-bottom:6px}
+html.stu .stat .big{font-size:30px}
+html.stu .stat .big small{font-size:15px; color:var(--ink-soft); font-weight:600}
+html.stu .stat .sub{font-size:13px}
+html.stu .stamp{width:auto; height:auto; transform:none; border:none; border-radius:9px; background:var(--crimson-soft); color:var(--crimson); padding:7px 12px; font-size:14px; flex-direction:row; gap:1px}
+html.stu .stamp b{font-size:16px}
+html.stu .crowns{font-size:13px; letter-spacing:0; color:var(--ink); font-weight:700; min-height:0}
+html.stu .crowns:empty{display:none}
+html.stu .bhbtn{order:3; border-radius:10px; border:1.5px solid var(--line)}
+html.stu .bar{border-radius:4px; height:8px} html.stu .bar i{border-radius:4px; background:var(--crimson)}
+html.stu .stat .bar{width:100%; margin-top:10px}
+html.stu .barpct{font-size:12.5px; color:var(--ink-soft); text-align:right; margin-top:4px; font-variant-numeric:tabular-nums}
+/* 번호 달린 소제목 */
+html.stu .screen > .sechead{border-top:none; padding-top:0; margin:22px 0 10px; font-size:16px; font-weight:800; display:flex; align-items:center; gap:8px}
+html.stu .screen > .sechead:first-child{margin-top:0}
+html.stu .sechead.stepnum::before{content:attr(data-n); width:24px; height:24px; border-radius:50%; background:var(--crimson); color:#fff; font-size:13px; font-weight:800; display:inline-flex; align-items:center; justify-content:center; flex:none}
+html.stu #secProg{display:none}
+/* 범위 필터 */
+html.stu .modes{gap:8px; margin-bottom:12px}
+html.stu .mode{border:1.5px solid var(--line); border-radius:10px; min-height:48px; padding:9px 2px; font-size:14px; background:var(--card); color:var(--ink-soft)}
+html.stu .mode .cnt{font-size:11px; margin-top:2px}
+html.stu .mode.on{background:var(--navy); border-color:var(--navy); color:#fff}
+html.stu .mode.on .cnt{color:rgba(255,255,255,.75)}
+html.stu .exlink{font-size:12.5px; margin:0 2px 10px}
+html.stu .pickbtn{border-radius:12px}
+html.stu #btnAll, html.stu #rangePick{display:none !important}
+html.stu #lecHead{font-size:14px; font-weight:700; color:var(--ink-soft); margin:0 2px 8px}
+/* 단원 목록 = 세로 줄 + 오른쪽 체크박스 */
+html.stu .lecgrid{display:block; border:1px solid var(--line); border-radius:14px; background:var(--card); overflow:hidden}
+html.stu .lecrow{display:flex; align-items:center; gap:10px; padding:11px 14px; min-height:52px; border-top:1px solid #EEF1F5; cursor:pointer; user-select:none; background:var(--card)}
+html.stu .lecrow:first-child{border-top:none}
+html.stu .lecrow .t{font-size:16px; font-weight:800; flex:none; color:var(--ink)}
+html.stu .lecrow .st{font-size:13px; font-weight:700; color:var(--ink-soft); flex:none}
+html.stu .lecrow .st.now{color:var(--crimson)} html.stu .lecrow .st.done{color:var(--teal)}
+html.stu .lecrow .n{font-size:12px; color:var(--ink-soft); margin-left:auto; flex:none}
+html.stu .lecrow .cb{flex:none; width:24px; height:24px; border-radius:6px; border:2px solid #C9D2E0; background:var(--card); display:flex; align-items:center; justify-content:center; margin-left:8px}
+html.stu .lecrow.on .cb{background:var(--crimson); border-color:var(--crimson)}
+html.stu .lecrow.on .cb::after{content:"✓"; color:#fff; font-size:15px; font-weight:800; line-height:1}
+html.stu .lecrow.disabled{opacity:.45; cursor:default}
+html.stu .lecrow.disabled .cb{visibility:hidden}
+html.stu .lecrow.hide{display:none}
+html.stu .lecmore{display:block; width:100%; border:1px solid var(--line); border-top:none; border-radius:0 0 14px 14px; background:var(--card); color:var(--crimson); font-size:14px; font-weight:700; min-height:46px; margin-top:-14px; padding-top:14px}
+html.stu .lecgrid.hasmore{border-radius:14px 14px 0 0}
+/* 학습 방식 2×2 */
+html.stu #kindSec{display:block}
+html.stu .kindtogs{margin-left:auto; display:flex; gap:6px}
+html.stu .kindtogs .shufbtn{border-radius:8px; min-height:32px; padding:5px 10px; font-size:12px; border-width:1.5px}
+html.stu .kindtogs .shufbtn.on{background:var(--navy); border-color:var(--navy); color:#fff}
+html.stu .kindgrid{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+html.stu .kind{position:relative; text-align:left; background:var(--card); border:1.5px solid var(--line); border-radius:14px; padding:14px 12px 12px; min-height:118px; display:flex; flex-direction:column; align-items:flex-start; gap:3px; cursor:pointer}
+html.stu .kind .ic{color:var(--navy); margin-bottom:4px} html.stu .kind .ic svg{width:26px; height:26px; display:block}
+html.stu .kind .tt{font-size:16px; font-weight:800; color:var(--ink)}
+html.stu .kind .dd{font-size:12px; color:var(--ink-soft); line-height:1.4}
+html.stu .kind .bd{margin-top:auto; padding-top:8px; font-size:11px; font-weight:700}
+html.stu .kind .bd span{display:inline-block; padding:3px 8px; border-radius:7px; background:var(--paper); color:var(--ink-soft)}
+html.stu .kind .bd.go span{background:var(--crimson-soft); color:var(--crimson)}
+html.stu .kind.on{border-color:var(--crimson); box-shadow:inset 0 0 0 1px var(--crimson)}
+html.stu .kind.on::after{content:"✓"; position:absolute; top:10px; right:10px; width:22px; height:22px; border-radius:50%; background:var(--crimson); color:#fff; font-size:13px; font-weight:800; display:flex; align-items:center; justify-content:center}
+html.stu .kind.locked{border-style:dashed; cursor:default; background:var(--paper)}
+html.stu .kind.locked .tt, html.stu .kind.locked .ic, html.stu .kind.locked .dd{opacity:.55}
+html.stu .kind.locked .bd span{background:transparent; color:var(--ink-soft)}
+html.stu .startbar{margin-top:12px}
+html.stu #btnStart{width:100%; min-height:54px; border-radius:12px; background:var(--crimson); color:#fff; font-size:16px; font-weight:800; text-align:center; padding:14px 16px; line-height:1.3}
+html.stu #btnStart:active{background:#1B4FB0}
+html.stu #btnStart:disabled{background:#C9D2E0; color:#fff; cursor:default; opacity:1}
+html.stu .startnote{font-size:12.5px; color:var(--ink-soft); text-align:center; margin-top:8px; min-height:1em}
+/* 나머지 화면·모달·책장: 모서리와 색만 */
+html.stu .sheet{border-top:none; border-radius:16px 16px 0 0}
+html.stu .closebtn, html.stu .allbtn, html.stu .sumbtns button, html.stu .ansrow .go, html.stu .ansrow input, html.stu .card, html.stu .sumcard,
+html.stu .mcop, html.stu .shufbtn, html.stu .setrow button, html.stu .pickrow, html.stu .book, html.stu .exundo, html.stu .pkrow, html.stu .pksave button,
+html.stu .confbtns button, html.stu .top .quit, html.stu .lec, html.stu .leccheck, html.stu .pickbtn{border-radius:12px}
+html.stu .toggle{border-radius:13px} html.stu .toggle::after{border-radius:50%}
+html.stu .mcbadge, html.stu .pickrow .badge, html.stu .lec .pk, html.stu .pkbar .cnt{border-radius:7px}
+html.stu .stamp-sm{width:auto; height:auto; padding:5px 9px; font-size:12px}
+html.stu .allbtn:active, html.stu .ansrow .go:active, html.stu .sumbtns .re:active{background:#1B4FB0}
+html.stu .book{border-radius:14px}
+html.stu .shelfnote{border-top:none}
+
 /* [08-06] 블랙홀 모드 — 색 변수만 갈아끼워 화면 전체를 어둡게 한다.
  * 일반 모드 색은 한 곳도 건드리지 않는다(위 :root 그대로). */
 html.bh{
@@ -415,6 +527,10 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
 .lec .pk.no{background:transparent; color:var(--ink-soft); border:1px dashed var(--ink-soft)}
 .lec{position:relative}
 </style>
+<script>
+/* [107차수 09-08] 학생앱 안(iframe)에서 열렸고 선별 탭(?pick=1)이 아니면 새 디자인(stu). 단독 실행·선별 탭은 예전 모습 그대로. */
+try{ if (window.parent !== window && new URLSearchParams(location.search).get('pick') !== '1') document.documentElement.classList.add('stu'); }catch(e){}
+</script>
 </head>
 <body>
 <header><div class="wrap" style="padding-bottom:0">
@@ -438,20 +554,32 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
 
   <!-- 홈 -->
   <section class="screen" id="scrHome">
-    <div class="sechead">내 진도</div>
-    <div class="stat">
-      <div class="stampwrap">
-        <div class="stamp" id="stampHome"><b>1</b>회독</div>
-        <div class="crowns" id="crownHome"></div>
+    <!-- [107차수] 학생앱 안(stu)에서는 책 카드 + 진도가 한 카드(#homeCard). 단독 실행에서는 #bookCard가 안 보이고 예전과 같다 -->
+    <div id="homeCard">
+      <div id="bookCard" style="display:none">
+        <div class="bkcover" aria-hidden="true"><span class="bkct" id="bkCoverTitle"></span><span class="bkmp">MP</span></div>
+        <div class="bkmain">
+          <div class="bkrow"><div class="bktitle" id="bkTitle">단어장</div><button class="bkchange" id="btnChangeBook" type="button">책 바꾸기</button></div>
+          <div class="bksub" id="bkSub">내 단어장</div>
+        </div>
       </div>
-      <div class="nums">
-        <div class="big" id="statMain">0 / 1100</div>
-        <div class="sub" id="statSub">이번 회독에서 맞힌 단어</div>
-        <div class="bar"><i id="statBar" style="width:0%"></i></div>
+      <div class="sechead" id="secProg">내 진도</div>
+      <div class="stat">
+        <div class="stampwrap">
+          <div class="stamp" id="stampHome"><b>1</b>회독</div>
+          <div class="crowns" id="crownHome"></div>
+        </div>
+        <div class="nums">
+          <span class="statlabel" style="display:none">내 진도</span>
+          <div class="big" id="statMain">0 / 1100</div>
+          <div class="sub" id="statSub">이번 회독에서 맞힌 단어</div>
+          <div class="bar"><i id="statBar" style="width:0%"></i></div>
+          <div class="barpct" id="statPct" style="display:none"></div>
+        </div>
+        <button class="bhbtn" id="btnBH" type="button" aria-pressed="false" style="display:none">블랙홀</button>
       </div>
-      <button class="bhbtn" id="btnBH" type="button" aria-pressed="false" style="display:none">블랙홀</button>
     </div>
-    <div class="sechead">학습 범위 고르기</div>
+    <div class="sechead stepnum" data-n="1">학습 범위 고르기</div>
     <div class="modes" id="modes">
       <button class="mode on" data-m="all">전체<span class="cnt"></span></button>
       <button class="mode" data-m="new">미학습<span class="cnt"></span></button>
@@ -462,8 +590,28 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
     <button class="pickbtn" id="btnPick" type="button">단어 선별하기<small>유닛마다 숙제로 낼 어려운 단어 10개를 고릅니다</small></button>
     <button class="allbtn" id="btnAll" disabled>선택 범위에서 학습 시작</button>
     <div class="rangeinfo" id="rangePick">아래 단원 목록에서 체크하세요</div>
-    <div class="sechead">단원 목록 — 체크하면 범위에 담겨요</div>
+    <div class="sechead" id="lecHead">단원 목록 — 체크하면 범위에 담겨요</div>
     <div class="lecgrid" id="lecGrid"></div>
+    <button class="lecmore" id="lecMore" type="button" style="display:none">전체 보기</button>
+    <!-- [107차수] 학습 방식 2×2 + 시작 단추 — 학생앱 안(stu)에서만 보인다. 단독 실행은 예전 "어떻게 공부할까요?" 창(#mMode) 그대로 -->
+    <div id="kindSec" style="display:none">
+      <div class="sechead stepnum" data-n="2">학습 방식 고르기
+        <span class="kindtogs">
+          <button class="shufbtn" id="tg20b" type="button" aria-pressed="false">20개씩</button>
+          <button class="shufbtn on" id="tgShufb" type="button" aria-pressed="true">랜덤</button>
+        </span>
+      </div>
+      <div class="kindgrid" id="kindGrid" role="radiogroup" aria-label="학습 방식">
+        <button class="kind" data-k="card" type="button" role="radio" aria-checked="false"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="13" height="15"></rect><path d="M20 8v13H7"></path></svg></span><span class="tt">카드</span><span class="dd">넘기면서 암기</span><span class="bd"><span>공부용</span></span></button>
+        <button class="kind" data-k="blink" type="button" role="radio" aria-checked="false"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></span><span class="tt">블링크</span><span class="dd">단어·뜻 자동 재생</span><span class="bd"><span>공부용</span></span></button>
+        <button class="kind" data-k="mc" type="button" role="radio" aria-checked="false"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6l2 2 3.5-3.5"></path><path d="M3 16l2 2 3.5-3.5"></path><line x1="13" y1="7" x2="21" y2="7"></line><line x1="13" y1="17" x2="21" y2="17"></line></svg></span><span class="tt">객관식</span><span class="dd" id="kindMcDesc">보기에서 뜻 고르기</span><span class="bd go" id="kindMcBadge"><span>진도 반영</span></span></button>
+        <button class="kind" data-k="test" type="button" role="radio" aria-checked="false"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path></svg></span><span class="tt">시험</span><span class="dd">한글 뜻 직접 쓰기</span><span class="bd go"><span>진도 반영</span></span></button>
+      </div>
+      <div class="startbar">
+        <button id="btnStart" type="button" disabled>단원을 골라 주세요</button>
+        <div class="startnote" id="startNote"></div>
+      </div>
+    </div>
   </section>
 
   <!-- [숙제 2차수] 단어 선별하기 (마스터 전용) -->
@@ -1314,6 +1462,7 @@ async function openBook(id){
   try { list = await loadBookData(b); }
   catch(e){ toast('단어 데이터를 불러오지 못했어요 — 인터넷 연결과 주소를 확인하세요'); return; }
   BOOK = b;
+  lecListExpanded = false;                          // [107차수] 새 책은 단원 목록을 접힌 상태(10칸)로
   try{ localStorage.setItem('maplevoca_lastbook', b.id); }catch(e){}   // [0812] 홈 카드 "바로 열기"용 — 이 기기에서 마지막으로 연 책
   BOOKST = (ROOT.books[b.id] ||= newBookState());
   ALL = list || [];
@@ -1500,6 +1649,8 @@ function show(name){
   if (name !== 'blink') stopBlink();               // 블링크 화면을 떠나면 자동 넘김 정지
   Object.values(scr).forEach(s => s.classList.remove('show'));
   scr[name].classList.add('show');
+  document.documentElement.classList.toggle('vhome', name === 'home');   // [107차수] 홈에서는 머리글 [책장] 대신 책 카드의 [책 바꾸기]
+  postHwState();                                   // [97차수 재삽입] 화면이 바뀔 때마다 "숙제 TEST 시험 중/아님"을 부모에게
   const onShelf = name === 'shelf';
   if (!onShelf) navArm();                          // 책장이 아니면 뒤로가기 계단 장전
   $('#btnShelf').style.display = onShelf ? 'none' : '';
@@ -1562,25 +1713,138 @@ function renderHome(){
   const totalSel = filterWords(DATA).length;
 
   const g = $('#lecGrid'); g.innerHTML = '';
-  for (const lec of Object.keys(byLec).map(Number).sort((a,b)=>a-b)){
-    const list = byLec[lec];
-    const ok = list.filter(w => S.words[w.id]?.r?.[S.round] === 1).length;
-    const ng = list.filter(w => S.words[w.id]?.r?.[S.round] === 0).length;
-    const sel = filterWords(list).length;
-    if (!sel) selLecs.delete(lec);   // 대상 단어가 없는 강은 선택에서 제외
-    const b = document.createElement('div');
-    b.className = 'lec' + (ok === list.length ? ' done' : '') + (sel ? '' : ' disabled');
-    b.innerHTML = `<div class="leccheck${selLecs.has(lec) ? ' on' : ''}" title="시험 범위에 포함"></div>
-      <div class="t">${lecLabel(lec)}</div>
-      <div class="n">${sel}개 대상</div>
-      <div class="bar"><i style="width:${ok/list.length*100}%"></i><i class="w" style="width:${ng/list.length*100}%"></i></div>`;
-    if (sel){
-      b.onclick = () => openModePicker(filterWords(list), lecFull(lec));
-      b.querySelector('.leccheck').onclick = (e) => { e.stopPropagation(); toggleLec(lec); };
+  const lecKeys = Object.keys(byLec).map(Number).sort((a,b)=>a-b);
+  /* [107차수] 학생앱 안(stu): 책 카드·퍼센트·단원 줄·방식 카드. 단독 실행은 아래 else의 예전 타일 그대로 */
+  if (IS_STU){
+    if (BOOK){
+      $('#bkTitle').textContent = BOOK.title || '단어장';
+      $('#bkCoverTitle').textContent = BOOK.title || '';
+      $('#bkSub').textContent = BOOK.ns ? '학교 시험 단어' : '내 단어장';
     }
-    g.appendChild(b);
+    $('#statPct').textContent = DATA.length ? (correct / DATA.length * 100).toFixed(0) + '%' : '';
+    $('#crownHome').textContent = S.crowns > 0 ? `♛ 왕관 ${S.crowns}개` : '';
+    const uwName = BOOK ? (BOOK.ns ? '과' : (BOOK.unit === '강' ? '강' : BOOK.unit)) : '단원';
+    $('#lecHead').textContent = `공부할 ${uwName}를 선택하세요 — 누르면 범위에 담겨요`;
+    const LIMIT = 10;                                   // 처음엔 10칸 + [전체 보기] (원장 결정 09-08). 체크한 칸은 항상 보인다
+    let hidden = 0;
+    lecKeys.forEach((lec, i) => {
+      const list = byLec[lec];
+      const ok = list.filter(w => S.words[w.id]?.r?.[S.round] === 1).length;
+      const ng = list.filter(w => S.words[w.id]?.r?.[S.round] === 0).length;
+      const sel = filterWords(list).length;
+      if (!sel) selLecs.delete(lec);
+      const on = selLecs.has(lec);
+      const b = document.createElement('div');
+      const stCls = ok === list.length ? 'done' : (ok + ng > 0 ? 'now' : '');
+      const stTxt = ok === list.length ? '완료 ✓' : (ok + ng > 0 ? '학습 중' : '미학습');
+      const hide = !lecListExpanded && i >= LIMIT && !on;
+      if (hide) hidden++;
+      b.className = 'lecrow' + (on ? ' on' : '') + (sel ? '' : ' disabled') + (hide ? ' hide' : '');
+      b.setAttribute('role', 'checkbox'); b.setAttribute('aria-checked', on ? 'true' : 'false'); b.tabIndex = sel ? 0 : -1;
+      b.innerHTML = `<span class="t">${lecLabel(lec)}</span><span class="st ${stCls}">${stTxt}</span><span class="n">${sel}개 대상</span><span class="cb" aria-hidden="true"></span>`;
+      if (sel){
+        b.onclick = () => toggleLec(lec);
+        b.onkeydown = (e) => { if (e.key === ' ' || e.key === 'Enter'){ e.preventDefault(); toggleLec(lec); } };
+      }
+      g.appendChild(b);
+    });
+    const more = $('#lecMore');
+    const showMore = lecKeys.length > LIMIT;
+    more.style.display = showMore ? 'block' : 'none';
+    g.classList.toggle('hasmore', showMore);
+    more.textContent = lecListExpanded ? '접기 ▴' : `전체 ${lecKeys.length}개 보기 ▾`;
+    more.setAttribute('aria-expanded', lecListExpanded ? 'true' : 'false');
+    paintKinds();
+  } else {
+    for (const lec of lecKeys){
+      const list = byLec[lec];
+      const ok = list.filter(w => S.words[w.id]?.r?.[S.round] === 1).length;
+      const ng = list.filter(w => S.words[w.id]?.r?.[S.round] === 0).length;
+      const sel = filterWords(list).length;
+      if (!sel) selLecs.delete(lec);   // 대상 단어가 없는 강은 선택에서 제외
+      const b = document.createElement('div');
+      b.className = 'lec' + (ok === list.length ? ' done' : '') + (sel ? '' : ' disabled');
+      b.innerHTML = `<div class="leccheck${selLecs.has(lec) ? ' on' : ''}" title="시험 범위에 포함"></div>
+        <div class="t">${lecLabel(lec)}</div>
+        <div class="n">${sel}개 대상</div>
+        <div class="bar"><i style="width:${ok/list.length*100}%"></i><i class="w" style="width:${ng/list.length*100}%"></i></div>`;
+      if (sel){
+        b.onclick = () => openModePicker(filterWords(list), lecFull(lec));
+        b.querySelector('.leccheck').onclick = (e) => { e.stopPropagation(); toggleLec(lec); };
+      }
+      g.appendChild(b);
+    }
   }
   if (window.updateRangeBtn) updateRangeBtn();
+}
+/* ───────── [107차수] 학생앱 안 새 홈 — 학습 방식 카드·시작 단추 ─────────
+ * 방식 카드를 눌러도 시작하지 않는다(고르기만). 시작은 맨 아래 단추 한 번 — 그때의 필터·체크 범위(rangeList)로 시작한다.
+ * 객관식은 원본 규칙 그대로 1회독에서만(S.round === 1). 숙제 TEST(객관식 클리어)는 다른 길(startHwSession)이라 이 잠금과 무관. */
+const IS_STU = document.documentElement.classList.contains('stu');
+const KIND_NAME = { card:'카드', blink:'블링크', mc:'객관식', test:'시험' };
+let kindSel = 'test';
+try{ const k = localStorage.getItem('maplevoca_lastkind'); if (KIND_NAME[k]) kindSel = k; }catch(e){}
+let lecListExpanded = false;
+let startLock = false;
+function paintKinds(){
+  if (!IS_STU || !S) return;
+  const mcOk = S.round === 1;
+  if (kindSel === 'mc' && !mcOk) kindSel = 'test';
+  $('#kindMcDesc').textContent = mcOk ? '보기에서 뜻 고르기' : '1회독에서만 이용 가능';
+  $('#kindMcBadge').innerHTML = mcOk ? '<span>진도 반영</span>' : '<span>🔒 잠김</span>';
+  document.querySelectorAll('#kindGrid .kind').forEach(b => {
+    const k = b.dataset.k;
+    const locked = k === 'mc' && !mcOk;
+    b.classList.toggle('locked', locked);
+    b.classList.toggle('on', k === kindSel);
+    b.setAttribute('aria-checked', k === kindSel ? 'true' : 'false');
+    b.setAttribute('aria-disabled', locked ? 'true' : 'false');
+  });
+  paintShuf(); paint20();
+}
+function compactLecRange(picks){
+  if (!picks.length) return '';
+  const runs = []; let a = picks[0], b = picks[0];
+  for (let i = 1; i < picks.length; i++){ if (picks[i] === b + 1){ b = picks[i]; } else { runs.push([a, b]); a = b = picks[i]; } }
+  runs.push([a, b]);
+  const txt = runs.map(([x, y]) => x === y ? String(x) : `${x}–${y}`).join('·');
+  return runs.length > 4 ? `${picks.length}개` : txt;
+}
+function updateStartBtn(){
+  if (!IS_STU) return;
+  const btn = $('#btnStart'); if (!btn) return;
+  const picks = [...selLecs].sort((a, b) => a - b);
+  const n = rangeList().length;
+  const uw = BOOK ? (BOOK.ns ? '' : (BOOK.unit === '강' ? '' : BOOK.unit + ' ')) : '';
+  if (!picks.length){ btn.disabled = true; btn.textContent = '범위를 골라 주세요'; $('#startNote').textContent = '위 목록에서 공부할 범위를 누르세요'; return; }
+  if (!n){ btn.disabled = true; btn.textContent = '고른 범위에 대상 단어가 없어요'; $('#startNote').textContent = `${FILTER_NAME[mode] || ''}필터에 맞는 단어가 없어요 — 범위 필터를 바꿔 보세요`; return; }
+  btn.disabled = false;
+  const rangeTxt = BOOK && BOOK.ns ? `${picks.map(lecLabel).slice(0, 2).join('·')}${picks.length > 2 ? ` 외 ${picks.length - 2}` : ''}` : `${uw}${compactLecRange(picks)}`;
+  btn.textContent = `${rangeTxt} · ${KIND_NAME[kindSel]} 시작`;
+  $('#startNote').textContent = `${FILTER_NAME[mode] || ''}단어 ${n}개${pick20 ? ` · ${PICK_N}개씩` : ''}${shufStudy ? ' · 랜덤' : ' · 책 순서'}`;
+}
+document.querySelectorAll('#kindGrid .kind').forEach(b => {
+  b.onclick = () => {
+    if (b.classList.contains('locked')){ toast('객관식은 1회독에서만 쓸 수 있어요'); return; }
+    kindSel = b.dataset.k;
+    try{ localStorage.setItem('maplevoca_lastkind', kindSel); }catch(e){}
+    paintKinds(); updateStartBtn();
+  };
+});
+$('#btnStart').onclick = () => {
+  if (startLock) return;                              // 빠른 연속 입력으로 두 번 시작되지 않게
+  const l = rangeList();                              // 누르는 순간의 필터·체크 범위로(오래된 목록 사용 안 함)
+  if (!l.length){ updateStartBtn(); return; }
+  startLock = true; setTimeout(() => { startLock = false; }, 800);
+  startSession(l, { kind: kindSel });
+};
+$('#lecMore').onclick = () => { lecListExpanded = !lecListExpanded; renderHome(); };
+$('#btnChangeBook').onclick = () => goShelf();
+if (IS_STU){
+  $('#bookCard').style.display = '';
+  $('#kindSec').style.display = '';
+  document.querySelector('.statlabel').style.display = '';
+  $('#statPct').style.display = '';
 }
 document.querySelectorAll('.mode').forEach(b =>
   b.onclick = () => { mode = b.dataset.m; renderHome(); });
@@ -1610,6 +1874,7 @@ function updateRangeBtn(){
   $('#rangePick').textContent = picks.length ? `${uw} ${picks.length}개 · 단어 ${n}개 담겼어요` : '아래 단원 목록에서 체크하세요';
   $('#btnAll').textContent = n ? `선택 범위에서 학습 시작 (${n}개)` : '선택 범위에서 학습 시작';
   $('#btnAll').disabled = !n;
+  updateStartBtn();                                   // [107차수] 학생앱 안 새 홈의 시작 단추
 }
 
 /* ───────── 학습 세션 ───────── */
@@ -1899,29 +2164,29 @@ function openModePicker(list, label){
   openModal('#mMode');
 }
 function paintShuf(){
-  const b = $('#tgShuf');
-  if (!b) return;
-  b.classList.toggle('on', shufStudy);
-  b.setAttribute('aria-pressed', shufStudy ? 'true' : 'false');
+  ['#tgShuf', '#tgShufb'].forEach(id => { const b = $(id); if (!b) return; b.classList.toggle('on', shufStudy); b.setAttribute('aria-pressed', shufStudy ? 'true' : 'false'); });
 }
 function paint20(){
-  const b = $('#tg20');
-  if (!b) return;
-  b.classList.toggle('on', pick20);
-  b.setAttribute('aria-pressed', pick20 ? 'true' : 'false');
+  ['#tg20', '#tg20b'].forEach(id => { const b = $(id); if (!b) return; b.classList.toggle('on', pick20); b.setAttribute('aria-pressed', pick20 ? 'true' : 'false'); });
 }
-$('#tg20').onclick = () => {
+const toggle20 = () => {
   pick20 = !pick20;
   paint20();
   try{ localStorage.setItem('maplevoca_pick20', pick20 ? '1' : '0'); }catch(e){}
   toast(pick20 ? `한 번에 ${PICK_N}개씩만 나와요 — 본 단어는 다시 안 나와요` : '고른 범위를 전부 봐요');
+  if (window.updateStartBtn) updateStartBtn();
 };
-$('#tgShuf').onclick = () => {
+const toggleShuf = () => {
   shufStudy = !shufStudy;
   paintShuf();
   try{ localStorage.setItem('maplevoca_shuffle', shufStudy ? '1' : '0'); }catch(e){}
   toast(shufStudy ? '랜덤으로 섞어서 나와요' : '책에 나온 순서대로 나와요');
+  if (window.updateStartBtn) updateStartBtn();
 };
+$('#tg20').onclick = toggle20;
+$('#tgShuf').onclick = toggleShuf;
+$('#tg20b').onclick = toggle20;      // [107차수] 학생앱 안 새 홈의 작은 스위치 — 같은 값·같은 저장 키
+$('#tgShufb').onclick = toggleShuf;
 function pickGo(kind){
   $('#mMode').classList.remove('show');
   const list = pickList; pickList = null;
@@ -2249,7 +2514,7 @@ $('#mcQuit').onclick = () => {
       () => { HW = null; hwWrong = 0; hwFirstWrong = 0; hwRedo = 0;
               if (hwRedoTimer){ clearInterval(hwRedoTimer); hwRedoTimer = null; }
               $('#mHwRedo').classList.remove('show');
-              postHwState(false);                       // [97차수] 그만뒀다 — 학생앱 확인창도 해제
+              postHwState();                        // [97차수 재삽입] 그만두기 → 시험 중 아님
               renderHome(); show('home'); });
     return;
   }
@@ -2267,6 +2532,13 @@ $('#mcQuit').onclick = () => {
  *        3회독 이상은 기록하지 않는다(3회독은 다른 뜻을 직접 적어야 하므로 — 완료 도장만).
  * 끝 = 서버에 완료 기록(POST /voca/hw-clear). 늦음 판정은 서버가 한다. */
 let HW = null;                       // 진행 중인 숙제 세션 { date, deadline, book, lecs, total }
+/* [97차수 09-05 → 107차수 재삽입] 숙제 TEST 시험 중/아님(maplVocaHwState)을 부모(학생앱)에게 알린다.
+ * 학생앱은 "시험 중"이면 위 탭으로 나갈 때 "지금 나가면 처음부터"라는 확인창을 띄운다(confirmLeaveTab).
+ * 시작·완료·그만두기·화면 전환 때 부른다. 단독 실행(부모 없음)에서는 아무 일도 안 한다. */
+function postHwState(){
+  if (window.parent === window) return;
+  try{ window.parent.postMessage({ type: 'maplVocaHwState', busy: !!HW }, '*'); }catch(e){}
+}
 let hwWrong = 0;                     // 이번 숙제에서 틀린 횟수 합
 /* [찍기 방지 08-30 · 원장 확정] 첫 바퀴(처음 낸 단어를 한 번씩 다 본 시점)에서 절반 이상 틀리면
  * 안내 창을 3초 띄우고 처음부터 다시 풀린다. 학생·선생님·원장 모두 같은 규칙이고 횟수 제한은 없다.
@@ -2442,7 +2714,7 @@ async function startHwSession(req){
   Q = seededShuffle(words, orderSeed);
   qi = 0; sesOk = 0; sesWrong = []; sesInputs = {};
   renderMc(); show('mc');
-  postHwState(true);                                    // [97차수] 학생앱에 "시험 중" 알림
+  postHwState();                                    // [97차수 재삽입] 시험 시작 → 시험 중
   toast('오늘 단어 숙제 — 전부 맞히면 끝!');
 }
 /* [찍기 방지 08-30] 처음부터 다시 — 안내 창 3초 뒤 자동으로 첫 문제로 돌아간다.
@@ -2470,7 +2742,7 @@ function hwRedoStart(){
 }
 async function finishHw(){
   const hw = HW; HW = null;
-  postHwState(false);                                   // [97차수] 다 풀었다 — 이제 나가도 된다
+  postHwState();                                    // [97차수 재삽입] 다 풀었음 → 시험 중 아님
   /* [0818 회전 2차수] 완료한 순간, 이번에 본 단어들의 "출제 횟수"를 진도 저장에 적는다.
    * - hwAsk = { 단어id: 몇 번 나왔나 } / hwDates = { 유닛: 마지막으로 반영한 날짜 }
    * - 같은 유닛을 같은 날 다시 풀면 또 세지 않는다(하루 한 번만) — 그날은 같은 문제 원칙 유지
@@ -2838,13 +3110,6 @@ window.addEventListener('popstate', () => {
  * 단독 열람(브라우저에서 직접)은 아무것도 달라지지 않는다. */
 let EMB = false;
 let VIS = { top: 0, h: window.innerHeight || 640 };
-/* [97차수 09-05] 숙제 TEST 진행 여부를 부모(학생앱)에게 알린다 — 학생앱 위 탭으로 나갈 때 확인창을 띄우기 위해.
- * 시작하면 true, 완료 창이 뜨거나 [그만두기]로 나가면 false. 단독 열람(부모 없음)이면 아무것도 안 한다.
- * 학생앱은 프레임이 사라질 때(탭 이동) 스스로 "진행 중 아님"으로 되돌리므로 여기서 더 챙길 것은 없다. */
-function postHwState(busy){
-  if (window.parent === window) return;
-  try{ window.parent.postMessage({ type: 'maplVocaHwState', busy: !!busy }, '*'); }catch(e){}
-}
 function postH(){
   if (window.parent === window) return;
   const h = Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
@@ -2927,6 +3192,7 @@ async function tryOpenTodayPick(){
  * 학생앱 안(iframe)에서는 부모가 "보이는 영역"을 알려준 뒤에 열어야 창이 화면 밖에 그려지지 않는다.
  * 3초를 기다려도 안 오면 조용히 포기한다 — 창을 엉뚱한 자리에 띄우느니 체크된 홈에 머무는 게 낫다. */
 function openTaskPicker(){
+  if (IS_STU){ renderHome(); embScrollTop(); return; }   // [107차수] 새 홈: 체크된 범위 + 방식 카드 + 시작 단추로 대신한다
   const embedded = window.parent !== window;
   let tries = 0;
   const go = () => {
