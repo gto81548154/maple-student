@@ -6,7 +6,7 @@ import { flushSync } from "react-dom";
 import QRCodeLib from "qrcode";
 // [0824 3차수] 배포 확인용 차수 표시 — 원장앱 APP_BUILD와 같은 장치. 학생 화면에는 안 띄우고
 //   마스터 홈(원장 전용) 머리글에만 뜬다(원장 결정). 새 차수 파일을 만들 때마다 이 글자를 같이 바꿀 것.
-const STUDENT_APP_BUILD = "학생앱 109차수 · 2026-09-08";
+const STUDENT_APP_BUILD = "학생앱 110차수 · 2026-09-09";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -698,6 +698,25 @@ const fetchWithTimeout = async (url, options = {}, timeoutMs = 10000) => {
   }
 };
 
+// [110차수 09-09] 위 함수는 "답이 시작될 때(헤더)"까지만 재고 타이머를 지웠다 — 본문을 받다가 멈추면 영영 기다릴 수 있었다(09-09 검토 3.2).
+//   이 함수는 본문을 다 받을 때까지 같은 타이머 안에서 기다린다. 결과 = { resp, text }. 학생 자료 받기·시청 기록 저장이 쓴다.
+const fetchTextWithTimeout = async (url, options = {}, timeoutMs = 10000, label = "학생 동기화 API") => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(url, { ...options, signal: controller.signal });
+    const text = await resp.text();
+    return { resp, text };
+  } catch (e) {
+    if (e?.name === "AbortError") {
+      throw new Error(`${label} 응답 지연: ${Math.round(timeoutMs / 1000)}초 초과`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 const resolveStudentSyncUrl = (studentId, { forceFresh = false } = {}) => {
   if (!STUDENT_SYNC_API_URL) return "";
   const u = new URL(STUDENT_SYNC_API_URL, window.location.origin);
@@ -852,7 +871,8 @@ const loadStudentBundleFromWorker = async (studentId, { forceFresh = false } = {
   const url = resolveStudentSyncUrl(studentId, { forceFresh });
   if (!url) throw new Error("STUDENT_SYNC_API_URL 미설정");
   // [08-10] 기다리는 시간 10초 → 20초. 자료가 커져 서버가 느린 날, 폰 인터넷이 느린 학생도 끊기지 않게.
-  const resp = await fetchWithTimeout(url, { method: "GET", cache: "no-store" }, 20000);
+  // [110차수 09-09] 본문을 다 받을 때까지 20초 안(예전엔 답이 시작되면 타이머를 지워 본문 멈춤을 못 막았다).
+  const { resp, text } = await fetchTextWithTimeout(url, { method: "GET", cache: "no-store" }, 20000);
   if (!resp.ok) {
     // [08-07] "서버가 거절한 것"과 "서버가 아픈 것"을 가른다.
     //  401·403·404 = 토큰이 죽었거나 그런 학생이 없다는 뜻 → 폰 저장본으로 우회하면 안 된다.
@@ -861,9 +881,14 @@ const loadStudentBundleFromWorker = async (studentId, { forceFresh = false } = {
     if (!IS_STAFF_VIEW && (resp.status === 401 || resp.status === 403 || resp.status === 404)) {
       throw makeWithdrawnError(null, `학생 동기화 API 거절: ${resp.status}`);
     }
-    throw new Error(`학생 동기화 API 오류: ${resp.status}`);
+    // [110차수] 워커 09-09판은 오류 답에 짧은 코드(db_timeout = DB 응답 지연 등)를 실어 준다 → 오류 코드 표시에 쓴다
+    let serverCode = "";
+    try { const j = JSON.parse(text); serverCode = typeof j?.code === "string" ? j.code.slice(0, 40) : ""; } catch (e) { /* 본문이 JSON이 아니면 코드 없음 */ }
+    throw new Error(`학생 동기화 API 오류: ${resp.status}${serverCode ? ` (${serverCode})` : ""}`);
   }
-  const raw = await resp.json();
+  let raw;
+  try { raw = JSON.parse(text); }
+  catch (e) { throw new Error("학생 동기화 API 응답 해석 실패: 답이 JSON이 아닙니다"); }   // [110차수] 깨진 답은 백업 경로로
   const payload = unwrapBundlePayload(raw);
   // [99차수] HTTP는 200인데 몸통이 실패(success:false)면 정상 답으로 읽지 않는다 → 폰 백업 경로.
   if (raw && raw.success === false) throw new Error("학생 동기화 API 실패 응답: " + String(raw.error || raw.message || ""));
@@ -931,6 +956,14 @@ const loadStudentBundle = async (studentId, opts = {}) => {
 //   워커는 여러 대가 돌아서, 방금 새로 읽은 뒤에도 다음 자동 요청이 다른 워커의 옛 60초 기억을 받을 수 있기 때문.
 //   워커의 BUNDLE_SHARED_TTL_MS(60초)와 같은 값. 수동 성공 때만 켜지고 자동 성공으로는 늘어나지 않는다.
 const FRESH_GRACE_MS = 60 * 1000;
+// [110차수 09-09] 자동 새로고침 주기 — 60초 → 90초(서버 부담 1/3 감소). 연속 실패하면 150초 → 240초로 늘리고, 성공하면 90초로 돌아온다.
+//   여러 폰이 같은 순간에 두드리지 않게 0~10초를 무작위로 더한다(09-09 검토 Q3). 화면을 다시 켜면 예전처럼 즉시 1번 받는다.
+const BUNDLE_POLL_STEPS_MS = [90 * 1000, 150 * 1000, 240 * 1000];
+const BUNDLE_POLL_JITTER_MS = 10 * 1000;
+const bundlePollDelayMs = (failCount, rnd = Math.random()) => {
+  const idx = Math.max(0, Math.min(BUNDLE_POLL_STEPS_MS.length - 1, Number(failCount) || 0));
+  return BUNDLE_POLL_STEPS_MS[idx] + Math.floor(rnd * BUNDLE_POLL_JITTER_MS);
+};
 
 const getStudentBundleStorageKey = (studentId) => `maple_student_bundle_${studentId}`;
 
@@ -967,6 +1000,8 @@ const clearWithdrawnStrikes = (studentId) => {
 //  E-네트워크 = 인터넷 끊김 / E-설정없음 = 앱 빌드에 서버 주소가 빠짐 / E-빈응답 = 서버 답에 알맹이가 없음
 const makeLoadErrorCode = (e) => {
   const msg = String(e?.message || "");
+  if (/\(db_timeout\)/.test(msg)) return "E503-DB지연";        // [110차수] 워커가 DB 답을 8초 안에 못 받음(서버가 바쁨) — 폰 백업으로 넘어간 상태
+  if (/응답 해석 실패/.test(msg)) return "E-깨진응답";              // [110차수] 답이 왔는데 JSON이 아님
   const m = msg.match(/API (?:오류|거절): (\d+)/);
   if (m) return "E" + m[1];
   if (/응답 지연/.test(msg)) return "E-시간초과";
@@ -1989,7 +2024,9 @@ const computeVocabReviewWarning = (vocabWrongWords = {}) => {
 const MIN_AWAY_SEC = 5;
 // 영상 시청 기록 자동 저장 기준: 카드를 닫지 않아도 UNIT별 기록이 남도록 보정
 const VIDEO_PROGRESS_SAVE_MIN_SEC = 5;
-const VIDEO_PROGRESS_AUTOSAVE_SEC = 15;
+// [110차수 09-09] 15 → 30초. 서버는 저장 1건마다 DB를 고쳐 쓰므로 저장 횟수를 절반으로(총 시청 시간은 조각을 더한 값이라 그대로,
+//   멈춤·화면 숨김·닫기 때는 예전처럼 즉시 저장). 09-08~09 밤 멈춤의 큰 원인이 강의 시청 중 15초마다 몰린 저장이었다.
+const VIDEO_PROGRESS_AUTOSAVE_SEC = 30;
 
 
 // ─── 영상 시청 기록 저장 API (Turso 원본 DB로 저장) ───
@@ -2466,17 +2503,17 @@ const postVideoWatchToWorker = async (payload) => {
   const headers = { "Content-Type": "application/json" };
   if (VIDEO_WATCH_API_KEY) headers.Authorization = `Bearer ${VIDEO_WATCH_API_KEY}`;
   // [95차수 09-05] 15초 안에 답이 없으면 실패로 보고 대기열에 넣는다(인터넷이 느릴 때 저장이 영영 매달려 있지 않게). 대기열은 나중에 자동 재전송.
-  const resp = await fetchWithTimeout(VIDEO_WATCH_API_URL, {
+  // [110차수 09-09] 본문까지 15초 안(fetchTextWithTimeout). 실패하면 예전처럼 대기열로 — 같은 세션은 서버가 두 번 안 쌓는다.
+  const { resp, text } = await fetchTextWithTimeout(VIDEO_WATCH_API_URL, {
     method: "POST",
     headers,
     // [08-08] 본인 확인 값(t)을 보낼 때 붙인다. 대기열에 쌓여 있던 옛 기록도 보내는 순간 붙는다.
     body: JSON.stringify({ ...payload, t: getSelfAccessToken() }),
-  }, 15000);
+  }, 15000, "video-watch");
   if (!resp.ok) {
-    const msg = await resp.text().catch(() => "");
-    throw new Error(msg || `video-watch 저장 실패: ${resp.status}`);
+    throw new Error(text || `video-watch 저장 실패: ${resp.status}`);
   }
-  return resp.json().catch(() => ({ success: true }));
+  try { return JSON.parse(text); } catch (e) { return { success: true }; }
 };
 
 const mergeVideoWatchEntry = (prev = {}, payload = {}) => {
@@ -5193,6 +5230,12 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [loadErrorCode, setLoadErrorCode] = useState(""); // [08-10] 연결 오류 화면에 표시할 짧은 오류 코드
+  const [loadingSlow, setLoadingSlow] = useState(false);   // [110차수] 첫 화면이 6초 넘게 걸리면 "서버가 느려요" 한 줄
+  useEffect(() => {
+    if (!loading) { setLoadingSlow(false); return; }
+    const t = setTimeout(() => setLoadingSlow(true), 6000);
+    return () => clearTimeout(t);
+  }, [loading]);
   const [withdrawnName, setWithdrawnName] = useState(""); // [08-07] 그만둔 학생 안내에 이름을 넣기 위해
   const [masterWithdrawn, setMasterWithdrawn] = useState(false); // [08-07] 마스터가 그만둔 학생 화면을 볼 때 띄우는 띠
   const [student, setStudent] = useState(null);
@@ -5405,6 +5448,7 @@ export default function App() {
   const manualQueuedRef = useRef(false);     // 자동이 끝나면 수동(fresh=1) 1회 실행 예약
   const freshUntilRef = useRef(0);           // 이 시각까지는 자동 요청에도 fresh=1
   const loadEpochRef = useRef(0);            // 학생이 바뀌거나 화면이 닫히면 +1 → 옛 요청 결과는 버린다
+  const pollFailRef = useRef(0);             // [110차수] 연속 실패 횟수 — 자동 새로고침 간격을 늘리는 데 쓴다(성공하면 0)
   // [08-07] 한 번 차단된 링크인지. true가 되면 30초 자동 새로고침이 서버를 그만 두드린다.
   //         학생이 [다시 확인]을 누를 때(manual)만 다시 물어본다.
   const withdrawnRef = useRef(false);
@@ -5561,6 +5605,7 @@ export default function App() {
       clearWithdrawnStrikes(studentId); // [08-10] 정상 응답이 오면 3진 아웃 카운트를 0으로 되돌린다
       setError(null);
       setLoadErrorCode(""); // [08-10]
+      pollFailRef.current = 0;   // [110차수] 성공 → 자동 새로고침 간격 90초로 복귀
     } catch (e) {
       console.error("Load error:", e);
       if (!alive()) return;
@@ -5583,6 +5628,7 @@ export default function App() {
       //         "연결 오류" 화면으로 넘기지 말고 차단 화면을 그대로 둔다.
       if (withdrawnRef.current) return;
       setLoadErrorCode(makeLoadErrorCode(e)); // [08-10] 어떤 이유로 실패했는지 짧은 코드로 기억해 둔다
+      pollFailRef.current += 1;   // [110차수] 연속 실패 → 다음 자동 새로고침을 150초·240초로 늦춘다(서버가 바쁠 때 더 두드리지 않게)
       const localBundle = restoreStudentBundleFromLocal(studentId);
       if (localBundle) {
         applyBundle(localBundle);
@@ -5624,9 +5670,18 @@ export default function App() {
     // loadData 안에서 로딩 표시를 꺼주기 때문에, 여기서 그냥 return 하면 화면이 계속 "불러오는 중"에 멈춘다.
     if (!studentId) { loadData(); return; }
 
+    // [110차수 09-09] 60초 고정(setInterval) → 90초 기본, 연속 실패 시 150·240초, +무작위 0~10초(bundlePollDelayMs). 한 번 받은 뒤 다음 시각을 정한다.
     let timer = null;
-    const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
-    const start = () => { stop(); timer = setInterval(() => loadData(), 60000); };
+    const stop = () => { if (timer) { clearTimeout(timer); timer = null; } };
+    const schedule = () => {
+      stop();
+      timer = setTimeout(async () => {
+        timer = null;
+        try { await loadData(); } catch (e) { /* loadData는 안에서 처리한다 */ }
+        if (!document.hidden) schedule();   // 화면이 보일 때만 다음 차례를 잡는다(숨겨졌으면 다시 켤 때 즉시 1번 + 예약)
+      }, bundlePollDelayMs(pollFailRef.current));
+    };
+    const start = () => schedule();
 
     const onVisRefresh = () => {
       if (document.hidden) {
@@ -6082,6 +6137,8 @@ export default function App() {
         <div style={{ textAlign: "center" }}>
           <div style={{ width: 40, height: 40, border: "3px solid #e0e0e0", borderTopColor: "#1C66A5", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 16px" }} />
           <div style={{ fontSize: 14, color: "#999" }}>불러오는 중...</div>
+          {/* [110차수 09-09] 6초 넘게 걸리면 이유를 한 줄 — 서버가 느린 날 학생이 "고장났나" 하고 껐다 켜기를 반복하지 않게 */}
+          {loadingSlow && <div style={{ fontSize: 12.5, color: "#b0b6c6", marginTop: 8, lineHeight: 1.5 }}>서버가 조금 느려요. 잠시만 기다려 주세요…<br />(최대 20초 뒤 저장된 자료로 열려요)</div>}
           <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
         </div>
       </div>
@@ -6143,7 +6200,10 @@ export default function App() {
         <div style={{ textAlign: "center", padding: 40 }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
           <div style={{ fontSize: 18, fontWeight: 700, color: "#333", marginBottom: 8 }}>연결 오류</div>
-          <div style={{ fontSize: 14, color: "#999", marginBottom: 20 }}>잠시 후 다시 시도해주세요</div>
+          {/* [110차수 09-09] 서버 DB가 바쁜 경우(E503-DB지연)는 이유를 쉽게 — 학생이 인터넷 탓인 줄 알고 와이파이를 껐다 켜지 않게 */}
+          <div style={{ fontSize: 14, color: "#999", marginBottom: 20, lineHeight: 1.6 }}>
+            {/^E503/.test(String(loadErrorCode || "")) ? <>학원 서버가 잠시 바빠요.<br />1~2분 뒤 [다시 시도]를 눌러 주세요.</> : "잠시 후 다시 시도해주세요"}
+          </div>
           <button onClick={() => window.location.reload()} style={{ padding: "10px 24px", borderRadius: 10, border: "none", background: "#1C66A5", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>다시 시도</button>
           {/* [08-10] 학생이 이 코드만 알려줘도 원장이 원인을 바로 좁힐 수 있다 (E500=서버 오류, E-시간초과=20초 무응답, E-네트워크=인터넷 끊김 등) */}
           <div style={{ fontSize: 11.5, color: "#c3c9d8", marginTop: 16 }}>오류 코드: {loadErrorCode || "E-알수없음"}</div>
