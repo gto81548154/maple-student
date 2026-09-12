@@ -6,7 +6,7 @@ import { flushSync } from "react-dom";
 import QRCodeLib from "qrcode";
 // [0824 3차수] 배포 확인용 차수 표시 — 원장앱 APP_BUILD와 같은 장치. 학생 화면에는 안 띄우고
 //   마스터 홈(원장 전용) 머리글에만 뜬다(원장 결정). 새 차수 파일을 만들 때마다 이 글자를 같이 바꿀 것.
-const STUDENT_APP_BUILD = "학생앱 110차수 · 2026-09-09";
+const STUDENT_APP_BUILD = "학생앱 111차수 · 2026-09-12 · 접속보강 검토본";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -702,19 +702,21 @@ const fetchWithTimeout = async (url, options = {}, timeoutMs = 10000) => {
 //   이 함수는 본문을 다 받을 때까지 같은 타이머 안에서 기다린다. 결과 = { resp, text }. 학생 자료 받기·시청 기록 저장이 쓴다.
 const fetchTextWithTimeout = async (url, options = {}, timeoutMs = 10000, label = "학생 동기화 API") => {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let timer, timedOut = false;
+  const timeoutError = () => new Error(label + " 응답 지연: " + Math.round(timeoutMs / 1000) + "초 초과");
+  // 취소 신호가 처리되지 않는 환경에서도 화면 대기는 반드시 끝낸다.
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => { timedOut = true; reject(timeoutError()); controller.abort(); }, timeoutMs);
+  });
   try {
-    const resp = await fetch(url, { ...options, signal: controller.signal });
-    const text = await resp.text();
-    return { resp, text };
+    return await Promise.race([(async () => {
+      const resp = await fetch(url, { ...options, signal: controller.signal });
+      return { resp, text: await resp.text() };
+    })(), deadline]);
   } catch (e) {
-    if (e?.name === "AbortError") {
-      throw new Error(`${label} 응답 지연: ${Math.round(timeoutMs / 1000)}초 초과`);
-    }
+    if (timedOut || e?.name === "AbortError") throw timeoutError();
     throw e;
-  } finally {
-    clearTimeout(timer);
-  }
+  } finally { clearTimeout(timer); }
 };
 
 const resolveStudentSyncUrl = (studentId, { forceFresh = false } = {}) => {
@@ -722,6 +724,7 @@ const resolveStudentSyncUrl = (studentId, { forceFresh = false } = {}) => {
   const u = new URL(STUDENT_SYNC_API_URL, window.location.origin);
   u.searchParams.set("id", String(studentId));
   u.searchParams.set("studentId", String(studentId));
+  u.searchParams.set("resilient", "1"); // 통계 장애와 학습 자료 열기를 분리한다.
   // [100차수] 학생이 [다시 받기]를 눌렀을 때만 fresh=1 — 워커(09-07판)가 60초 기억을 건너뛰고 DB에서 다시 읽는다.
   //   옛 워커는 이 값을 모르고 무시하므로 답은 그대로 읽힌다(그때는 "진짜 새로 읽었다"고 표시하지 않는다).
   if (forceFresh) u.searchParams.set("fresh", "1");
@@ -927,6 +930,7 @@ const loadStudentBundleFromWorker = async (studentId, { forceFresh = false } = {
 
   return {
     source: "worker",
+    videoStatsUnavailable: raw?.sync?.videoStatsUnavailable === true,
     student,
     // [100차수] 워커 09-07판이 붙여 주는 메모: fresh=1을 받아 실제로 DB를 다시 읽었는지. 옛 워커면 null.
     syncMeta: (raw && raw.sync && typeof raw.sync === "object") ? raw.sync : null,
@@ -1047,6 +1051,7 @@ const saveStudentBundleToLocal = (studentId, bundle = {}) => {
         records: bundle.records || {},
         videos: bundle.videos || [],
         videoWatch: bundle.videoWatch || {},
+        videoStatsUnavailable: bundle.videoStatsUnavailable === true,
         makeups: bundle.makeups || [],
         customHolidays: bundle.customHolidays || {},
         exams: Array.isArray(bundle.exams || bundle.exam3) ? (bundle.exams || bundle.exam3) : [],
@@ -5301,6 +5306,8 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false); // 수동 새로고침 상태
   const [syncSource, setSyncSource] = useState(""); // worker
   const [lastLoadedAt, setLastLoadedAt] = useState(null); // 마지막 동기화 시각
+  const [videoStatsUnavailable, setVideoStatsUnavailable] = useState(false);
+  const displayedBundleRef = useRef(null); // 저장 공간이 막혀도 현재 정상 화면을 유지한다.
   const [offlineNotice, setOfflineNotice] = useState(""); // Worker 실패 시 로컬 백업 표시 안내
   // [98차수→101차수] 앱 새 판(서비스워커) 감지.
   //   상태: "" 없음 / "found" 새 판 발견(대기 중) / "applying" 적용 중 / "swapped" 이미 교체됨(새로고침만 하면 됨) / "failed" 적용 실패
@@ -5536,6 +5543,8 @@ export default function App() {
   //   (시청 기록 videoWatch만은 아직 서버에 못 보낸 폰 기록이 있을 수 있어 예전처럼 합친다.)
   const applyBundle = (bundle) => {
     if (!bundle?.student) return;
+    displayedBundleRef.current = { studentId: String(studentId), bundle };
+    setVideoStatsUnavailable(bundle.videoStatsUnavailable === true);
     setStudent(bundle.student);
     // [08-07] 마스터(·[08-27] 선생님)가 그만둔 학생 화면을 열었을 때만 켜진다. 학생 화면에서는 항상 꺼져 있다.
     setMasterWithdrawn(!!bundle.withdrawnFlag && IS_STAFF_VIEW);
@@ -5588,11 +5597,16 @@ export default function App() {
     // 수동이거나, 수동 성공 후 60초 유예창 안이면 fresh=1
     const forceFresh = manual || Date.now() < freshUntilRef.current;
     try {
-      const bundle = await loadStudentBundle(studentId, { forceFresh });
+      let bundle = await loadStudentBundle(studentId, { forceFresh });
       if (!alive()) return;
       if (!bundle || !bundle.student) {
         setError("not_found");
         return;
+      }
+      if (bundle.videoStatsUnavailable) {
+        const previous = displayedBundleRef.current?.studentId === String(studentId)
+          ? displayedBundleRef.current.bundle : restoreStudentBundleFromLocal(studentId);
+        bundle = { ...bundle, videoWatch: previous?.videoWatch || {} };
       }
       applyBundle(bundle);
       saveStudentBundleToLocal(studentId, bundle);
@@ -5616,6 +5630,7 @@ export default function App() {
         const strikes = addWithdrawnStrike(studentId);
         if (strikes >= WITHDRAWN_STRIKE_LIMIT) {
           try { localStorage.removeItem(getStudentBundleStorageKey(studentId)); } catch (err) { /* ignore */ }
+          displayedBundleRef.current = null;
           withdrawnRef.current = true;
           setWithdrawnName(String(e.studentName || ""));
           setError("withdrawn");
@@ -5629,6 +5644,13 @@ export default function App() {
       if (withdrawnRef.current) return;
       setLoadErrorCode(makeLoadErrorCode(e)); // [08-10] 어떤 이유로 실패했는지 짧은 코드로 기억해 둔다
       pollFailRef.current += 1;   // [110차수] 연속 실패 → 다음 자동 새로고침을 150초·240초로 늦춘다(서버가 바쁠 때 더 두드리지 않게)
+      // 이미 연 자료를 옛 저장본으로 되돌리거나, 저장 공간 문제 때문에 오류 화면으로 바꾸지 않는다.
+      // 명시적 인증 거절은 기존 차단 절차로만 처리한다.
+      if (e?.code !== "withdrawn" && !IS_TEACHER_MODE && displayedBundleRef.current?.studentId === String(studentId)) {
+        setOfflineNotice("연결이 잠시 늦어지고 있어요. 현재 자료로 계속 공부할 수 있어요. 새 숙제와 강의는 연결되면 갱신됩니다.");
+        setError(null);
+        return;
+      }
       const localBundle = restoreStudentBundleFromLocal(studentId);
       if (localBundle) {
         applyBundle(localBundle);
@@ -5670,38 +5692,44 @@ export default function App() {
     // loadData 안에서 로딩 표시를 꺼주기 때문에, 여기서 그냥 return 하면 화면이 계속 "불러오는 중"에 멈춘다.
     if (!studentId) { loadData(); return; }
 
-    // [110차수 09-09] 60초 고정(setInterval) → 90초 기본, 연속 실패 시 150·240초, +무작위 0~10초(bundlePollDelayMs). 한 번 받은 뒤 다음 시각을 정한다.
-    let timer = null;
-    const stop = () => { if (timer) { clearTimeout(timer); timer = null; } };
+    // 응답 완료 후 다음 조회를 예약한다. 첫 접속 실패는 15/30/60초로 재시도한다.
+    let timer = null, stopped = false, lastWakeAt = 0;
+    const stop = () => { if (timer) clearTimeout(timer); timer = null; };
     const schedule = () => {
       stop();
-      timer = setTimeout(async () => {
-        timer = null;
-        try { await loadData(); } catch (e) { /* loadData는 안에서 처리한다 */ }
-        if (!document.hidden) schedule();   // 화면이 보일 때만 다음 차례를 잡는다(숨겨졌으면 다시 켤 때 즉시 1번 + 예약)
-      }, bundlePollDelayMs(pollFailRef.current));
+      if (stopped || document.hidden) return;
+      const failCount = pollFailRef.current;
+      const delay = !displayedBundleRef.current && failCount > 0
+        ? [15000, 30000, 60000][Math.min(failCount - 1, 2)] + Math.floor(Math.random() * 10000)
+        : bundlePollDelayMs(failCount);
+      timer = setTimeout(refresh, delay);
     };
-    const start = () => schedule();
-
-    const onVisRefresh = () => {
-      if (document.hidden) {
-        stop();
-      } else {
-        if (!viewingVideoRef.current) loadData();
-        start();
-      }
+    const refresh = async () => {
+      if (stopped) return;
+      stop();
+      try { await loadData(); } catch (e) { /* runLoad에서 화면 처리 */ }
+      schedule();
     };
-
-    loadData();
-    if (!document.hidden) start();
+    const wake = () => {
+      if (stopped || document.hidden) return;
+      // 온라인/화면복귀 이벤트가 겹쳐도 요청을 한 번만 보낸다.
+      if (Date.now() - lastWakeAt < 2000) { schedule(); return; }
+      lastWakeAt = Date.now();
+      if (!viewingVideoRef.current) refresh(); else schedule();
+    };
+    const onVisRefresh = () => { if (document.hidden) stop(); else wake(); };
+    refresh();
     document.addEventListener("visibilitychange", onVisRefresh);
+    window.addEventListener("online", wake);
     return () => {
-      stop(); document.removeEventListener("visibilitychange", onVisRefresh);
-      // [100차수] 학생이 바뀌거나 화면이 닫히면 진행 중이던 요청의 결과·예약은 새 화면에 쓰지 않는다.
+      stopped = true; stop();
+      document.removeEventListener("visibilitychange", onVisRefresh);
+      window.removeEventListener("online", wake);
       loadEpochRef.current += 1;
       loadInFlightRef.current = null;
       manualQueuedRef.current = false;
       freshUntilRef.current = 0;
+      displayedBundleRef.current = null;
       setRefreshing(false);
     };
   }, [studentId]);
@@ -6138,7 +6166,7 @@ export default function App() {
           <div style={{ width: 40, height: 40, border: "3px solid #e0e0e0", borderTopColor: "#1C66A5", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 16px" }} />
           <div style={{ fontSize: 14, color: "#999" }}>불러오는 중...</div>
           {/* [110차수 09-09] 6초 넘게 걸리면 이유를 한 줄 — 서버가 느린 날 학생이 "고장났나" 하고 껐다 켜기를 반복하지 않게 */}
-          {loadingSlow && <div style={{ fontSize: 12.5, color: "#b0b6c6", marginTop: 8, lineHeight: 1.5 }}>서버가 조금 느려요. 잠시만 기다려 주세요…<br />(최대 20초 뒤 저장된 자료로 열려요)</div>}
+          {loadingSlow && <div style={{ fontSize: 12.5, color: "#b0b6c6", marginTop: 8, lineHeight: 1.5 }}>서버가 조금 느려요. 잠시만 기다려 주세요…<br />(저장된 자료가 있으면 최대 20초 뒤 열려요)</div>}
           <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
         </div>
       </div>
@@ -6522,6 +6550,9 @@ export default function App() {
         />
       )}
 
+      {videoStatsUnavailable && <div role="status" style={{ padding: "10px 24px", background: "#eef6ff", color: "#24567d", fontSize: 12 }}>
+        시청 기록을 확인하지 못했어요. 표시된 시청 시간은 최신이 아닐 수 있어요. 숙제와 강의는 계속 이용할 수 있어요.
+      </div>}
       {offlineNotice && (
         <div style={{ padding: "10px 24px", background: "#fff7e6", borderBottom: "1px solid #ffe0a3", color: "#8a5a00", fontSize: 12, fontWeight: 700 }}>
           <div style={{ maxWidth: MAX_W, margin: "0 auto", display: "flex", alignItems: "center", gap: 10 }}>
