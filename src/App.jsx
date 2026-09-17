@@ -6,7 +6,7 @@ import { flushSync } from "react-dom";
 import QRCodeLib from "qrcode";
 // [0824 3차수] 배포 확인용 차수 표시 — 원장앱 APP_BUILD와 같은 장치. 학생 화면에는 안 띄우고
 //   마스터 홈(원장 전용) 머리글에만 뜬다(원장 결정). 새 차수 파일을 만들 때마다 이 글자를 같이 바꿀 것.
-const STUDENT_APP_BUILD = "학생앱 111차수 · 2026-09-12 · 접속보강 검토본";
+const STUDENT_APP_BUILD = "학생앱 114차수 · 2026-09-17 · □ 뒤 1차·2차 차수도 알아보기";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -1939,6 +1939,50 @@ const stripLabels = (v) => v.split('\n').filter(l => !/^\s*\[(숙제|학원|학�
 // ─── 줄 맨 앞의 'ㅁ' 글자 제거 (학생 표시용 — 왼쪽에 이미 체크박스 있어서 중복) ───
 const stripBox = (s) => s.replace(/^\s*ㅁ\s*/, '');
 
+// ─── [112차수] ③오늘 수업 "1차 수업 / 2차 수업" 칸 — 원장앱 169~170차수와 같은 규칙 ───
+//   원장앱에서 ③칸을 나누면 줄 맨 앞에 "1차-" "2차-" "3차-"가 붙어 저장된다(선생님들이 9/7부터 손으로 쓰던 모양).
+//   학생 화면에서는 그 글자를 떼고 "1차 수업"·"2차 수업" 이름 줄로 묶어 보여 준다.
+//   체크 열쇠(몇 번째 줄·옛 글 열쇠)는 그대로 두고, 보여 주는 글과 순서만 바꾼다.
+const LESSON_SESSION_MAX = 3;
+// [114차수] 줄 앞에 "□ " 같은 표시가 있어도 차수를 알아본다 — 원장앱 172차수와 같은 규칙
+const LESSON_SESSION_PREFIX_RE = /^\s*(?:[□☐●·]\s*)?([1-3])\s*차\s*[-–—]\s*/;
+// 줄 맨 앞 차수를 뗀다 — 겹쳐 붙었으면("1차-2차-…") 안쪽(나중) 차수가 이긴다
+const collapseLessonSessionPrefix = (line = "") => {
+  let s = String(line ?? "");
+  let session = 0;
+  for (let guard = 0; guard < 8; guard++) {
+    const m = s.match(LESSON_SESSION_PREFIX_RE);
+    if (!m) break;
+    session = Number(m[1]);
+    s = s.slice(m[0].length);
+  }
+  return { session, body: s };
+};
+const stripLessonSessionPrefix = (line = "") => collapseLessonSessionPrefix(line).body;
+// "2차-"처럼 차수만 있고 내용이 없는 줄 — 원장앱은 빈 줄로 친다(체크 자리를 맞추려고 여기서도 건너뛴다)
+const isLessonSessionOnlyLine = (line = "") => {
+  const { session, body } = collapseLessonSessionPrefix(line);
+  return session > 0 && !String(body).trim();
+};
+// 칸 색 — 원장앱과 같은 초록·보라·회색
+const LESSON_SESSION_COLORS = {
+  1: { main: "#00b894", text: "#00866a", soft: "#e8f8f5" },
+  2: { main: "#7c3aed", text: "#6d28d9", soft: "#f3e8ff" },
+  3: { main: "#64748b", text: "#475569", soft: "#f1f5f9" },
+};
+// 칸으로 묶기 — 차수가 하나도 없으면 null(예전 모양 그대로). 차수 없는 줄은 1차 칸. 원래 자리(idx)도 같이 준다.
+const groupTodoLessonSessionItems = (items = []) => {
+  const list = Array.isArray(items) ? items : [];
+  if (!list.some(it => it && Number(it.session) > 0)) return null;
+  const byN = {};
+  list.forEach((item, idx) => {
+    if (!item) return;
+    const n = Math.min(LESSON_SESSION_MAX, Math.max(1, Number(item.session) || 1));
+    (byN[n] = byN[n] || []).push({ item, idx });
+  });
+  return Object.keys(byN).map(Number).sort((a, b) => a - b).map(n => ({ session: n, entries: byN[n] }));
+};
+
 // ─── 5단계 정의 (학생용 라벨/색상/배지) ───
 const STEP_DEFS = [
   { key: 'step1', label: '숙제',        color: '#e84393', bg: '#fdf2f8', badges: ['조교', '강사'] },
@@ -2748,6 +2792,7 @@ const buildStepGroups = (todo) => {
       .map(line => {
         const raw = cleanTodoText(line);
         if (!raw) return null;
+        if (isLessonSessionOnlyLine(raw)) return null;   // [112차수] 원장앱과 같게 — "2차-"만 있는 줄은 빈 줄
         const parsed = parseTodoLine(raw) || { raw };
         let keyText;
         let lesson = parsed.lesson || "";
@@ -2765,14 +2810,18 @@ const buildStepGroups = (todo) => {
         stableIndex += 1;
         const itemKey = makeItemKey(type, keyText, seen);
         const legacyKey = `${type}_${idx}`;
+        // [112차수] ③칸 차수 — 원장앱처럼 줄 원문에서 읽는다. 보이는 글에서는 떼고(칸 이름이 알려 준다), 열쇠(itemKey)는 예전 글 그대로.
+        const session = def.key === "step3" ? collapseLessonSessionPrefix(line).session : 0;
+        const showText = session ? (cleanTodoText(stripLessonSessionPrefix(keyText)) || keyText) : keyText;
         return {
           key: itemKey,
           legacyKey,
           stableKey,
-          text: lesson ? `${stripBox(keyText)} → 수업-${lesson}` : stripBox(keyText),
+          text: lesson ? `${stripBox(showText)} → 수업-${lesson}` : stripBox(showText),
           type,
           idx,
           lesson,
+          session,
           _sourceStep: def.key,
         };
       })
@@ -6767,7 +6816,8 @@ export default function App() {
                 </div>
               </div>
 
-              {/* ④ 이어서 할 공부 — 단어 / 강의 / 오답 세 줄. 줄 전체가 단추 하나(단추 안에 단추 없음). 오답 경고는 여기 한 번만 */}
+              {/* ④ 이어서 할 공부 — 단어 / 강의 / 오답 세 줄. 줄 전체가 단추 하나(단추 안에 단추 없음). 오답 경고는 여기 한 번만
+                  [113차수] 숙제 강의가 2개 이상이면 강의 줄을 강의마다 한 줄씩(1/3·2/3·3/3 + 본 만큼 막대). 1개거나 없으면 예전 한 줄 그대로 */}
               <div style={{ ...secTitle, marginTop: 4 }}>이어서 할 공부</div>
               <div style={card}>
                 {VOCA_TAB_ENABLED && (
@@ -6788,7 +6838,40 @@ export default function App() {
                     <span style={pill(hwTodo ? "redfill" : hwDone ? "outline" : "fill")}>{hwTodo ? "숙제 TEST 시작" : hwDone ? "단어 공부" : hwStaff ? "단어장" : "공부하기"}</span>
                   </button>
                 )}
-                {studentVideos.length > 0 ? (
+                {studentVideos.length > 0 && (picker.tasks || []).length > 1 ? (
+                  picker.tasks.map((v, i) => {
+                    // [113차수] 숙제 강의 한 줄 — 시청 기록으로 상태·막대·단추 글자를 정한다. 누르면 그 강의를 강의 탭에서 바로 연다.
+                    const pctRaw = watchPctOf(watchBySid[v.id]);
+                    const pct = Math.floor(pctRaw);             // 보여 주는 숫자는 내림(79.6% → 79%, 0.4% → 아직 안 봄)
+                    const done = pctRaw >= TASK_VIDEO_DONE_PCT;
+                    const going = !done && pct >= 1;
+                    const total = picker.tasks.length;
+                    const title = v.title || v.subject || "강의";
+                    const stateText = done ? "다 봤어요 ✓" : going ? `보는 중 ${pct}%` : "아직 안 봤어요";
+                    const btnText = done ? "다시 보기" : going ? "이어 보기" : "강의 보기";
+                    return (
+                      <button key={v.id} type="button" data-task-video={i + 1} onClick={() => goTab("videos", { videoBook: null, playVideo: v })}
+                        aria-label={`숙제 강의 ${i + 1}/${total} ${title} · ${stateText} · ${btnText}`}
+                        style={rowBtn({ borderTop: (i > 0 || VOCA_TAB_ENABLED) ? "1px solid #EEF1F5" : "none", background: done ? UI.okBg : "transparent" })}>
+                        <span aria-hidden="true" style={rowIcon(done ? "#D3EEDD" : UI.blueBg)}>{done ? "✅" : "▶️"}</span>
+                        <span style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 15.5, fontWeight: 800, color: done ? "#14603f" : UI.text }}>숙제 강의 {i + 1}/{total}</span>
+                            <span style={{ fontSize: 11.5, fontWeight: 800, padding: "2px 8px", borderRadius: 999, whiteSpace: "nowrap",
+                              background: done ? "#D3EEDD" : going ? UI.blueBg : "#EEF1F5", color: done ? UI.okFg : going ? UI.blue : "#556072" }}>
+                              {stateText}
+                            </span>
+                          </span>
+                          <span style={{ display: "block", fontSize: 12.5, marginTop: 2, color: done ? UI.okFg : UI.sub, lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
+                          <span aria-hidden="true" style={{ display: "block", height: 5, borderRadius: 3, background: "#E4E8EF", marginTop: 7, overflow: "hidden" }}>
+                            <span style={{ display: "block", width: `${pct}%`, height: "100%", borderRadius: 3, background: done ? UI.okFg : UI.blue }} />
+                          </span>
+                        </span>
+                        <span style={pill(going ? "fill" : "outline")}>{btnText}</span>
+                      </button>
+                    );
+                  })
+                ) : studentVideos.length > 0 ? (
                   <button type="button" onClick={openVideosFromRow} style={rowBtn({ borderTop: VOCA_TAB_ENABLED ? "1px solid #EEF1F5" : "none" })}>
                     <span aria-hidden="true" style={rowIcon(UI.blueBg)}>▶️</span>
                     <span style={{ flex: 1, minWidth: 0 }}>
@@ -7168,7 +7251,8 @@ export default function App() {
 // 트리 정의/보정은 원장앱 ptree3에서 그대로 내려오고, 진도는 이 학생의 투두 기록에서 계산한다.
 const extractTodoLinesForProgress = (row) => {
   const out = [];
-  const push = (v) => String(v || "").split(/\r?\n/).forEach(l => { const t = l.trim(); if (t) out.push(t); });
+  // [112차수] 줄 앞 "1차-"는 떼고 본다 — 그 1을 과 번호로 세면 진도·완주 축하가 틀린다(원장앱 170차수 진도 map과 같은 규칙)
+  const push = (v) => String(v || "").split(/\r?\n/).forEach(l => { const t = stripLessonSessionPrefix(l.trim()).trim(); if (t) out.push(t); });
   if (row && row.steps5) ["step1","step2","step3","step4","step5"].forEach(k => push(row.steps5[k]));
   else if (row) { push(row.homework); push(row.academy); }
   return out;
@@ -7958,11 +8042,69 @@ const uniqVideosById = (videos = []) => {
 };
 
 
+// ─── [113차수] 강의 번호 읽기 손질 ───
+// ① 쪽수·날짜·회독 숫자는 강의 번호가 아니다 → 빼고 읽는다(키워드 비교도 뺀 글로).
+//    예) "천일문-기본 11 12 13 14 수강 + 워크북 p.30~31" → 11 12 13 14 (예전엔 UNIT 30·31도 붙을 수 있었다)
+//    쪽수 모양: p.30 · 30p · 24~33p · (24~33P) · (94~103)p · (94~103) · 30쪽 · 30페이지 / 날짜: 9/18까지 · 9월 18일 · 18일까지 / 2회독
+//    괄호 속 물결 범위 "(94~103)"는 쪽수로 본다(실제 투두에서 늘 쪽수였다). 강의 범위는 괄호 없이 "1~7"로 적는다.
+// ② "1~7"은 1 2 3 4 5 6 7로 편다(20개까지). 예) "천일문 기본 1~7 수강" → 예전엔 1강·7강 두 개만 붙었다.
+//    "챕터1~3"·"Unit 1~7"처럼 앞에 단원 이름이 붙으면 "챕터1 챕터2 챕터3"으로 편다. "2-1~2-4"처럼 번호 짝에 붙은 물결은 건드리지 않는다.
+const TASK_NON_LECTURE_NUM_RES = [
+  /\(\s*\d{1,4}\s*[~∼〜]\s*\d{1,4}\s*\)(?:\s*(?:pp?|pg|page)\b)?/gi,      // (94~103) · (94~103)p
+  /\(\s*\d{1,4}\s*[\-–]\s*\d{1,4}\s*\)\s*(?:pp?|pg|page)\b/gi,          // (24-33)p — 괄호 속 "2-1"은 번호 짝일 수 있어 p가 붙을 때만
+  /\b(?:pp?|pg|page)\.?\s*\d{1,4}(?:\s*[~∼〜\-–]\s*\d{1,4})?/gi,           // p.30 · p30~31
+  /\d{1,4}(?:\s*[~∼〜\-–]\s*\d{1,4})?\s*(?:pp?|pg|page)\b/gi,               // 30p · 24~33P
+  /\d{1,4}(?:\s*[~∼〜\-–]\s*\d{1,4})?\s*(?:쪽(?!지)|페이지)/g,                // 30쪽 · 30~31페이지 ("8 쪽지시험"은 그대로)
+  /\d{1,2}\s*월\s*\d{1,2}\s*일?/g,                                            // 9월 18일
+  /\d{1,2}\s*\/\s*\d{1,2}(?=\s*(?:까지|\(|\[|일|$))/g,                      // 9/18까지 · 9/18(금)
+  /\d{1,2}\s*일\s*까지/g,                                                       // 18일까지
+  /\d{1,2}\s*회독/g,                                                            // 2회독
+];
+const stripTaskNonLectureNumbers = (text = "") => {
+  let s = String(text || "");
+  TASK_NON_LECTURE_NUM_RES.forEach(re => { s = s.replace(re, " "); });
+  return s;
+};
+const TASK_RANGE_RE = /(\d{1,4})\s*[~∼〜]\s*(\d{1,4})/g;
+const TASK_RANGE_MAX_SPAN = 19;   // 1~20까지 편다. 더 넓으면 예전처럼 양 끝 숫자만
+const TASK_RANGE_LABEL_BEFORE_RE = /(?:^|[^A-Za-z])(챕터|chapter|ch|유닛|unit|lesson|레슨|day|데이|파트|part)\.?\s*-?\s*$/i;   // "each 1~3"의 ch는 단원 이름이 아니다
+const expandTaskRanges = (text = "") => String(text || "").replace(TASK_RANGE_RE, (m, a, b, off, str) => {
+  const before = str.charAt(off - 1), after = str.charAt(off + m.length);
+  if (/[\d\-–]/.test(before) || /[\d\-–]/.test(after)) return m;   // "2-1~2-4" 같은 짝 범위는 그대로
+  const x = parseInt(a, 10), y = parseInt(b, 10);
+  if (!(x > 0 && y > x && y - x <= TASK_RANGE_MAX_SPAN)) return m;
+  const nums = Array.from({ length: y - x + 1 }, (_, i) => x + i);
+  const lm = str.slice(Math.max(0, off - 12), off).match(TASK_RANGE_LABEL_BEFORE_RE);
+  if (lm) return nums.map((n, i) => (i === 0 ? String(n) : `${lm[1]}${n}`)).join(" ");   // 챕터1~3 → 챕터1 챕터2 챕터3
+  return " " + nums.join(" ") + " ";
+});
+const taskNumberText = (text = "") => expandTaskRanges(stripTaskNonLectureNumbers(text));
+// "챕터1 1 2 3 4" / "2-1, 2-2" 줄이 강의 몇 개를 적었나 — 챕터 뒤 맨숫자 개수 + 그대로 적은 짝 개수(번호 짝 수보다 많이는 안 붙는다)
+const countTaskPairWants = (taskText = "", video = {}) => {
+  const labels = extractTaskLabelNumbers(taskText);
+  const loose = labels.length ? extractTaskLooseNumbers(taskText, video).length : 0;   // 챕터1 1 2 3 4 챕터2 1 2 3 4 → 8
+  const bookName = String(video?.subject || video?.bookName || "");
+  let rest = String(taskText || "");
+  if (bookName) rest = rest.split(bookName).join(" ");
+  const lits = new Set(); let m; const re = new RegExp(TASK_LITERAL_PAIR_RE.source, "g");
+  while ((m = re.exec(rest))) lits.add(`${parseInt(m[1], 10)}-${parseInt(m[2], 10)}`);
+  return loose + lits.size;
+};
+// [113차수] 번호로 찾은 강의는 "한 줄에 적은 만큼" 붙인다(예전엔 무조건 4개에서 잘랐다).
+//   예) "구문-천일문 핵심 7 8 9 10 11 12 13 수강" → 예전 7~10강만, 이제 7~13강 전부 / "챕터3,챕터4 수강" → 두 챕터 강의 전부
+//   · 번호 짝·번호: 줄에 적은 강의 수까지(4개보다 적게 적었으면 예전처럼 4개까지) — 숫자 3개 적은 줄이 강의를 더 끌고 오지 않게
+//   · 챕터만 적은 줄: 그 챕터 강의 전부
+//   · 어떤 경우든 20개에서 자른다. 키워드·책 전체로 느슨하게 찾는 3·4순위는 예전처럼 4개.
+// 돌려주는 via = 어느 규칙으로 찾았나("pair" 번호 짝 · "label" 챕터 · "number" 번호 · "keyword" 키워드 · "book" 책 전체). 홈 강의 목록은 "book"을 뺀다.
+const TASK_VIDEO_MATCH_MAX = 20;
+const taskVideoCap = (wantCount) => Math.min(TASK_VIDEO_MATCH_MAX, Math.max(4, Number(wantCount) || 0));
+
 // 매칭 메인 함수
-// 반환: { hasKeyword, matched, bookCandidates }
+// 반환: { hasKeyword, matched, bookCandidates, via }
 //   - matchKeywords가 있으면 숙제 문장에 키워드가 포함되는 영상을 1순위로 매칭
 //   - 기존 책 이름+숫자 매칭은 fallback으로 유지
 function matchVideosForTask(taskText, studentVideos) {
+  taskText = stripLessonSessionPrefix(taskText || "");   // [112차수] 줄 앞 "1차-" "2차-"는 떼고 본다(그 숫자는 강의 번호가 아니다)
   const hasKw = hasVideoKeyword(taskText);
   if (!studentVideos || studentVideos.length === 0) {
     return { hasKeyword: hasKw, matched: [], bookCandidates: [] };
@@ -7983,7 +8125,10 @@ function matchVideosForTask(taskText, studentVideos) {
     : studentVideos;
 
   const taskNorm = normalizeForMatch(taskText);
-  const taskNumbers = extractTaskNumbers(taskText);
+  const kwText = stripTaskNonLectureNumbers(taskText);            // [113차수] 쪽수·날짜 숫자를 뺀 글 — 키워드 비교용
+  const numText = expandTaskRanges(kwText);                       // [113차수] 거기에 "1~7"까지 편 글 — 번호 읽기용
+  const taskNumbers = extractTaskNumbers(numText);
+  const hadAnyNumber = extractTaskNumbers(taskText).length > 0;   // [113차수] 4순위(책 전체)는 예전처럼 원래 글에 숫자가 있었는지로 정한다
 
   // 1순위: 책 이름으로 후보를 먼저 좁힌다.
   // "천일문/기본" 같은 공통 키워드가 UNIT 1부터 잡는 문제를 막기 위한 핵심 변경.
@@ -7997,19 +8142,22 @@ function matchVideosForTask(taskText, studentVideos) {
   //   ② 뒤 숫자가 없어 짝을 못 만들면("챕터2 수강") 챕터 번호만 같은 영상들.
   //   여기서 답이 나오면 아래 맨숫자 매칭으로 내려가지 않는다(1강·2강이 잘못 걸리던 자리).
   if (bookCandidates.length > 0) {
-    const wantPairs = buildTaskNumberPairs(taskText, bookCandidates[0] || {});
+    const wantPairs = buildTaskNumberPairs(numText, bookCandidates[0] || {});
     if (wantPairs.size > 0) {
       const pairMatched = uniqVideosById(bookCandidates.filter(v => {
         const vp = extractVideoNumberPairs(v);
         for (const pr of wantPairs) if (vp.has(pr)) return true;
         return false;
       }));
-      if (pairMatched.length > 0) return { hasKeyword: true, matched: pairMatched.slice(0, 4), bookCandidates };
+      if (pairMatched.length > 0) {
+        const want = Math.min(wantPairs.size, countTaskPairWants(numText, bookCandidates[0] || {}));
+        return { hasKeyword: true, matched: pairMatched.slice(0, taskVideoCap(want)), bookCandidates, via: "pair" };
+      }
     }
-    const labelNums = extractTaskLabelNumbers(taskText);
+    const labelNums = extractTaskLabelNumbers(numText);
     if (labelNums.length > 0) {
       const labelMatched = uniqVideosById(bookCandidates.filter(v => videoMatchesTaskLabel(v, labelNums)));
-      if (labelMatched.length > 0) return { hasKeyword: true, matched: labelMatched.slice(0, 4), bookCandidates };
+      if (labelMatched.length > 0) return { hasKeyword: true, matched: labelMatched.slice(0, TASK_VIDEO_MATCH_MAX), bookCandidates, via: "label" };
     }
   }
 
@@ -8017,25 +8165,26 @@ function matchVideosForTask(taskText, studentVideos) {
   if (taskNumbers.length > 0 && bookCandidates.length > 0) {
     const numberMatched = uniqVideosById(bookCandidates.filter(v => videoMatchesTaskNumber(v, taskNumbers)));
     if (numberMatched.length > 0) {
-      return { hasKeyword: true, matched: numberMatched.slice(0, 4), bookCandidates };
+      const wantNums = new Set(stripBookNumbers(taskNumbers, bookCandidates[0] || {}));   // [113차수] 줄에 적은 강의 번호 개수(교재 숫자 빼고)
+      return { hasKeyword: true, matched: numberMatched.slice(0, taskVideoCap(wantNums.size)), bookCandidates, via: "number" };
     }
   }
 
   // 3순위: generic을 제외한 구체 키워드(수동태, 관계대명사, UNIT 17 등)만 매칭한다.
   const keywordMatched = uniqVideosById(
     filteredVideos
-      .map(v => ({ ...v, _keywordMatchCount: countSpecificVideoKeywordMatches(taskText, v) }))
+      .map(v => ({ ...v, _keywordMatchCount: countSpecificVideoKeywordMatches(kwText, v) }))   // [113차수] 쪽수·날짜 숫자를 뺀 글로
       .filter(v => v._keywordMatchCount > 0)
       .sort((a, b) => (b._keywordMatchCount || 0) - (a._keywordMatchCount || 0) || (a.order || 0) - (b.order || 0))
   );
   if (keywordMatched.length > 0) {
-    return { hasKeyword: true, matched: keywordMatched.slice(0, 4), bookCandidates: keywordMatched };
+    return { hasKeyword: true, matched: keywordMatched.slice(0, 4), bookCandidates: keywordMatched, via: "keyword" };
   }
 
   // 4순위: 숫자 없는 과제는 책 후보 전체를 보여준다. 숫자가 있는데 숫자 매칭이 없으면 빈 결과.
   if (bookCandidates.length > 0) {
-    const matched = taskNumbers.length === 0 ? bookCandidates : [];
-    return { hasKeyword: true, matched: matched.slice(0, 4), bookCandidates };
+    const matched = !hadAnyNumber ? bookCandidates : [];
+    return { hasKeyword: true, matched: matched.slice(0, 4), bookCandidates, via: matched.length ? "book" : "" };
   }
 
   return { hasKeyword: true, matched: [], bookCandidates: [] };
@@ -8070,6 +8219,17 @@ function filterTodoDatesForReveal(allDates, todayStr, hour) {
 // ─── [0813] 홈 강의 고르기 창: 시작 강의 하나 + 추가 강의(앞뒤 2개씩) ───
 // main = 오늘 숙제 "수강" 강의 중 가장 앞 번호(없으면 마지막 본 강의).
 // extras = 시작 강의와 같은 책에서 앞뒤 2개씩 + 나머지 숙제 강의 + 보던 강의, 번호순, 최대 6개.
+// [113차수] tasks = 이 날짜 숙제 "수강" 줄에 걸린 강의 전부(겹치면 한 번만 · 먼저 나온 책부터 · 책 안에서는 번호순). 홈 "이어서 할 공부"가 2개 이상이면 강의마다 한 줄씩 보여 준다.
+// [113차수] 홈 강의 줄의 "다 봤어요" 기준 — 원장앱 학생기록 영상 칸의 "수강 완료"(80% 이상)와 같게 맞춘다.
+const TASK_VIDEO_DONE_PCT = 80;
+// 시청 기록 한 건 → 0~100(반올림 안 함 — 원장앱처럼 79.6%는 아직 "다 봤어요"가 아니다). pct가 없으면 본 시간 ÷ 영상 길이로 셈한다.
+const watchPctOf = (rec) => {
+  const r = rec || {};
+  const hasPct = r.pct !== null && r.pct !== undefined && r.pct !== "" && Number.isFinite(Number(r.pct));
+  const dur = Number(r.durSec);
+  const v = hasPct ? Number(r.pct) : (dur > 0 ? ((Number(r.watchSec) || 0) / dur) * 100 : 0);
+  return Math.max(0, Math.min(100, Number.isFinite(v) ? v : 0));
+};
 function videoNumberOf(v) {
   // [0813-2] 제목의 교재 숫자("70A"의 70)를 빼고 진짜 회차만 본다.
   const bookNums = new Set(extractTaskNumbers(String(v?.subject || v?.bookName || "")));
@@ -8090,14 +8250,25 @@ function collectTaskVideoIds(taskItems, studentVideos) {
 function buildVideoPickerV2(lastVideo, taskItems, studentVideos) {
   const taskMatched = [];
   const seen = new Set();
-  (taskItems || []).forEach(item => {
-    const { matched } = matchVideosForTask(item?.text || "", studentVideos);
-    matched.forEach(v => { if (!seen.has(v.id)) { seen.add(v.id); taskMatched.push(v); } });
+  const bookLine = new Map();   // [113차수] 책 → 숙제에서 처음 나온 줄 번호(홈 목록 순서용)
+  const listed = new Set();     // [113차수] 홈 목록에 넣을 강의 — 책 이름만 적은 줄("그래머존 기초 수강")로 걸린 강의는 뺀다(어느 강의인지 모르니까)
+  (taskItems || []).forEach((item, li) => {
+    const { matched, via } = matchVideosForTask(item?.text || "", studentVideos);
+    matched.forEach(v => {
+      if (!seen.has(v.id)) { seen.add(v.id); taskMatched.push(v); }
+      if (via === "book") return;
+      listed.add(v.id);
+      const bk = String(v.subject || v.bookName || "");
+      if (!bookLine.has(bk)) bookLine.set(bk, li);
+    });
   });
   taskMatched.sort((a, b) => (videoNumberOf(a) ?? 1e9) - (videoNumberOf(b) ?? 1e9));
+  // [113차수] 홈 목록 순서 = 숙제에 먼저 나온 책부터, 같은 책 안에서는 번호순(책이 섞여도 번호끼리 엇갈리지 않게). 시작 강의(main)는 예전 규칙 그대로.
+  const bookOrder = v => bookLine.get(String(v.subject || v.bookName || "")) ?? 1e9;
+  const tasks = taskMatched.filter(v => listed.has(v.id)).sort((a, b) => bookOrder(a) - bookOrder(b));
   const main = taskMatched[0] ? { video: taskMatched[0], kind: "task" }
     : (lastVideo ? { video: lastVideo, kind: "resume" } : null);
-  if (!main) return { main: null, extras: [] };
+  if (!main) return { main: null, extras: [], tasks };
   const taskIds = new Set(taskMatched.map(v => v.id));
   const subj = main.video.subject || "";
   const sameBook = (studentVideos || [])
@@ -8109,7 +8280,7 @@ function buildVideoPickerV2(lastVideo, taskItems, studentVideos) {
   if (lastVideo && lastVideo.id !== main.video.id && !pool.some(p => p.id === lastVideo.id)) pool.push(lastVideo);
   pool.sort((a, b) => (videoNumberOf(a) ?? 1e9) - (videoNumberOf(b) ?? 1e9));
   const extras = pool.slice(0, 6).map(v => ({ video: v, isTask: taskIds.has(v.id), isResume: !!(lastVideo && v.id === lastVideo.id) }));
-  return { main, extras };
+  return { main, extras, tasks };
 }
 
 // 영상 제목에서 짧은 라벨 추출 (버튼에 표시할 용도)
@@ -8302,20 +8473,37 @@ function StepSection({ step, displayNum, stampDate, isChecked, isFailed, getFail
               <span aria-hidden="true">⚠️ </span>{notice.replace(/^→\s*/, "")}
             </div>
           )}
-          {items.map((item, i) => (
-            <HomeworkItem
-              key={item.key || item.legacyKey || `${item.type}_${item.idx}`}
-              item={item}
-              stampDate={stampDate}
-              isLast={i === items.length - 1}
-              isCheckedFn={isChecked}
-              isFailedFn={isFailed}
-              getFailReasonFn={getFailReason}
-              studentVideos={studentVideos}
-              viewingVideo={viewingVideo}
-              toggleVideo={toggleVideo}
-            />
-          ))}
+          {(() => {
+            // [112차수] ③오늘 수업을 원장앱에서 1차·2차로 나눴으면 이름 줄을 넣어 칸별로 묶는다(보여 주는 순서만 바뀜, 체크는 그대로)
+            const sessGroups = step.key === "step3" ? groupTodoLessonSessionItems(items) : null;
+            const renderItem = (item, isLastRow) => (
+              <HomeworkItem
+                key={item.key || item.legacyKey || `${item.type}_${item.idx}`}
+                item={item}
+                stampDate={stampDate}
+                isLast={isLastRow}
+                isCheckedFn={isChecked}
+                isFailedFn={isFailed}
+                getFailReasonFn={getFailReason}
+                studentVideos={studentVideos}
+                viewingVideo={viewingVideo}
+                toggleVideo={toggleVideo}
+              />
+            );
+            if (!sessGroups) return items.map((item, i) => renderItem(item, i === items.length - 1));
+            return sessGroups.map((g, gi) => {
+              const col = LESSON_SESSION_COLORS[g.session] || LESSON_SESSION_COLORS[3];
+              return (
+                <div key={`sess-${g.session}`} role="group" aria-label={`${g.session}차 수업`} data-lesson-group={g.session}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", background: col.soft, borderLeft: `4px solid ${col.main}`, borderTop: gi ? "1px solid #EEF1F5" : "none" }}>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: col.text }}>{g.session}차 수업</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: UI.sub }}>{g.entries.length}개</span>
+                  </div>
+                  {g.entries.map((e, k) => renderItem(e.item, k === g.entries.length - 1))}
+                </div>
+              );
+            });
+          })()}
         </div>
       )}
     </div>
