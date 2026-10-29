@@ -327,6 +327,11 @@ header{position:sticky; top:0; z-index:10; background:var(--paper);
 .sense .tag.now{color:var(--teal); border-color:var(--teal)}
 .sense .syn{display:block; font-size:13.5px; color:var(--ink-soft); margin-top:3px;
   font-family:Charter,Georgia,serif}
+/* [139차수] 반의어·파생어·짝꿍 표현·헷갈리는 단어 — 단어책 JSON의 ant/dv/co/cf 칸 */
+.sense.extra{font-size:13.5px; line-height:1.55; color:var(--ink-soft); background:transparent; border-style:dashed}
+.sense.extra .xr{display:block}
+.sense.extra .xl{display:inline-block; min-width:44px; font-weight:800; color:var(--ink); margin-right:6px; font-size:12.5px}
+.sense.extra .xr+.xr{margin-top:3px}
 .nextbtn{width:100%; margin-top:14px; padding:14px 16px; border-radius:0; min-height:52px; text-align:left;
   background:var(--crimson); color:var(--on-fill); font-weight:800; font-size:15px}
 .nextbtn:active{background:#C22006}
@@ -1065,7 +1070,9 @@ function updateSyncStat(state, detail){
 /* ───────── 단어장(책) 목록 ─────────
  * 모든 책은 R2(voca/books/{책id}.json)에서 내려받아 사용합니다 — 보카바이블도 2026-08-04 이사 완료.
  * 학생·마스터 모드는 api 파라미터의 워커 주소를, 단독 열람은 설정에 저장된 워커 주소를 씁니다.
- * 각 JSON은 [ {id, lec, w, p, st, senses:[...], ef, ed}, ... ] 배열 하나입니다. */
+ * 각 JSON은 [ {id, lec, w, p, st, senses:[...], ef, ed}, ... ] 배열 하나입니다.
+ * [139차수] 정규 단어장 4권(vocabible·wm_sn·wm_basic·wm_hi)에는 칸이 더 있을 수 있습니다(없어도 됨):
+ *   ant:[반의어], dv:[파생어 '단어(품사 뜻)'], co:[짝꿍 표현 '표현 – 뜻'], cf:"헷갈리는 단어 한 줄", wr:[객관식 오답 뜻 3개] */
 const DATA_BASE = '';   // 예: 'https://maple-sync.____.workers.dev/files/voca'
 const BOOKS = [
   { id:'vocabible', title:'보카바이블 A·B',        sub:'편입 대비',   unit:'강',   priv:true },  // priv: 히든보스 — 하이스트 2회독 완주로 해금(마스터 홈은 항상 표시)
@@ -2332,7 +2339,7 @@ function showFeedback(w, p, res, input){
                 (ur === S.round ? '<span class="tag now">이번 회독 ✓</span>' : '');
     const syn = s.syn && s.syn.length ? `<span class="syn">= ${s.syn.join(', ')}</span>` : '';
     return `<div class="${cls}">${tag}${s.pos?`<span class="pos">${s.pos}</span>`:''}<span class="m">${s.m.join(', ')}</span>${syn}</div>`;
-  }).join('');
+  }).join('') + extraHtml(w);                      // [139차수] 반의어·파생어·짝꿍·헷갈림
   // 힌트 자동 공개 (마스킹 해제 후)
   if (w.ef || w.ed){
     renderMorph(w, false);
@@ -2485,6 +2492,18 @@ const sensesHtml = w => w.senses.map(s => {
   return `<div class="sense">${s.pos ? `<span class="pos">${s.pos}</span>` : ''}<span class="m">${s.m.join(', ')}</span>${syn}</div>`;
 }).join('');
 const edPlain = w => w.ed ? w.ed.replace(/^<[^>]+>\s*/, '') : '';
+/* [139차수] 반의어(ant)·파생어(dv)·짝꿍 표현(co)·헷갈리는 단어(cf) 묶음 — 없는 칸은 줄을 안 만든다.
+ * 카드 뒷면·시험 채점 뒤·객관식 채점 뒤에 뜻 목록 아래로 붙인다(블링크는 자동 재생이라 안 붙임). */
+const esc = t => String(t == null ? '' : t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function extraHtml(w){
+  const rows = [];
+  const arr = v => Array.isArray(v) ? v.filter(Boolean) : (v ? [String(v)] : []);
+  if (arr(w.ant).length) rows.push(`<span class="xr"><span class="xl">반의어</span>${esc(arr(w.ant).join(', '))}</span>`);
+  if (arr(w.dv).length)  rows.push(`<span class="xr"><span class="xl">파생어</span>${esc(arr(w.dv).join(', '))}</span>`);
+  if (arr(w.co).length)  rows.push(`<span class="xr"><span class="xl">짝꿍</span>${esc(arr(w.co).join(' / '))}</span>`);
+  if (w.cf && String(w.cf).trim()) rows.push(`<span class="xr"><span class="xl">헷갈림</span>${esc(w.cf)}</span>`);
+  return rows.length ? `<div class="sense extra">${rows.join('')}</div>` : '';
+}
 
 /* ───────── 카드 (진도 반영 없음 · 별표만 저장) ───────── */
 let flOpen = false;
@@ -2507,7 +2526,7 @@ function flPaint(w){
   const ed = edPlain(w);
   $('#flDeriv').style.display = (flOpen && ed) ? 'block' : 'none';
   if (flOpen){
-    $('#flMeans').innerHTML = sensesHtml(w);
+    $('#flMeans').innerHTML = sensesHtml(w) + extraHtml(w);   // [139차수] 반의어·파생어·짝꿍·헷갈림
     $('#flDeriv').textContent = ed ? '⇒ ' + ed : '';
   }
 }
@@ -2612,6 +2631,16 @@ function buildChoices(w){
   const isDup = t => { const n = norm(t); return !n || seen.has(n); };
   const hitsTarget = t => w.senses.some(s => matchSense(t, s));
   const wrongs = [];
+  // [139차수] 단어책에 미리 만들어 둔 '헷갈리는 오답 뜻'(w.wr)이 있으면 그것부터 쓴다.
+  // 정답과 겹치거나(isDup) 이 단어의 다른 뜻과 채점 규칙으로 겹치면(hitsTarget) 건너뛰고, 모자라면 아래 무작위로 채운다.
+  if (Array.isArray(w.wr)){
+    for (const raw of w.wr){
+      const t = String(raw || '').trim();
+      if (!t || isDup(t) || hitsTarget(t)) continue;
+      seen.add(norm(t)); wrongs.push({ text: t, ok: false });
+      if (wrongs.length >= 3) break;
+    }
+  }
   for (let tries = 0; tries < 200 && wrongs.length < 3; tries++){
     const mcPool = (BOOK && BOOK.nsx) ? roundPool() : DATA;   // [128차수]
     const cand = mcPool[Math.floor(Math.random()*mcPool.length)];
@@ -2756,7 +2785,7 @@ function answerMc(picked){                          // picked: 고른 보기 번
     const tag = hitNow ? '<span class="tag now">이번 회독 ✓</span>' : '';
     const syn = s.syn && s.syn.length ? `<span class="syn">= ${s.syn.join(', ')}</span>` : '';
     return `<div class="${cls}">${tag}${s.pos ? `<span class="pos">${s.pos}</span>` : ''}<span class="m">${s.m.join(', ')}</span>${syn}</div>`;
-  }).join('');
+  }).join('') + extraHtml(w);                      // [139차수] 반의어·파생어·짝꿍·헷갈림
   $('#mcTap').textContent = qi === Q.length-1 ? '화면을 터치하면 결과 보기 →' : '화면을 터치하면 다음 문제 →';
   mcDoneAt = Date.now();
   if (ROOT.auto) speak(w.w);
