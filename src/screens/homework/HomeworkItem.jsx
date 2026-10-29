@@ -33,7 +33,7 @@ export function HomeworkItem({ item, stampDate, isLast, isCheckedFn, isFailedFn,
   const badgeText = hasBadge ? arrowSplit.slice(1).join(" → ").trim() : "";
 
   const st = fail ? "fail" : done ? "done" : "none";
-  const chip = st === "done" ? { bg: UI.okBg, fg: UI.okFg, t: "확인 완료" } : st === "fail" ? { bg: UI.warnBg, fg: UI.warnFg, t: "재시" } : { bg: "#EEF1F5", fg: "#556072", t: "확인 전" };
+  const chip = st === "done" ? { bg: UI.okBg, fg: UI.okFg, t: "검사 완료" } : st === "fail" ? { bg: UI.warnBg, fg: UI.warnFg, t: "재시" } : { bg: "#EEF1F5", fg: "#556072", t: "검사 전" };
   // [135차수 c] 같은 이름표가 둘 이상이면 "(1)·(2)"를 붙여 구별한다
   const labelOf = (() => {
     const seenId = new Set(); const all = [...matched, ...bookCandidates].filter((v) => !seenId.has(v.id) && seenId.add(v.id));   // 같은 강의가 두 목록에 다 있으니 id 로 한 번만

@@ -34,21 +34,21 @@ export function renderTasksTab(C) {
                   {!dateIsToday && !dateIsPast && <span style={{ fontSize: 11, fontWeight: 800, color: "#0c5a9e", background: "#e8f2fc", borderRadius: 6, padding: "1px 6px" }}>다음 숙제</span>}
                 </div>
               )}
-              {/* 선생님 확인 현황 — 원본 진행률(재시 항목은 분모·분자 제외, 앱 단어 자동 완료 포함). [추가 07-30] 학생은 체크할 수 없다는 안내 유지 */}
+              {/* 선생님 검사 현황 — 원본 진행률(재시 항목은 분모·분자 제외, 앱 단어 자동 완료 포함). [추가 07-30] 학생은 체크할 수 없다는 안내 유지 */}
               {allDates.length > 0 && totalTasks > 0 && (
                 <div style={{ margin: "14px 0 6px" }}>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                    <span style={{ fontSize: 14, fontWeight: 800, color: UI.text }}>선생님 확인 현황</span>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: UI.text }}>선생님 검사 현황</span>
                     <span style={{ marginLeft: "auto", fontSize: 15, fontWeight: 800, color: pct === 100 ? UI.okFg : UI.text, fontVariantNumeric: "tabular-nums" }}>{doneTasks}/{totalTasks}</span>
                   </div>
-                  <div role="progressbar" aria-valuemin={0} aria-valuemax={totalTasks} aria-valuenow={doneTasks} aria-label="선생님 확인 현황"
+                  <div role="progressbar" aria-valuemin={0} aria-valuemax={totalTasks} aria-valuenow={doneTasks} aria-label="선생님 검사 현황"
                     style={{ height: 8, borderRadius: 4, background: "#E4E8EF", overflow: "hidden", marginTop: 8 }}>
                     <div style={{ width: `${pct}%`, height: "100%", borderRadius: 4, background: pct === 100 ? "#00b894" : UI.blue, transition: "width .3s" }} />
                   </div>
                 </div>
               )}
               {allDates.length > 0 && (
-                <div style={{ fontSize: 12.5, color: UI.sub, margin: totalTasks > 0 ? "0 0 14px" : "8px 0 14px", lineHeight: 1.5 }}>체크와 통과 도장은 조교 선생님이 찍어줘요</div>
+                <div style={{ fontSize: 12.5, color: UI.sub, margin: totalTasks > 0 ? "0 0 14px" : "8px 0 14px", lineHeight: 1.5 }}>학원에 해 오면 선생님이 검사하고 체크해요</div>
               )}
 
               {/* 5단계 카드. key에 날짜를 넣어 날짜를 바꾸면 접힘 상태가 새로 시작된다(새 날짜 내용을 바로 보게).

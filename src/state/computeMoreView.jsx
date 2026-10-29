@@ -34,7 +34,7 @@ export function computeMoreView(D) {
       { key: "cal", icon: "📅", title: "수업 일정", sub: calSub },
       // 오답 복습은 예전 "오답" 탭과 같은 조건(틀린 단어가 있을 때만)으로 나온다
       ...(hasVocabWrong ? [{ key: "vocabWrong", icon: "📝", title: "오답 복습",
-          sub: vocabWarn.overdue > 0 ? `기한 지난 단어 ${vocabWarn.overdue}개` : vocabWarn.dueThisWeek > 0 ? `이번 주 마감 ${vocabWarn.dueThisWeek}개 · ${vocabWarn.sundayLabel}까지` : `남은 단어 ${wrongCount}개`,
+          sub: vocabWarn.overdue > 0 ? `단어 시험 틀린 단어 ${vocabWarn.overdue}개 · 기한 지남` : vocabWarn.dueThisWeek > 0 ? `틀린 단어 ${vocabWarn.dueThisWeek}개 · ${vocabWarn.sundayLabel}까지 (D-${vocabWarn.dday})` : `남은 단어 ${wrongCount}개`,
           subTone: vocabWarn.overdue > 0 ? "warn" : undefined }] : []),
       // [0812 대시보드] 모의고사는 중학생에게도 보여준다(원장 결정). 회차가 없으면 빈 안내만 뜬다.
       { key: "mock", icon: "✏️", title: "모의고사", sub: "응시·점수 기록" },

@@ -19,6 +19,7 @@ export const computeVocabReviewWarning = (vocabWrongWords = {}) => {
 
   let overdue = 0;       // 기한 지남
   let dueThisWeek = 0;   // 이번 주 안에 끝내야 함
+  let oldestOverdueDeadline = null;
 
   Object.values(vocabWrongWords || {}).forEach((month) => {
     Object.values(month?.words || {}).forEach((w) => {
@@ -31,20 +32,29 @@ export const computeVocabReviewWarning = (vocabWrongWords = {}) => {
       // 마감(미포함) = 틀린 주의 월요일 + 14일 = 다음 주 일요일 끝
       const deadline = startOfWeekMon(d);
       deadline.setDate(deadline.getDate() + 14);
-      if (deadline <= now) overdue += 1;
-      else if (deadline <= thisWeekEnd) dueThisWeek += 1;
+      if (deadline <= now) {
+        overdue += 1;
+        if (!oldestOverdueDeadline || deadline < oldestOverdueDeadline) oldestOverdueDeadline = new Date(deadline);
+      } else if (deadline <= thisWeekEnd) dueThisWeek += 1;
     });
   });
 
   const sunday = new Date(thisWeekEnd);
   sunday.setDate(sunday.getDate() - 1); // 이번 주 일요일
   const dday = Math.max(0, Math.ceil((thisWeekEnd - now) / 86400000));
+  let overdueSundayLabel = "";
+  if (oldestOverdueDeadline) {
+    const odSun = new Date(oldestOverdueDeadline);
+    odSun.setDate(odSun.getDate() - 1);
+    overdueSundayLabel = `${odSun.getMonth() + 1}/${odSun.getDate()}(일)`;
+  }
 
   return {
     overdue,
     dueThisWeek,
     hasWarning: overdue > 0 || dueThisWeek > 0,
     sundayLabel: `${sunday.getMonth() + 1}/${sunday.getDate()}(일)`,
+    overdueSundayLabel,
     dday,
   };
 };

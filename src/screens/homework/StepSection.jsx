@@ -14,7 +14,7 @@ export function StepSection({ step, displayNum, stampDate, isChecked, isFailed, 
   const failN = hasItems ? items.filter(it => isFailed && isFailed(it)).length : 0;
   const doneN = hasItems ? items.filter(it => !(isFailed && isFailed(it)) && isChecked(it)).length : 0;
   const pending = hasItems ? items.length - failN - doneN : 0;
-  const foldSummary = [pending > 0 ? `확인할 항목 ${pending}개` : "", failN > 0 ? `재시 ${failN}개` : ""].filter(Boolean).join(" · ") || `${items.length}개 모두 확인 완료`;
+  const foldSummary = [pending > 0 ? `검사할 항목 ${pending}개` : "", failN > 0 ? `재시 ${failN}개` : ""].filter(Boolean).join(" · ") || `${items.length}개 모두 검사 완료`;
   const headId = `step-head-${step.key}`;
   const bodyId = `step-body-${step.key}`;
   return (
