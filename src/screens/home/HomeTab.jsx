@@ -79,7 +79,7 @@ export function renderHomeTab(C) {
           return (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
-              {/* ① 맨 위 큰 한 줄 요약 (날짜 + "오늘 할 일 N개 남았어요" / 다 했으면 완료 문구) */}
+              {/* ① 맨 위 큰 한 줄 요약 (날짜 + "오늘/이 날 할 일 N개 남았어요" / 다 했으면 완료 문구) */}
               <div style={{ padding: "4px 4px 2px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: GREEN }}>{dateLabel}</span>
@@ -88,11 +88,11 @@ export function renderHomeTab(C) {
                 </div>
                 <div style={{ fontSize: 22, fontWeight: 900, color: UI.text, letterSpacing: -0.4, lineHeight: 1.3, marginTop: 4, wordBreak: "keep-all" }}>
                   {totalRemainingN > 0 ? (
-                    <>오늘 할 일 <span style={{ color: GREEN }}>{totalRemainingN}개</span> 남았어요</>
+                    <>{dateIsToday ? "오늘 할 일" : "이 날 할 일"} <span style={{ color: GREEN }}>{totalRemainingN}개</span> 남았어요</>
                   ) : hasAnyTodayWork ? (
-                    "오늘 할 일을 다 했어요"
+                    dateIsToday ? "오늘 할 일을 다 했어요" : "이 날 할 일을 다 했어요"
                   ) : (
-                    "오늘 등록된 할 일이 없어요"
+                    dateIsToday ? "오늘 등록된 할 일이 없어요" : "이 날 등록된 할 일이 없어요"
                   )}
                 </div>
               </div>
@@ -240,9 +240,9 @@ export function renderHomeTab(C) {
                       </span>
                       <span style={{ display: "block", fontSize: 12.5, marginTop: 2, color: vocabWarn.overdue > 0 ? UI.warnFg : UI.sub, fontWeight: (vocabWarn.overdue > 0 || vocabWarn.dueThisWeek > 0) ? 700 : 500, lineHeight: 1.4 }}>
                         {vocabWarn.overdue > 0
-                          ? `틀린 단어 ${vocabWarn.overdue}개 · ${vocabWarn.overdueSundayLabel ? `${vocabWarn.overdueSundayLabel}까지였어요` : "기한이 지났어요"}`
+                          ? (vocabWarn.overdueSundayLabel ? `${vocabWarn.overdueSundayLabel}까지였어요` : "기한이 지났어요")
                           : vocabWarn.dueThisWeek > 0
-                            ? `틀린 단어 ${vocabWarn.dueThisWeek}개 · ${vocabWarn.sundayLabel}까지 (D-${vocabWarn.dday})`
+                            ? `${vocabWarn.sundayLabel}까지 (D-${vocabWarn.dday})`
                             : `틀린 단어 ${wrongCount}개`}
                       </span>
                     </span>

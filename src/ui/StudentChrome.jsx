@@ -26,7 +26,7 @@ export function StudentHeader({ innerRef, student, attToken, onQr, refreshing, o
           {IS_STAFF_VIEW ? (
             <span style={{ flexShrink: 0, whiteSpace: "nowrap", fontSize: 12, fontWeight: 700, color: UI.dim, padding: "0 4px" }}>QR 숨김</span>
           ) : !attToken ? (
-            <span style={{ flexShrink: 0, whiteSpace: "nowrap", fontSize: 12, fontWeight: 700, color: UI.warnFg, padding: "0 4px" }}>QR 없음</span>
+            <span style={{ flexShrink: 0, whiteSpace: "nowrap", fontSize: 12, fontWeight: 700, color: UI.warnFg, padding: "0 4px" }}>QR 없음·선생님께 문의</span>
           ) : (
             <button type="button" onClick={onQr} aria-label="출석 QR 열기"
               style={{ flexShrink: 0, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 5, padding: "0 11px", minHeight: TAP, borderRadius: 12, border: "none", background: UI.navy, color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
