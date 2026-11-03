@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { APP_BUILD_ID, clearCachesAndReload } from "../core/buildId.jsx";
 
 // [120차수] 앱 새 판(서비스워커) 알아채기와 [업데이트] 단추 — App.jsx에서 그대로 옮김.
+// [142차수] 서비스워커(sw.js)는 푸시용이라 배포 때 거의 안 바뀌어 띠가 안 떴다 → /version.json(빌드 번호)도 같이 본다.
+//   켜질 때·화면이 다시 보일 때·30분마다 읽어 내 빌드 번호(__BUILD_ID__)와 다르면 "found"(via: "version").
+//   그렇게 찾은 새 판은 [지금 적용]에서 캐시를 전부 비우고 새로고침한다(서비스워커 길은 전과 같다).
+const VERSION_CHECK_MS = 30 * 60 * 1000;
 export function useAppUpdate(D) {
   const { mockBusyRef, viewingVideoRef, vocaHwBusyRef, vocabTestBusyRef } = D;
   // [98차수→101차수] 앱 새 판(서비스워커) 감지.
@@ -15,6 +20,29 @@ export function useAppUpdate(D) {
   const [swUpdate, setSwUpdate] = useState({ state: "", msg: "" });
   const swUpdateRef = useRef({ state: "", msg: "" });
   const setSw = (next) => { swUpdateRef.current = next; setSwUpdate(next); };
+  // [142차수] 빌드 번호 비교 — 오프라인·실패는 조용히 무시. 이미 다른 상태(found/applying/…)면 건드리지 않는다.
+  useEffect(() => {
+    if (!APP_BUILD_ID) return;
+    let dead = false;
+    let busy = false;
+    const check = async () => {
+      if (dead || busy || document.hidden) return;
+      busy = true;
+      try {
+        const r = await fetch("/version.json?t=" + Date.now(), { cache: "no-store" });
+        if (!r.ok) return;
+        const j = await r.json();
+        const remote = j && typeof j.build === "string" ? j.build : "";
+        if (!dead && remote && remote !== APP_BUILD_ID && swUpdateRef.current.state === "") setSw({ state: "found", msg: "", via: "version" });
+      } catch (e) { /* 오프라인·서버 오류 — 조용히 */ }
+      finally { busy = false; }
+    };
+    const onVis = () => { if (!document.hidden) check(); };
+    check();
+    document.addEventListener("visibilitychange", onVis);
+    const timer = setInterval(check, VERSION_CHECK_MS);
+    return () => { dead = true; document.removeEventListener("visibilitychange", onVis); clearInterval(timer); };
+  }, []);
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
     let dead = false;
@@ -96,7 +124,12 @@ export function useAppUpdate(D) {
     const busyMsg = appUpdateBusyMsg();
     if (busyMsg) { setSw({ state: cur, msg: busyMsg }); return; }
     if (cur === "applying") return;
-    if (!("serviceWorker" in navigator)) { setSw({ state: "failed", msg: "" }); return; }
+    // [142차수] 빌드 번호 차이로 찾은 새 판(또는 서비스워커가 아예 없는 폰) = 캐시를 비우고 새로고침
+    if ((cur === "found" && swUpdateRef.current.via === "version") || !("serviceWorker" in navigator)) {
+      setSw({ state: "applying", msg: "" });
+      await clearCachesAndReload();
+      return;
+    }
     // 이미 새 controller로 바뀐 상태면 메시지를 다시 보낼 필요 없이 새로고침만(학생이 눌렀으니 이건 사용자 요청의 후속 동작).
     if (cur === "swapped") { try { window.location.reload(); } catch (e) {} return; }
     try {
@@ -140,5 +173,11 @@ export function useAppUpdate(D) {
       setSw({ state: "failed", msg: "" });
     }
   };
-  return { applyAppUpdate, swUpdate };
+  // [142차수] 더보기 > 앱 설정 [앱 새로고침] — 캐시 비우고 새로고침. 시험·영상 중이면 안내만.
+  const reloadAppHard = async () => {
+    const busyMsg = appUpdateBusyMsg();
+    if (busyMsg) { setSw({ state: swUpdateRef.current.state, msg: busyMsg, via: swUpdateRef.current.via }); return; }
+    await clearCachesAndReload();
+  };
+  return { applyAppUpdate, reloadAppHard, swUpdate };
 }

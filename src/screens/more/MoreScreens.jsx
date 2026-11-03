@@ -4,6 +4,7 @@ import { StudentExamDdaySection, StudentExamRangeCard } from "../exam/ExamCards.
 import { StudentSurveyCard } from "../survey/StudentSurvey.jsx";
 import { UI, TAP } from "../../theme/tokens.jsx";
 import { PushSettingCard, PwaInstallCard, SETTING_BTN, SETTING_CARD, SETTING_DESC, SETTING_TITLE, SettingStatus } from "../../ui/settingCards.jsx";
+import { fmtBuildLabel } from "../../core/buildId.jsx";
 
 // 더보기 → 공지·설문: 고정 공지(pinnedMessages)와 진행 중 설문(StudentSurveyCard)을 나눠서 보여준다.
 //   "읽음/안 읽음"은 원본에 기록이 없으므로 새로 추정하지 않는다(계획서 6절). 설문 응답 규칙은 StudentSurveyCard 그대로.
@@ -59,16 +60,17 @@ export function ExamInfoScreen({ student, items, examRanges }) {
   );
 }
 // 더보기 → 앱 설정: 알림 · 홈 화면 추가 · 앱 업데이트. 마플보카 학습 설정(초기화·캐시)은 단어 화면 안에 그대로 둔다(계획서 10절).
-export function AppSettingsScreen({ student, swUpdate, onApplyUpdate }) {
+export function AppSettingsScreen({ student, swUpdate, onApplyUpdate, onHardReload }) {
   const st = swUpdate?.state || "";
+  const buildLabel = fmtBuildLabel();
   let updBody;
   if (!st) updBody = <SettingStatus tone="ok">지금 최신 화면이에요</SettingStatus>;
-  else if (st === "failed") updBody = <SettingStatus tone="warn">업데이트를 적용하지 못했어요 — 이 앱의 다른 창을 모두 닫고 다시 열어 주세요</SettingStatus>;
+  else if (st === "failed") updBody = <SettingStatus tone="warn">업데이트를 적용하지 못했어요 — 아래 [앱 새로고침]을 눌러 보고, 그래도 안 되면 이 앱의 다른 창을 모두 닫고 다시 열어 주세요</SettingStatus>;
   else updBody = (
     <>
-      <SettingStatus tone="dim">{st === "applying" ? "업데이트 준비 중…" : "새 버전이 있어요"}</SettingStatus>
+      <SettingStatus tone="dim">{st === "applying" ? "업데이트 준비 중…" : "업데이트가 있어요"}</SettingStatus>
       {swUpdate.msg && <div style={{ ...SETTING_DESC, marginTop: 8, color: UI.warnFg, fontWeight: 700 }}>{swUpdate.msg}</div>}
-      <div><button type="button" onClick={onApplyUpdate} disabled={st === "applying"} style={{ minHeight: TAP, ...SETTING_BTN, opacity: st === "applying" ? 0.6 : 1 }}>{st === "applying" ? "준비 중…" : "업데이트"}</button></div>
+      <div><button type="button" onClick={onApplyUpdate} disabled={st === "applying"} style={{ minHeight: TAP, ...SETTING_BTN, opacity: st === "applying" ? 0.6 : 1 }}>{st === "applying" ? "준비 중…" : "지금 적용"}</button></div>
     </>
   );
   return (
@@ -77,8 +79,15 @@ export function AppSettingsScreen({ student, swUpdate, onApplyUpdate }) {
       <PwaInstallCard />
       <div style={SETTING_CARD}>
         <div style={SETTING_TITLE}>🆕 앱 업데이트</div>
-        <div style={SETTING_DESC}>새 버전이 나오면 여기와 위쪽 띠에 [업데이트] 단추가 나와요. 시험·영상 중에는 적용되지 않아요.</div>
+        <div style={SETTING_DESC}>새 판이 나오면 여기와 위쪽 띠에 [지금 적용] 단추가 나와요. 시험·영상 중에는 적용되지 않아요.</div>
         {updBody}
+      </div>
+      {/* [142차수] 항상 보이는 [앱 새로고침] — 캐시를 비우고 새로고침(옛 화면이 남을 때 학생이 스스로 풀 수 있게). 지금 보는 판 번호(빌드 시각)도 작게 */}
+      <div style={SETTING_CARD}>
+        <div style={SETTING_TITLE}>🔄 앱 새로고침</div>
+        <div style={SETTING_DESC}>화면이 이상하거나 옛날 화면이 보이면 눌러 주세요</div>
+        <div><button type="button" onClick={onHardReload} data-testid="app-hard-reload" style={{ minHeight: TAP, ...SETTING_BTN }}>앱 새로고침</button></div>
+        {buildLabel && <div style={{ fontSize: 11, color: UI.dim, marginTop: 10 }}>지금 보는 판: {buildLabel}</div>}
       </div>
     </div>
   );

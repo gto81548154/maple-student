@@ -80,7 +80,7 @@ export default function App() {
   const vocabTestBusyRef = useRef(false);
   // [97차수 09-05] 마플보카 단어 숙제 TEST가 진행 중인지(마플보카가 maplVocaHwState로 알려준다) — 위 탭 줄로 나갈 때 확인창
   const vocaHwBusyRef = useRef(false);
-  const { applyAppUpdate, swUpdate } = useAppUpdate({ mockBusyRef, viewingVideoRef, vocaHwBusyRef, vocabTestBusyRef });
+  const { applyAppUpdate, reloadAppHard, swUpdate } = useAppUpdate({ mockBusyRef, viewingVideoRef, vocaHwBusyRef, vocabTestBusyRef });
   // [95·97차수] 탭을 떠나기 전 확인 — 같은 탭이면 그냥 통과. 탭 줄과 오답 경고 띠의 [복습하기]가 함께 쓴다.
   const confirmLeaveTab = (nextKey) => {
     if (nextKey === tab) return true;
@@ -275,22 +275,23 @@ export default function App() {
           </div>
         </div>
       )}
-      {/* [98차수→101차수] 앱 새 판 안내 — 학생이 [업데이트]를 눌러야 바뀐다. 시험·영상 중이면 안내만 하고 안 바꾼다. 자동 새로고침 없음 */}
+      {/* [98차수→101차수] 앱 새 판 안내 — 학생이 [지금 적용]을 눌러야 바뀐다. 시험·영상 중이면 안내만 하고 안 바꾼다. 자동 새로고침 없음
+          [142차수] 글 "🆕 업데이트가 있어요" + 단추 [지금 적용]. 빌드 번호(version.json) 차이로 찾은 새 판은 캐시를 비우고 새로고침 */}
       {!!swUpdate.state && (
         <div style={{ padding: "10px 24px", background: swUpdate.state === "failed" ? "#fff4e5" : "#e8f4ff", borderBottom: "1px solid " + (swUpdate.state === "failed" ? "#f5d3a6" : "#b9dcff"), color: swUpdate.state === "failed" ? "#8a4b00" : "#1c4f8a", fontSize: 12, fontWeight: 700 }}>
           <div style={{ maxWidth: MAX_W, margin: "0 auto", display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ flex: 1 }}>
               {swUpdate.msg
                 ? swUpdate.msg
-                : swUpdate.state === "found" ? "🆕 새 버전이 있어요. 하던 일을 마친 뒤 업데이트해 주세요."
+                : swUpdate.state === "found" ? "🆕 업데이트가 있어요"
                 : swUpdate.state === "applying" ? "업데이트 준비 중…"
-                : swUpdate.state === "swapped" ? "🆕 새 버전으로 바뀌었어요. 하던 일을 마친 뒤 [업데이트]를 누르면 최신 화면이 됩니다."
+                : swUpdate.state === "swapped" ? "🆕 업데이트가 있어요. 하던 일을 마친 뒤 [지금 적용]을 누르면 최신 화면이 됩니다."
                 : "업데이트를 적용하지 못했어요. 하던 일을 마친 뒤 앱과 같은 사이트의 다른 창을 모두 닫고 다시 열어 주세요."}
             </span>
             {swUpdate.state !== "failed" && (
               <button type="button" onClick={applyAppUpdate} disabled={swUpdate.state === "applying"}
                 style={{ minHeight: TAP, flexShrink: 0, border: "none", background: "#1c4f8a", color: "#fff", borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 800, cursor: swUpdate.state === "applying" ? "default" : "pointer", opacity: swUpdate.state === "applying" ? 0.6 : 1 }}>
-                {swUpdate.state === "applying" ? "준비 중…" : "업데이트"}
+                {swUpdate.state === "applying" ? "준비 중…" : "지금 적용"}
               </button>
             )}
           </div>
@@ -333,7 +334,7 @@ export default function App() {
         )}
         {tab === "settings" && (
           <MoreSubFrame title="앱 설정" onBack={backToMore}>
-            <AppSettingsScreen student={student} swUpdate={swUpdate} onApplyUpdate={applyAppUpdate} />
+            <AppSettingsScreen student={student} swUpdate={swUpdate} onApplyUpdate={applyAppUpdate} onHardReload={reloadAppHard} />
           </MoreSubFrame>
         )}
         {tab === "cal" && (
