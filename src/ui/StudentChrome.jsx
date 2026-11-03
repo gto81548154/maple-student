@@ -1,7 +1,7 @@
 import { IS_STAFF_VIEW } from "../core/auth.jsx";
 import { MAX_W, TAB_BAR_H, TAP, UI } from "../theme/tokens.jsx";
 
-// ═══ [103차수 09-08 디자인 개편 · 140차수 토스 스타일 1단계] 학생 화면 공통 틀 — 머리글 · 위 탭 5개 · 더보기 ═══
+// ═══ [103차수 09-08 디자인 개편 · 140차수 토스 스타일 1단계 · 141차수 탭 줄 아래로] 학생 화면 공통 틀 — 머리글 · 아래 탭 5개 · 더보기 ═══
 // 계획서(01_IMPLEMENTATION_PLAN.md) 4·5·10절. 선생님 홈(TeacherHome)·마스터 홈(MasterHome)은 이 틀을 쓰지 않는다.
 // 머리글(시안 D 모양): 왼쪽 = MP 로고 + 이름 + 학교학년 / 오른쪽 한 줄 = 흰색 둥근 [↻ 새로고침] 버튼 + 남색 둥근 [출석 QR] 버튼. 폭 390px에서도 꺾이지 않게 배치.
 export function StudentHeader({ innerRef, student, attToken, onQr, refreshing, onRefresh }) {
@@ -39,11 +39,12 @@ export function StudentHeader({ innerRef, student, attToken, onQr, refreshing, o
     </div>
   );
 }
-// 위 탭 5개(홈·숙제·단어·강의·더보기) — 같은 폭, 붙박이(sticky). 옆으로 미는 방식은 없앴다(계획서 4절).
-//   [140차수] alert = 단어 숙제가 남아 있을 때 칸 전체를 칠하지 않고 글자 오른쪽 위에 작은 빨간 점(8px)만 찍는다. 선택된 탭은 남색 글씨 + 밑줄만.
+// [141차수] 탭 5개(홈·숙제·단어·강의·더보기) — 토스처럼 **화면 아래** 붙박이(position: fixed; bottom: 0). 아이폰 홈바 여백(safe-area-inset-bottom)만큼 아래를 더 띄운다.
+//   본문이 탭 줄에 가리지 않게 App 본문 아래 여백도 TAB_BAR_H + safe-area 만큼 준다. 같은 폭, 옆으로 미는 방식 없음(계획서 4절).
+//   [140차수] alert = 단어 숙제가 남아 있을 때 칸 전체를 칠하지 않고 글자 오른쪽 위에 작은 빨간 점(8px)만 찍는다. 선택된 탭은 남색 글씨 + 위쪽 짧은 남색 줄.
 export function StudentTabBar({ tabs, activeKey, onPick }) {
   return (
-    <div style={{ background: "#fff", borderBottom: `1px solid ${UI.line}`, position: "sticky", top: 0, zIndex: 10 }}>
+    <div style={{ background: "#fff", borderTop: `1px solid ${UI.line}`, position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10, paddingBottom: "env(safe-area-inset-bottom)" }}>
       <div role="tablist" aria-label="메뉴" style={{ maxWidth: MAX_W, margin: "0 auto", display: "flex", height: TAB_BAR_H, boxSizing: "border-box" }}>
         {tabs.map((t) => {
           const on = activeKey === t.key;
@@ -54,7 +55,7 @@ export function StudentTabBar({ tabs, activeKey, onPick }) {
                 background: "transparent", fontSize: 15,
                 fontWeight: on ? 800 : 600,
                 color: on ? UI.navy : UI.dim,
-                borderBottom: on ? `2.5px solid ${UI.navy}` : "2.5px solid transparent",
+                borderTop: on ? `2.5px solid ${UI.navy}` : "2.5px solid transparent",
                 boxSizing: "border-box", lineHeight: 1,
                 display: "inline-flex", alignItems: "center", justifyContent: "center",
               }}>

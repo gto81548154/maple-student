@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { TAB_BAR_H } from "../../theme/tokens.jsx";
 
 // ─── [08-04] 마플보카 임베드 공용 프레임: 스크롤을 학생앱 하나로 통일 ───
 // voca.html이 문서 높이(maplVocaHeight)를 계속 보내오면 iframe 높이를 그 값으로 맞춰
@@ -41,7 +42,8 @@ export function VocaFrame({ title, src, topOffset = 60, openLast = false, onOpen
       if (!el || !el.contentWindow) return;
       const r = el.getBoundingClientRect();
       const top = Math.max(0, -r.top);
-      const vh = Math.max(0, Math.min(window.innerHeight, r.bottom) - Math.max(r.top, 0));
+      // [141차수] 탭 줄이 화면 아래 붙박이가 되어 그 높이만큼은 "보이는 영역"에서 뺀다(마플보카 모달·토스트가 탭 줄 뒤에 숨지 않게)
+      const vh = Math.max(0, Math.min(window.innerHeight - TAB_BAR_H, r.bottom) - Math.max(r.top, 0));
       try { el.contentWindow.postMessage({ type: "maplVis", top: Math.round(top), h: Math.round(vh) }, "*"); } catch (e) {}
     };
     const queueVis = () => { if (!raf) raf = requestAnimationFrame(sendVis); };

@@ -13,7 +13,7 @@ export const UI = {
   text: "#232B3B", sub: "#647084", dim: "#9AA3B2",
   okBg: "#E8F6EE", okFg: "#1B8A5A", warnBg: "#FDECEA", warnFg: "#B03A2E", blueBg: "#EEF3FC",
 };
-// 위 탭 줄의 실제 높이(px). 붙박이(sticky) 탭 줄 아래로 내용을 맞추는 보정(VocaFrame topOffset·강의 카드 스크롤)이 전부 이 값을 쓴다.
+// 탭 줄의 실제 높이(px). [141차수] 탭 줄은 이제 화면 아래 붙박이(fixed) — 본문 아래 여백·VocaFrame 보이는 영역 보정이 이 값을 쓴다(아이폰 홈바 여백은 따로 safe-area-inset-bottom).
 //   숫자를 여기 한 곳에서만 바꾼다(계획서 8.5).
 export const TAB_BAR_H = 48;
 // [131차수] 폰에서 손가락으로 누르는 단추의 최소 높이(px). 44 미만 단추는 쓰지 않는다(원장앱과 같은 규칙). 글자는 11 미만을 쓰지 않는다(숫자 11을 바로 적음).

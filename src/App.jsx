@@ -13,7 +13,7 @@ import { StudentProgressTree } from "./screens/progress/StudentProgressTree.jsx"
 import { TeacherHome } from "./screens/teacher/TeacherHome.jsx";
 import { TeacherLinkDeadScreen } from "./screens/teacher/TeacherLinkDeadScreen.jsx";
 import { VocabWrongTab } from "./screens/vocab/VocabWrongTab.jsx";
-import { MAX_W, TAP, UI } from "./theme/tokens.jsx";
+import { MAX_W, TAB_BAR_H, TAP, UI } from "./theme/tokens.jsx";
 import { KakaoOpenBanner } from "./ui/KakaoOpenBanner.jsx";
 import { AttQrModal } from "./ui/Qr.jsx";
 import { MoreMenu, MoreSubFrame, StudentHeader, StudentTabBar } from "./ui/StudentChrome.jsx";
@@ -213,7 +213,7 @@ export default function App() {
   const F = "'Pretendard Variable', -apple-system, sans-serif";
 
   // [119차수] 탭별 그리기 함수(screens/…)에 넘겨줄 값 묶음. 그리기 함수는 여기서 필요한 것만 꺼내 쓴다.
-  const C = { activeDate, activeSurveys, allDates, allTaskItems, attNoticeAll, attWeek, calSub, doneTasks, examDdays, examRanges, getFailReason, goTab, hasVocabWrong, isCheckedView, isFailed, lastVideoSaveStatus, nearestExam, pct, pendingVideoCount, picker, pinnedMessages, progressTree, scrollToVideoCard, selectedVideoBook, setSelectedDate, setSelectedVideoBook, setVocaHwTask, setVocaOpenLast, setVocaOpenTask, stepGroups, student, studentId, studentVideos, taskVoca, todayStrForTab, todoRevealHeld, toggleVideo, totalTasks, unansweredSurveys, videos, videosFeaturedId, viewingVideo, vocaExtraBook, vocaHwBusyRef, vocaHwRec, vocaHwTask, vocaOpenLast, vocaOpenTask, vocaPassLabel, vocabWarn, watchBySid, wrongCount };
+  const C = { activeDate, activeSurveys, allDates, allTaskItems, attLog, attNoticeAll, attStatus, attWeek, calSub, customHolidays, doneTasks, examDdays, examRanges, exams, getFailReason, goTab, hasVocabWrong, isCheckedView, isFailed, lastVideoSaveStatus, makeups, nearestExam, pct, pendingVideoCount, picker, pinnedMessages, progressTree, scrollToVideoCard, selectedVideoBook, setSelectedDate, setSelectedVideoBook, setVocaHwTask, setVocaOpenLast, setVocaOpenTask, stepGroups, student, studentId, studentVideos, taskVoca, todayStrForTab, todoRevealHeld, toggleVideo, totalTasks, unansweredSurveys, videos, videosFeaturedId, viewingVideo, vocaExtraBook, vocaHwBusyRef, vocaHwRec, vocaHwTask, vocaOpenLast, vocaOpenTask, vocaPassLabel, vocabWarn, watchBySid, wrongCount };
   return (
     <div style={{ minHeight: "100vh", background: UI.bg, fontFamily: F, color: UI.text }}>
       {/* [103차수] 카카오톡 안에서 열었을 때만 "브라우저로 열기" 띠. 홈 화면 추가·알림 안내는 더보기 → 앱 설정으로 이사(원장 결정 09-08) */}
@@ -303,10 +303,11 @@ export default function App() {
       {passQueue.length > 0 && <BookPassCelebration books={passQueue} onClose={() => setPassQueue([])} />}
 
       {/* [103차수] 진행 중 설문 카드는 탭 줄 위에서 더보기 → 공지·설문으로 이사. 홈에는 요약 줄(응답할 설문 n개)만 둔다 */}
-      {/* [103차수] 위 탭 5개 — 홈·숙제·단어·강의·더보기. 더보기 하위 화면에서는 "더보기"가 켜져 보인다(topTabOf). 이동은 goTab 하나로 */}
+      {/* [103차수 → 141차수] 탭 5개 — 홈·숙제·단어·강의·더보기. 이제 화면 아래 붙박이(StudentTabBar). 더보기 하위 화면에서는 "더보기"가 켜져 보인다(topTabOf). 이동은 goTab 하나로 */}
       <StudentTabBar tabs={topTabs} activeKey={topTabOf(tab)} onPick={(k) => goTab(k)} />
 
-      <div style={{ padding: "16px 16px 100px" }}>
+      {/* [141차수] 본문 아래 여백 = 원래 100px + 아래 탭 줄 높이 + 아이폰 홈바 여백 — 맨 아래 내용이 탭 줄에 가리지 않게 */}
+      <div style={{ padding: "16px 16px", paddingBottom: `calc(${100 + TAB_BAR_H}px + env(safe-area-inset-bottom))` }}>
         <div style={{ maxWidth: MAX_W, margin: "0 auto" }}>
         {/* ═══ [104차수 09-08 디자인 개편] 홈 — 시안 images/01-home.png, 계획서 6절 ═══
             순서: 등원+D-Day 칸(109차수: 아래에 7일 줄) → "오늘 할 일" 제목+날짜 → 오늘 숙제 카드(1단계 항목 전부) → 이어서 할 공부(단어/강의/오답) → 공지·시험 정보·수업 일정·학습 진도 바로가기.

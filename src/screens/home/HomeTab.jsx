@@ -1,17 +1,19 @@
+import { useState } from "react";
 import { IS_STAFF_VIEW, IS_TEACHER_MODE } from "../../core/auth.jsx";
 import { VOCA_TAB_ENABLED } from "../../core/config.jsx";
 import { attTag, fmtAttDayParen } from "../../domain/attendance.jsx";
-import { DK, fmtDateKR, fmtTime, isToday } from "../../domain/time.jsx";
+import { fmtDateKR, fmtTime, isToday } from "../../domain/time.jsx";
 import { stripBox } from "../../domain/todo.jsx";
 import { TASK_VIDEO_DONE_PCT, watchPctOf } from "../../domain/videoMatch.jsx";
 import { VOCA_UNIT_WORDS, fmtLecRange, guessVocaBooks, vocaFullLabel, vocaShortLabel } from "../../domain/voca.jsx";
 import { UI, TAP } from "../../theme/tokens.jsx";
+import { StudentMonthCalendar } from "../calendar/StudentMonthCalendar.jsx";
 import { WordSearch } from "./WordSearch.jsx";
 
 // [119차수 · 140차수 토스 스타일 2단계] 홈 탭 그리기 — 시안 C 모양(단, 오늘 숙제가 맨 위).
 // 순서: ① 맨 위 큰 한 줄 요약 → ② 단어 검색 → ③ [오늘 숙제] → ④ [지금 폰으로 할 공부] → ⑤ [다음 수업] → ⑥ [시험 정보 · 공지]
 export function renderHomeTab(C) {
-  const { activeDate, activeSurveys, allDates, attNoticeAll, attWeek, calSub, getFailReason, goTab, hasVocabWrong, isCheckedView, isFailed, nearestExam, picker, pinnedMessages, progressTree, stepGroups, student, studentId, studentVideos, taskVoca, todayStrForTab, unansweredSurveys, videos, vocaHwRec, vocaPassLabel, vocabWarn, watchBySid, wrongCount } = C;
+  const { activeDate, activeSurveys, allDates, attLog, attNoticeAll, attStatus, calSub, customHolidays, exams, getFailReason, goTab, hasVocabWrong, isCheckedView, isFailed, makeups, nearestExam, picker, pinnedMessages, progressTree, stepGroups, student, studentId, studentVideos, taskVoca, todayStrForTab, unansweredSurveys, videos, vocaHwRec, vocaPassLabel, vocabWarn, watchBySid, wrongCount } = C;
           const step1Items = (stepGroups.find(s => s.key === "step1")?.items) || [];
           // 카드 안 "검사 n/m" = 이 카드의 항목 기준(재시는 분모·분자에서 제외 — 숙제 탭 진행률과 같은 규칙). 5단계 전체 숫자와 섞지 않는다.
           const step1Countable = step1Items.filter(it => !isFailed(it));
@@ -251,62 +253,9 @@ export function renderHomeTab(C) {
                 )}
               </div>
 
-              {/* ⑤ 카드 [다음 수업] — 다음 수업 날·시간 + 일주일 날짜 줄(수업 날 칸에 "수업" 글자) */}
-              {(() => {
-                const hasAtt = !!(attNoticeAll.today || attNoticeAll.next);
-                const todayMonth = new Date().getMonth();
-                return (
-                  <div style={{ ...card, padding: "16px 18px" }}>
-                    <button type="button" onClick={() => goTab("cal")}
-                      style={{ width: "100%", minHeight: TAP, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, border: "none", background: "transparent", padding: 0, textAlign: "left", cursor: "pointer", fontFamily: "inherit" }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 800, color: PURPLE }}>다음 수업 안내</div>
-                        <div style={{ fontSize: 16, fontWeight: 800, color: UI.text, marginTop: 3, lineHeight: 1.35, wordBreak: "keep-all" }}>
-                          {attNoticeAll.today
-                            ? `오늘 ${fmtTime(attNoticeAll.today.time)}까지 등원입니다${attTag(attNoticeAll.today)}`
-                            : attNoticeAll.next
-                              ? `다음 수업은 ${fmtAttDayParen(attNoticeAll.next.dateObj)} ${fmtTime(attNoticeAll.next.time)}입니다${attTag(attNoticeAll.next)}`
-                              : calSub}
-                        </div>
-                        {attNoticeAll.today && attNoticeAll.next && (
-                          <div style={{ fontSize: 12.5, fontWeight: 600, color: UI.sub, marginTop: 2 }}>
-                            다음 수업 · {fmtAttDayParen(attNoticeAll.next.dateObj)} {fmtTime(attNoticeAll.next.time)}{attTag(attNoticeAll.next)}
-                          </div>
-                        )}
-                      </div>
-                      <span style={{ flexShrink: 0, fontSize: 13, fontWeight: 700, color: UI.sub, whiteSpace: "nowrap" }}>수업 일정 ›</span>
-                    </button>
-
-                    {(hasAtt || attWeek.some((d) => d.attMark?.type === "absent")) && attWeek.length > 0 && (
-                      <button type="button" onClick={() => goTab("cal")} aria-label="이번 주 수업 일정 — 누르면 달력이 열려요" data-testid="home-att-week"
-                        style={{ minHeight: TAP, width: "100%", display: "flex", alignItems: "stretch", gap: 4, padding: "12px 0 0", border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", textAlign: "center", boxSizing: "border-box" }}>
-                        {attWeek.map((d) => {
-                          const absent = d.attMark?.type === "absent";
-                          const cls = !!d.entry;
-                          const otherMonth = d.dateObj.getMonth() !== todayMonth;
-                          const dayBg = d.isToday ? UI.navy : absent ? UI.warnBg : cls ? PURPLE_BG : UI.bg;
-                          const dayFg = d.isToday ? "#fff" : absent ? UI.warnFg : cls ? PURPLE : UI.text;
-                          const subFg = d.isToday ? "rgba(255,255,255,0.8)" : absent ? UI.warnFg : cls ? PURPLE : UI.sub;
-                          return (
-                            <span key={d.date} data-att={cls ? "1" : "0"} data-today={d.isToday ? "1" : "0"}
-                              style={{ flex: 1, minWidth: 0, borderRadius: 12, padding: "7px 2px", lineHeight: 1.2, boxSizing: "border-box", background: dayBg }}>
-                              <span style={{ display: "block", fontSize: 12, fontWeight: d.isToday || cls ? 800 : 600, color: subFg, whiteSpace: "nowrap" }}>
-                                {d.isToday ? "오늘" : DK[d.dateObj.getDay()]}
-                              </span>
-                              <span style={{ display: "block", fontSize: 13, fontWeight: 800, color: dayFg, marginTop: 2, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
-                                {otherMonth ? `${d.dateObj.getMonth() + 1}/${d.dateObj.getDate()}` : d.dateObj.getDate()}
-                              </span>
-                              <span style={{ display: "block", fontSize: 12, fontWeight: 800, marginTop: 2, color: absent ? UI.warnFg : cls ? (d.isToday ? "#fff" : PURPLE) : UI.dim, whiteSpace: "nowrap" }}>
-                                {absent ? "결석" : cls ? "수업" : "-"}
-                              </span>
-                            </span>
-                          );
-                        })}
-                      </button>
-                    )}
-                  </div>
-                );
-              })()}
+              {/* ⑤ 카드 [다음 수업] — 다음 수업 날·시간 + [141차수] 한 달 달력(수업 일정 화면과 같은 부품). 접기/펼치기 단추는 카드 맨 아래 */}
+              <HomeNextClassCard attNoticeAll={attNoticeAll} calSub={calSub} cardStyle={card} titleColor={PURPLE}
+                student={student} makeups={makeups} customHolidays={customHolidays} exams={exams} attLog={attLog} attStatus={attStatus} />
 
               {/* ⑥ 카드 [시험 정보 · 공지] — 시험 D-day는 여기 한 곳에만. 공지·설문과 학습 진도도 여기 */}
               <div style={card}>
@@ -327,4 +276,40 @@ export function renderHomeTab(C) {
               </div>
             </div>
           );
+}
+
+// ─── [141차수] 홈 ⑤ 카드 [다음 수업 안내] ───
+//   윗줄 글(오늘 n시까지 등원입니다 / 다음 수업 · …)은 전과 같고, 그 아래에 수업 일정 화면과 같은 한 달 달력(StudentMonthCalendar)을 넣었다.
+//   "수업 일정 ›" 글자는 뺐다(달력이 바로 보이므로). 날짜를 누르면 그 날 정보가 카드 안 아래에 뜬다.
+//   [접기 ▲ / 펼치기 ▼]: 접으면 오늘이 든 주 + 다음 주(2주)만, 펼치면 한 달 전부. 처음은 펼침. 폰에 기억(localStorage "home_cal_fold" = "1"이면 접힘).
+const HOME_CAL_FOLD_KEY = "home_cal_fold";
+function HomeNextClassCard({ attNoticeAll, calSub, cardStyle, titleColor, student, makeups, customHolidays, exams, attLog, attStatus }) {
+  const [folded, setFolded] = useState(() => { try { return localStorage.getItem(HOME_CAL_FOLD_KEY) === "1"; } catch (e) { return false; } });
+  const toggleFold = () => setFolded((f) => { const next = !f; try { localStorage.setItem(HOME_CAL_FOLD_KEY, next ? "1" : "0"); } catch (e) {} return next; });
+  return (
+    <div style={{ ...cardStyle, padding: "16px 18px 0" }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: titleColor }}>다음 수업 안내</div>
+        <div style={{ fontSize: 16, fontWeight: 800, color: UI.text, marginTop: 3, lineHeight: 1.35, wordBreak: "keep-all" }}>
+          {attNoticeAll.today
+            ? `오늘 ${fmtTime(attNoticeAll.today.time)}까지 등원입니다${attTag(attNoticeAll.today)}`
+            : attNoticeAll.next
+              ? `다음 수업은 ${fmtAttDayParen(attNoticeAll.next.dateObj)} ${fmtTime(attNoticeAll.next.time)}입니다${attTag(attNoticeAll.next)}`
+              : calSub}
+        </div>
+        {attNoticeAll.today && attNoticeAll.next && (
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: UI.sub, marginTop: 2 }}>
+            다음 수업 · {fmtAttDayParen(attNoticeAll.next.dateObj)} {fmtTime(attNoticeAll.next.time)}{attTag(attNoticeAll.next)}
+          </div>
+        )}
+      </div>
+      <div data-testid="home-month-calendar" data-folded={folded ? "1" : "0"} style={{ marginTop: 14 }}>
+        <StudentMonthCalendar student={student} makeups={makeups} customHolidays={customHolidays} exams={exams} attLog={attLog} attStatus={attStatus} frame="plain" folded={folded} />
+      </div>
+      <button type="button" onClick={toggleFold} aria-expanded={!folded} data-testid="home-cal-fold"
+        style={{ display: "block", width: "calc(100% + 36px)", margin: "12px -18px 0", minHeight: TAP, border: "none", borderTop: `1px solid ${UI.bg}`, background: "transparent", color: UI.sub, fontSize: 13.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+        {folded ? "펼치기 ▼" : "접기 ▲"}
+      </button>
+    </div>
+  );
 }
