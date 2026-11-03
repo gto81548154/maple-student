@@ -23,7 +23,8 @@ const extractSchoolTokenForDday = (v = "") => {
 };
 // student.name은 검사 대상에서 제외한다.
 // (예: "이중수"의 '중', "고석원"의 '고'가 학교 종류로 오인식되는 문제 방지)
-const getStudentLevelForDday = (student = {}) => {
+// [146차수] 장학금 화면도 같은 판정(중/고)을 쓰므로 내보낸다.
+export const getStudentLevelForDday = (student = {}) => {
   const schoolText = String(student.school || "");
   const gradeText = String(student.grade || "");
 

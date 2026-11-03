@@ -29,6 +29,8 @@ export function computeMoreView(D) {
     { title: "안내", items: [
       { key: "notices", icon: "📣", title: "공지·설문", sub: noticeSub, subTone: unansweredSurveys.length ? "warn" : undefined },
       { key: "examInfo", icon: "📋", title: "시험 정보", sub: nearestExam ? `${nearestExam.name} ${nearestExam.ddayLabel} · 시험 범위` : "다가오는 시험 없음" },
+      // [146차수] 성적 장학금·친구 소개 기프티콘 신청(원장 결정 11-04)
+      { key: "reward", icon: "🎁", title: "장학금·친구 소개", sub: "기프티콘 신청하기" },
     ] },
     { title: "학습", items: [
       { key: "cal", icon: "📅", title: "수업 일정", sub: calSub },

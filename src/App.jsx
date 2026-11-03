@@ -9,6 +9,7 @@ import { MasterHome } from "./screens/master/MasterHome.jsx";
 import { MockExamTab } from "./screens/mock/MockExamTab.jsx";
 import { AppSettingsScreen, ExamInfoScreen, NoticesScreen } from "./screens/more/MoreScreens.jsx";
 import { RecordScreen } from "./screens/more/RecordScreen.jsx";
+import { RewardScreen } from "./screens/more/RewardScreen.jsx";
 import { BookPassCelebration } from "./screens/progress/BookPassCelebration.jsx";
 import { StudentProgressTree } from "./screens/progress/StudentProgressTree.jsx";
 import { TeacherHome } from "./screens/teacher/TeacherHome.jsx";
@@ -40,8 +41,8 @@ import { renderLoadingScreen } from "./screens/status/LoadingScreen.jsx";
 import { renderWithdrawnScreen } from "./screens/status/WithdrawnScreen.jsx";
 import { renderLoadErrorScreen } from "./screens/status/LoadErrorScreen.jsx";
 
-// [133차수] 주소(#해시)에 쓰는 학생 화면 이름 — 위 탭 5개 + 더보기 안 화면 8개(145차수: 녹음 제출 record 추가). 모르는 이름은 홈으로.
-const STUDENT_ROUTE_IDS = ["home", "tasks", "voca", "videos", "more", "cal", "vocabWrong", "mock", "progress", "notices", "examInfo", "settings", "record"];
+// [133차수] 주소(#해시)에 쓰는 학생 화면 이름 — 위 탭 5개 + 더보기 안 화면 9개(145차수: 녹음 제출 record · 146차수: 장학금 reward 추가). 모르는 이름은 홈으로.
+const STUDENT_ROUTE_IDS = ["home", "tasks", "voca", "videos", "more", "cal", "vocabWrong", "mock", "progress", "notices", "examInfo", "settings", "record", "reward"];
 
 export default function App() {
   const params = new URLSearchParams(window.location.search);
@@ -355,6 +356,13 @@ export default function App() {
         {tab === "record" && (
           <MoreSubFrame title="녹음 제출" onBack={backToMore}>
             <RecordScreen studentId={studentId} onBusy={(b) => { recordBusyRef.current = !!b; }} />
+          </MoreSubFrame>
+        )}
+
+        {/* [146차수] 더보기 → 장학금·친구 소개 — 학생이 신청, 원장이 원장앱에서 확인 뒤 기프티콘 지급 */}
+        {tab === "reward" && (
+          <MoreSubFrame title="장학금·친구 소개" onBack={backToMore}>
+            <RewardScreen student={student} studentId={studentId} />
           </MoreSubFrame>
         )}
 
