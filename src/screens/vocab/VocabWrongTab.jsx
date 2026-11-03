@@ -2,7 +2,7 @@ import { TAP } from "../../theme/tokens.jsx";
 import { useEffect, useRef, useState } from "react";
 // [95차수 09-05] 오답 TEST에서 "다음 단어"를 누르는 손가락 동작 안에서 화면을 바로 그리고 입력칸에 커서를 두기 위해(폰 자판이 뜨려면 이 순서여야 한다)
 import { flushSync } from "react-dom";
-import { buildVocabAcceptList, buildVocabAnswerDisplay } from "../../domain/vocabAnswer.jsx";
+import { buildVocabAcceptList, buildVocabAnswerDisplay, isVocabAnswerClose } from "../../domain/vocabAnswer.jsx";
 import { judgeVocabTest, makeVocabAttemptId, postVocabTestResult } from "../../domain/vocabTest.jsx";
 import { IS_STAFF_VIEW } from "../../core/auth.jsx";
 
@@ -16,6 +16,7 @@ export function VocabWrongTab({ vocabWrongWords = {}, studentId, onProgress }) {
   const [input, setInput] = useState("");
   const [revealed, setRevealed] = useState(false);
   const [judged, setJudged] = useState(null);
+  const [closeMatch, setCloseMatch] = useState("");   // [143차수] 어미를 떼고 맞은 경우 그 정답 글자("비슷한 표현: …")
   const [answers, setAnswers] = useState([]);
   const [startedAt, setStartedAt] = useState(null);
   const [summary, setSummary] = useState(null);
@@ -50,7 +51,6 @@ export function VocabWrongTab({ vocabWrongWords = {}, studentId, onProgress }) {
   // 학생앱은 AI 채점 없음. 정답 배열과 단순 비교만 한다.
   // [08-04] 띄어쓰기뿐 아니라 물결(~)·문장부호·대소문자도 무시한다.
   // 예전에는 "~에 싫증나다"를 "에 싫증나다"로 저장해 두면 안 맞았다.
-  const norm = (s) => String(s || "").toLowerCase().replace(/[\s~·ㆍ.,;:'"\u2018\u2019\u201c\u201d\-]/g, "");
 
   const months = Object.keys(vocabWrongWords || {})
     .map((mk) => {
@@ -69,7 +69,7 @@ export function VocabWrongTab({ vocabWrongWords = {}, studentId, onProgress }) {
     setIdx(0);
     setInput("");
     setRevealed(false);
-    setJudged(null);
+    setJudged(null); setCloseMatch("");
     setAnswers([]);
     setSummary(null);
     setSendStatus("");
@@ -206,9 +206,11 @@ export function VocabWrongTab({ vocabWrongWords = {}, studentId, onProgress }) {
 
   const check = () => {
     if (!current) return;
-    const ans = norm(input);
-    const ok = acceptAnswers.some((c) => norm(c) === ans);
+    // [143차수] 완전히 같을 때만 정답 → 어미(의·적인·하다…)를 떼고도 비교(isVocabAnswerClose). 비정상의 ↔ 비정상적인 ✔
+    const res = isVocabAnswerClose(input, acceptAnswers);
+    const ok = !!res.ok;
     setJudged(ok ? "correct" : "wrong");
+    setCloseMatch(ok && !res.exact ? res.match : "");
     setRevealed(true);
     setAnswers(prev => {
       const next = [...prev];
@@ -236,7 +238,7 @@ export function VocabWrongTab({ vocabWrongWords = {}, studentId, onProgress }) {
       setIdx(idx + 1);
       setInput("");
       setRevealed(false);
-      setJudged(null);
+      setJudged(null); setCloseMatch("");
     });
     focusInput();
   };
@@ -289,7 +291,10 @@ export function VocabWrongTab({ vocabWrongWords = {}, studentId, onProgress }) {
           ) : (
             <div style={{ marginTop: 14 }}>
               <div style={{ padding: 13, borderRadius: 12, background: judged === "correct" ? "#eefaf3" : "#fdf0ef", border: judged === "correct" ? "1px solid #cdeeda" : "1px solid #f5cbc8", marginBottom: 12 }}>
-                <div style={{ fontWeight: 900, color: judged === "correct" ? "#0b7a5c" : "#c0392b", marginBottom: 7 }}>{judged === "correct" ? "정답입니다!" : "오답이에요!"}</div>
+                <div style={{ fontWeight: 900, color: judged === "correct" ? "#0b7a5c" : "#c0392b", marginBottom: 7 }}>
+                  {judged === "correct" ? "정답입니다!" : "오답이에요!"}
+                  {judged === "correct" && closeMatch && <span style={{ fontWeight: 700, fontSize: 13, marginLeft: 6 }}>(비슷한 표현: {closeMatch})</span>}
+                </div>
                 <div style={{ fontSize: 14, color: "#333", lineHeight: 1.7 }}>내 답: {currentAnswer.input?.trim() || input.trim() || "(빈칸)"}</div>
                 <div style={{ fontSize: 14, color: "#333", lineHeight: 1.7 }}>정답: <b>{answerDisplay}</b></div>
               </div>

@@ -92,3 +92,30 @@ export function buildVocabAnswerDisplay(correctAnswers = []) {
   const list = (clean.length ? clean : all).slice(0, 12);
   return list.length ? list.join(", ") : (Array.isArray(correctAnswers) ? correctAnswers.join(", ") : "");
 }
+
+// ─── [143차수] 오답 복습 채점 — "완전히 같아야 정답"이 너무 엄격해(비정상의 ↔ 비정상적인) 어미를 떼고도 비교한다 ───
+//   1) 완전히 같으면 정답(전과 같음)
+//   2) 양쪽 끝에서 아래 어미 중 하나를 한 번만 떼고, 띄어쓰기·"~"·"-"·괄호를 지운 뒤 같으면 정답
+//   3) 그래도 다르면, 둘 중 하나가 다른 하나의 앞부분이고 남은 부분이 어미 목록에 있으면 정답
+//   돌려주는 값: { ok, exact, match } — match 는 맞은 정답 글자(2·3번으로 맞았을 때 "비슷한 표현"으로 보여 준다)
+//   마플보카(voca.html)의 뜻 쓰기 채점에는 아직 붙이지 않았다(이번엔 오답 복습만).
+const VOCAB_ENDINGS = ["의", "적인", "적", "한", "하는", "하다", "되다", "되는", "된", "스러운", "스럽다", "로운", "롭다", "이다", "다", "인", "는", "을", "를"]
+  .sort((a, b) => b.length - a.length);   // 긴 어미부터 본다("스러운"을 "운"보다 먼저)
+const vocabCompact = (s) => String(s || "").normalize("NFC").toLowerCase()
+  .replace(/\([^()]*\)/g, "").replace(/\[[^\]]*\]/g, "")
+  .replace(/[\s~\-\u2013\u2014·ㆍ.,;:'"\u2018\u2019\u201c\u201d()\[\]]/g, "");
+const vocabStripEnding = (s) => {
+  for (const e of VOCAB_ENDINGS) if (s.length > e.length && s.endsWith(e)) return s.slice(0, -e.length);
+  return s;
+};
+const vocabPrefixPlusEnding = (long, short) => long.length > short.length && long.startsWith(short) && VOCAB_ENDINGS.includes(long.slice(short.length));
+export function isVocabAnswerClose(input, accept) {
+  const a = vocabCompact(input);
+  const list = (Array.isArray(accept) ? accept : [accept]).map((c) => ({ raw: c, k: vocabCompact(c) })).filter((c) => c.k);
+  if (!a || !list.length) return { ok: false, exact: false, match: "" };
+  for (const c of list) if (c.k === a) return { ok: true, exact: true, match: c.raw };            // 1) 완전히 같음
+  const a2 = vocabStripEnding(a);
+  for (const c of list) if (a2 && a2 === vocabStripEnding(c.k)) return { ok: true, exact: false, match: c.raw };   // 2) 어미 떼고 같음
+  for (const c of list) if (vocabPrefixPlusEnding(a, c.k) || vocabPrefixPlusEnding(c.k, a)) return { ok: true, exact: false, match: c.raw };   // 3) 앞부분 + 어미
+  return { ok: false, exact: false, match: "" };
+}

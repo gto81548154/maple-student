@@ -10,6 +10,8 @@
   --line:#E3E1DE; --crimson:#EC3013; --crimson-soft:#FCE9E4;
   --teal:#1E7A4E; --teal-soft:#E9F1EC; --gold:#EC3013; --gold-soft:#FCE9E4;
   --focus:#EC3013; --on-fill:#fff;
+  /* [143차수] 객관식 채점 색 — 내가 고른 오답=빨강, 정답=파랑, 지난번에 골랐던 오답=노랑 (블랙홀은 아래 html.bh 에서 어두운 바탕용으로 갈아끼움) */
+  --mc-wrong:#D2402E; --mc-wrong-soft:#FDECEA; --mc-right:#2A6FDB; --mc-right-soft:#E8F0FF; --mc-prev:#F2C14E; --mc-prev-soft:#FFF6D5; --mc-prev-ink:#8A5A00;
 }
 
 /* ═══ [107차수 09-08 디자인 개편] 학생앱 안(iframe) 새 디자인 = html.stu ═══
@@ -156,6 +158,8 @@ html.bh{
   --line:#3C3936; --crimson:#FF7A5C; --crimson-soft:#3D1F15;
   --teal:#5FBA8C; --teal-soft:#1D2F27; --gold:#FF7A5C; --gold-soft:#3D1F15;
   --focus:#FF7A5C; --on-fill:#171514;
+  /* [143차수] 객관식 채점 색 — 어두운 바탕에서도 글자가 보이게 */
+  --mc-wrong:#FF8A7A; --mc-wrong-soft:#3D1F15; --mc-right:#8DB6FF; --mc-right-soft:#16243D; --mc-prev:#F2C14E; --mc-prev-soft:#3A3012; --mc-prev-ink:#F2C14E;
 }
 html.bh .toggle::after{background:#E8EDF3}
 html.bh .mcbadge,html.bh .book .bhid{color:var(--gold)}
@@ -484,13 +488,16 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
   padding:12px 14px; font-size:15px; color:var(--ink); line-height:1.45;
   user-select:none; -webkit-user-select:none; touch-action:manipulation}
 .mcop:disabled,.mcop.locked{cursor:default; color:var(--ink)}
-.mcop.right{border-color:var(--teal); background:var(--teal-soft); font-weight:700}
-.mcop.wrongpick{border-color:var(--crimson); background:var(--crimson-soft)}
+/* [143차수] 채점 색: 지난번 오답(노랑) < 정답(파랑) < 내가 고른 오답(빨강) 순으로 뒤 규칙이 이긴다 */
+.mcop.prev{border-color:var(--mc-prev); background:var(--mc-prev-soft)}
+.mcop.right{border-color:var(--mc-right); background:var(--mc-right-soft); font-weight:700}
+.mcop.wrongpick{border-color:var(--mc-wrong); background:var(--mc-wrong-soft)}
 .mcop.sel{border-color:var(--teal); background:var(--teal-soft); font-weight:700}
 .mcop.dim{color:var(--ink-soft); opacity:.55}
 .mcop .mark{float:right; font-size:11px; font-weight:700; margin-left:8px}
-.mcop .mark.ok{color:var(--teal)}
-.mcop .mark.no{color:var(--crimson)}
+.mcop .mark.ok{color:var(--mc-right)}
+.mcop .mark.no{color:var(--mc-wrong)}
+.mcop .mark.prev{color:var(--mc-prev-ink)}
 .mcbadge{width:max-content; max-width:100%; margin:12px auto 0; background:var(--paper);
   border:1px solid var(--ink-soft); color:var(--ink); font-size:12px; font-weight:700; padding:4px 12px; border-radius:0}
 .mcgo{display:block; width:100%; margin-top:14px; padding:14px 16px; border-radius:0; text-align:left; min-height:52px;
@@ -2613,6 +2620,16 @@ document.addEventListener('visibilitychange', () => { // 앱을 벗어나면 자
  * 2회독 서술형에서 다른 뜻을 쓰게 함(원장 확정). 오답 보기 = 같은 책 다른 단어의 낱개 뜻 —
  * 이 단어의 어떤 뜻과라도 채점 규칙(matchSense)으로 겹치면 제외. */
 let mcList = [], mcDone = false, mcNeed = 1, mcSel = new Set(), mcDoneAt = 0;
+/* [143차수] 단어별 기록 p.wp = 이 단어에서 오답으로 골랐던 보기의 뜻 글자(최대 5개, 중복 없음, 오래된 것부터 밀려남).
+ * p 를 통째로 저장·동기화하므로 따로 저장할 것 없음. 다음에 같은 단어가 나오면 그 보기를 채점 전부터 노랗게 보여 준다(힌트). */
+const mcPrevWrong = (p, t) => Array.isArray(p.wp) && p.wp.some(x => norm(x) === norm(t));
+function mcNoteWrongPick(p, t){
+  t = String(t || '').trim(); if (!t) return;
+  if (!Array.isArray(p.wp)) p.wp = [];
+  if (p.wp.some(x => norm(x) === norm(t))) return;
+  p.wp.push(t);
+  while (p.wp.length > 5) p.wp.shift();
+}
 function pickMeaning(w){                            // 단어에서 낱개 뜻 하나를 무작위로 뽑기
   const s = w.senses[Math.floor(Math.random()*w.senses.length)];
   if (!s || !s.m || !s.m.length) return '';
@@ -2718,6 +2735,10 @@ function renderMc(){
   mcList.forEach((c, i) => {
     const b = document.createElement('button');
     b.className = 'mcop'; b.textContent = c.text;
+    if (!c.ok && mcPrevWrong(p, c.text)){            // [143차수] 지난번에 골랐던 오답 — 채점 전부터 노랑
+      b.classList.add('prev');
+      b.insertAdjacentHTML('beforeend', '<span class="mark prev">지난번 오답</span>');
+    }
     b.onclick = () => { if (mcNeed === 2) mcToggle(i); else answerMc([i]); };
     box.appendChild(b);
   });
@@ -2748,9 +2769,12 @@ function answerMc(picked){                          // picked: 고른 보기 번
       b.classList.add('right');
       b.insertAdjacentHTML('beforeend', '<span class="mark ok">정답</span>');
     } else if (pset.has(j)){
-      b.classList.add('wrongpick');
+      // [143차수] 이번에 고른 오답 = 빨강이 우선(지난번 오답 표시는 지운다). 기록(p.wp)에도 남긴다
+      const pv = b.querySelector('.mark.prev'); if (pv) pv.remove();
+      b.classList.remove('prev'); b.classList.add('wrongpick');
       b.insertAdjacentHTML('beforeend', '<span class="mark no">내 선택</span>');
-    } else {
+      mcNoteWrongPick(p, mcList[j].text);
+    } else if (!b.classList.contains('prev')){        // [143차수] 지난번 오답(노랑)은 채점 뒤에도 그대로 둔다
       b.classList.add('dim');
     }
   });
