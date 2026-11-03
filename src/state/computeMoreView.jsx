@@ -36,6 +36,8 @@ export function computeMoreView(D) {
       ...(hasVocabWrong ? [{ key: "vocabWrong", icon: "📝", title: "오답 복습",
           sub: vocabWarn.overdue > 0 ? `단어 시험 틀린 단어 ${vocabWarn.overdue}개 · 기한 지남` : vocabWarn.dueThisWeek > 0 ? `틀린 단어 ${vocabWarn.dueThisWeek}개 · ${vocabWarn.sundayLabel}까지 (D-${vocabWarn.dday})` : `남은 단어 ${wrongCount}개`,
           subTone: vocabWarn.overdue > 0 ? "warn" : undefined }] : []),
+      // [145차수] 녹음 제출 — 읽고 녹음해서 학원에 보내기(선생님은 원장앱에서 듣는다)
+      { key: "record", icon: "🎤", title: "녹음 제출", sub: "읽고 녹음해서 보내기" },
       // [0812 대시보드] 모의고사는 중학생에게도 보여준다(원장 결정). 회차가 없으면 빈 안내만 뜬다.
       { key: "mock", icon: "✏️", title: "모의고사", sub: "응시·점수 기록" },
       ...((progressTree?.lanes || []).length ? [{ key: "progress", icon: "📈", title: "학습 진도", sub: "교재별 진행 상황" }] : []),

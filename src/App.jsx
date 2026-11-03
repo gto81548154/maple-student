@@ -8,6 +8,7 @@ import { StudentCalendarTab } from "./screens/calendar/StudentCalendarTab.jsx";
 import { MasterHome } from "./screens/master/MasterHome.jsx";
 import { MockExamTab } from "./screens/mock/MockExamTab.jsx";
 import { AppSettingsScreen, ExamInfoScreen, NoticesScreen } from "./screens/more/MoreScreens.jsx";
+import { RecordScreen } from "./screens/more/RecordScreen.jsx";
 import { BookPassCelebration } from "./screens/progress/BookPassCelebration.jsx";
 import { StudentProgressTree } from "./screens/progress/StudentProgressTree.jsx";
 import { TeacherHome } from "./screens/teacher/TeacherHome.jsx";
@@ -39,8 +40,8 @@ import { renderLoadingScreen } from "./screens/status/LoadingScreen.jsx";
 import { renderWithdrawnScreen } from "./screens/status/WithdrawnScreen.jsx";
 import { renderLoadErrorScreen } from "./screens/status/LoadErrorScreen.jsx";
 
-// [133차수] 주소(#해시)에 쓰는 학생 화면 이름 — 위 탭 5개 + 더보기 안 화면 7개. 모르는 이름은 홈으로.
-const STUDENT_ROUTE_IDS = ["home", "tasks", "voca", "videos", "more", "cal", "vocabWrong", "mock", "progress", "notices", "examInfo", "settings"];
+// [133차수] 주소(#해시)에 쓰는 학생 화면 이름 — 위 탭 5개 + 더보기 안 화면 8개(145차수: 녹음 제출 record 추가). 모르는 이름은 홈으로.
+const STUDENT_ROUTE_IDS = ["home", "tasks", "voca", "videos", "more", "cal", "vocabWrong", "mock", "progress", "notices", "examInfo", "settings", "record"];
 
 export default function App() {
   const params = new URLSearchParams(window.location.search);
@@ -66,6 +67,7 @@ export default function App() {
   const { vocaHwRec } = useVocaHw({ bundleVocaHw, selectedDate, studentId, tab, todos });
   const { activeSecRef, awayCountRef, awaySecRef, awayStartRef, currentSessionIdRef, lastActiveAtRef, lastSavedAwayCountRef, lastSavedAwaySecRef, lastSavedFocusSecRef, lastSavedPlaySecRef, lastVideoSaveStatus, longestAwayRef, pendingVideoCount, selectedVideoBook, setLastVideoSaveStatus, setPendingVideoCount, setSelectedVideoBook, setVideoWatch, setVideosFeaturedId, setViewStartTime, setViewingVideo, videoSaveChunkSeqRef, videoSaveInFlightRef, videoWatch, videosFeaturedId, viewStartTime, viewingVideo, ytDurationSecRef, ytFocusSecRef, ytPlaySecRef, ytPlayerStateRef } = useVideoState();
   const mockBusyRef = useRef(false); // [101차수] 모의고사 시험·답 입력·제출 중(MockExamTab이 알려준다)
+  const recordBusyRef = useRef(false); // [145차수] 녹음 제출 화면에서 녹음 중인지(RecordScreen이 알려준다) — 녹음 중엔 새 판을 적용하지 않는다
   const mockTimedRef = useRef(false); // [135차수 ac] 시간이 가는 모의고사(50·70분) 시험 화면인지 — 탭을 떠나거나 뒤로가기할 때 한 번 묻는다
   // [08-07] 한 번 차단된 링크인지. true가 되면 30초 자동 새로고침이 서버를 그만 두드린다.
   //         학생이 [다시 확인]을 누를 때(manual)만 다시 물어본다.
@@ -80,7 +82,7 @@ export default function App() {
   const vocabTestBusyRef = useRef(false);
   // [97차수 09-05] 마플보카 단어 숙제 TEST가 진행 중인지(마플보카가 maplVocaHwState로 알려준다) — 위 탭 줄로 나갈 때 확인창
   const vocaHwBusyRef = useRef(false);
-  const { applyAppUpdate, reloadAppHard, swUpdate } = useAppUpdate({ mockBusyRef, viewingVideoRef, vocaHwBusyRef, vocabTestBusyRef });
+  const { applyAppUpdate, reloadAppHard, swUpdate } = useAppUpdate({ mockBusyRef, recordBusyRef, viewingVideoRef, vocaHwBusyRef, vocabTestBusyRef });
   // [95·97차수] 탭을 떠나기 전 확인 — 같은 탭이면 그냥 통과. 탭 줄과 오답 경고 띠의 [복습하기]가 함께 쓴다.
   const confirmLeaveTab = (nextKey) => {
     if (nextKey === tab) return true;
@@ -346,6 +348,13 @@ export default function App() {
         {tab === "mock" && (
           <MoreSubFrame title="모의고사" onBack={backToMore}>
             <MockExamTab studentId={studentId} onBusy={(b, timed) => { mockBusyRef.current = !!b; mockTimedRef.current = !!timed; }} />
+          </MoreSubFrame>
+        )}
+
+        {/* [145차수] 더보기 → 녹음 제출. 화면을 나가면(탭 이동) 녹음은 멈추고 버려진다(RecordScreen 정리) */}
+        {tab === "record" && (
+          <MoreSubFrame title="녹음 제출" onBack={backToMore}>
+            <RecordScreen studentId={studentId} onBusy={(b) => { recordBusyRef.current = !!b; }} />
           </MoreSubFrame>
         )}
 

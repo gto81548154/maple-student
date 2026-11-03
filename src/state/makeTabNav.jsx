@@ -11,7 +11,7 @@ export function makeTabNav(D) {
   //   ② 확인을 취소하면 iframe 신호(숙제 TEST 시작·마지막 책 열기)·고른 강의·화면 상태를 하나도 바꾸지 않는다(확인 뒤에만 실행)
   //   ③ 이미 있는 화면을 또 누르면 아무것도 안 한다 — 단어 탭 재클릭이 "숙제 TEST 시작" 신호를 또 보내던 일(96차수 수정)이 다시 생기지 않는다
   //   더보기 하위 화면(일정·오답·모의·진도·공지·시험·설정)은 tab 값은 따로 두고 위 탭에서는 "더보기"가 켜진 것으로 보인다(topTabOf).
-  const MORE_SUB_KEYS = ["cal", "vocabWrong", "mock", "progress", "notices", "examInfo", "settings"];
+  const MORE_SUB_KEYS = ["cal", "vocabWrong", "mock", "progress", "notices", "examInfo", "settings", "record"];   // [145차수] record = 녹음 제출
   const topTabOf = (key) => (MORE_SUB_KEYS.includes(key) ? "more" : key);
   // 탭을 바꿀 때 본문 시작점(붙박이 탭 줄 바로 아래)까지만 올린다. 그보다 위에 있으면 그대로 둔다(머리글이 보이는 중이면 안 움직임).
   const scrollToContentTop = () => {

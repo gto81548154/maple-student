@@ -7,7 +7,7 @@ import { APP_BUILD_ID, clearCachesAndReload } from "../core/buildId.jsx";
 //   그렇게 찾은 새 판은 [지금 적용]에서 캐시를 전부 비우고 새로고침한다(서비스워커 길은 전과 같다).
 const VERSION_CHECK_MS = 30 * 60 * 1000;
 export function useAppUpdate(D) {
-  const { mockBusyRef, viewingVideoRef, vocaHwBusyRef, vocabTestBusyRef } = D;
+  const { mockBusyRef, recordBusyRef, viewingVideoRef, vocaHwBusyRef, vocabTestBusyRef } = D;
   // [98차수→101차수] 앱 새 판(서비스워커) 감지.
   //   상태: "" 없음 / "found" 새 판 발견(대기 중) / "applying" 적용 중 / "swapped" 이미 교체됨(새로고침만 하면 됨) / "failed" 적용 실패
   //   98차수는 새 워커를 보자마자 SKIP_WAITING을 보내고 "준비 완료"라고 띄웠다. 이제는
@@ -114,8 +114,9 @@ export function useAppUpdate(D) {
   }, []);
   // [101차수] 학생이 [업데이트]를 눌렀을 때만 적용한다. 진행 중 작업이 있으면 안내만 하고 멈춘다.
   const appUpdateBusyMsg = () => {
-    if (vocabTestBusyRef.current || vocaHwBusyRef.current || mockBusyRef.current || viewingVideoRef.current) {
-      return "진행 중인 시험·영상을 마친 뒤 업데이트해 주세요.";
+    // [145차수] 녹음 중에도 새 판을 적용하지 않는다(녹음이 날아가지 않게)
+    if (vocabTestBusyRef.current || vocaHwBusyRef.current || mockBusyRef.current || viewingVideoRef.current || (recordBusyRef && recordBusyRef.current)) {
+      return "진행 중인 시험·영상·녹음을 마친 뒤 업데이트해 주세요.";
     }
     return "";
   };
