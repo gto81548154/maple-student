@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { HOLIDAYS } from "../../data/holidays.jsx";
 import { getEngExamDateForDday, getExamStartEndForDday, isExamVisibleForStudentDday } from "../../domain/dday.jsx";
-import { DAYS_EN, fmtYMD, getEffectiveSchedule, getStudentVacation } from "../../domain/time.jsx";
+import { DAYS_EN, fmtYMD, getEffectiveSchedule, getStudentVacation, isDateLessonStudent } from "../../domain/time.jsx";
 import { TAP, UI } from "../../theme/tokens.jsx";
 
 // ═══ [141차수] 한 달 달력 공용 부품 — 홈 ⑤ 카드와 더보기 > 수업 일정이 같이 쓴다 ═══
@@ -82,7 +82,8 @@ export function StudentMonthCalendar({ student, makeups, customHolidays, exams, 
         <div style={{ fontSize: 16, fontWeight: 800, color: "#2A2A28" }}>{shownY}년 {shownM + 1}월</div>
         {folded ? <span style={{ width: TAP }} /> : <button type="button" onClick={() => move(1)} aria-label="다음달" style={navBtn}>▶</button>}
       </div>
-      {student?.vacationSchedule?.startDate && student?.vacationSchedule?.endDate && (
+      {/* [144차수] 회차(날짜 찍은) 학생은 방학 시간표를 쓰지 않으므로 방학 알약도 안 띄운다 */}
+      {!isDateLessonStudent(student) && student?.vacationSchedule?.startDate && student?.vacationSchedule?.endDate && (
         <div style={{ textAlign: "center", marginBottom: 8 }}>
           <span style={{ display: "inline-block", fontSize: 11.5, fontWeight: 800, color: "#B45309", background: "#FFF6E0", border: "1px solid #F2C14E", borderRadius: 999, padding: "3px 12px" }}>
             🏖 {student.vacationSchedule.name || "방학"} 시간표 · {String(student.vacationSchedule.startDate).slice(5).replace("-", "/")} ~ {String(student.vacationSchedule.endDate).slice(5).replace("-", "/")}
