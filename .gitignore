@@ -1,2 +1,4 @@
 # [142차수] 빌드마다 vite.config.js 가 새로 만드는 파일 — 깃에 넣지 않는다
 public/version.json
+# wrangler가 배포 때 만드는 임시 폴더
+.wrangler/

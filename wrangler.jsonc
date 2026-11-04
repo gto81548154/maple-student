@@ -1,0 +1,14 @@
+// [147차수 배포 고침] Cloudflare Workers 배포 설정 — 학생앱은 정적 파일(dist)만 올리는 Worker다.
+//   Cloudflare "Workers & Pages → maple-student → Settings → Build"의 배포 명령(npx wrangler versions upload / deploy)이
+//   이 파일을 읽어 dist 폴더를 올린다. 이 파일이 없으면 "무엇을 올릴지 모름"으로 배포 단계에서 실패한다.
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "maple-student",
+  "compatibility_date": "2026-11-04",
+  "assets": {
+    "directory": "./dist",
+    // 주소 끝 / 자동 처리, 없는 주소는 404(학생앱은 #해시 길이라 index.html 하나면 된다)
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "none"
+  }
+}
