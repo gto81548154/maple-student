@@ -11,7 +11,8 @@ import { AppSettingsScreen, ExamInfoScreen, NoticesScreen } from "./screens/more
 import { RecordScreen } from "./screens/more/RecordScreen.jsx";
 import { RewardScreen } from "./screens/more/RewardScreen.jsx";
 import { BookPassCelebration } from "./screens/progress/BookPassCelebration.jsx";
-import { StudentProgressTree } from "./screens/progress/StudentProgressTree.jsx";
+import { RoadmapScreen } from "./screens/progress/RoadmapScreen.jsx";
+import { computeRoadmap } from "./domain/roadmap.jsx";
 import { TeacherHome } from "./screens/teacher/TeacherHome.jsx";
 import { TeacherLinkDeadScreen } from "./screens/teacher/TeacherLinkDeadScreen.jsx";
 import { VocabWrongTab } from "./screens/vocab/VocabWrongTab.jsx";
@@ -53,7 +54,7 @@ export default function App() {
   //       아예 버튼을 안 띄우고 안내 문구로 바꾼다.
   const attToken = params.get("t") || "";
   useAppBoot();
-  const { bundleVocaHw, setBundleVocaHw, attLog, attStatus, checklistData, customHolidays, displayedBundleRef, error, examRanges, exams, lastLoadedAt, loadErrorCode, loading, loadingSlow, makeups, masterWithdrawn, offlineNotice, progressTree, records, refreshing, setAttLog, setAttStatus, setChecklistData, setCustomHolidays, setError, setExamRanges, setExams, setLastLoadedAt, setLoadErrorCode, setLoading, setMakeups, setMasterWithdrawn, setOfflineNotice, setProgressTree, setRecords, setRefreshing, setStudent, setSurveyResponses, setSurveys, setSyncSource, setTodos, setVideoStatsUnavailable, setVideos, setVocabWrongWords, setWithdrawnName, student, surveyResponses, surveys, syncSource, todos, videoStatsUnavailable, videos, vocabWrongWords, withdrawnName, popups, setPopups } = useBundleState();
+  const { bundleVocaHw, setBundleVocaHw, attLog, attStatus, checklistData, customHolidays, displayedBundleRef, error, examRanges, exams, lastLoadedAt, loadErrorCode, loading, loadingSlow, makeups, masterWithdrawn, offlineNotice, progressTree, records, refreshing, setAttLog, setAttStatus, setChecklistData, setCustomHolidays, setError, setExamRanges, setExams, setLastLoadedAt, setLoadErrorCode, setLoading, setMakeups, setMasterWithdrawn, setOfflineNotice, setProgressTree, setRecords, setRefreshing, setStudent, setSurveyResponses, setSurveys, setSyncSource, setTodos, setVideoStatsUnavailable, setVideos, setVocabWrongWords, setWithdrawnName, student, surveyResponses, surveys, syncSource, todos, videoStatsUnavailable, videos, vocabWrongWords, withdrawnName, popups, setPopups, curriculum, setCurriculum } = useBundleState();
   // [0812 대시보드] 첫 화면 = 홈 카드판. [133차수] 주소(#탭)에 화면이 적혀 있으면 그 화면(새로고침해도 보던 탭 그대로). 단어 탭이 꺼져 있으면 홈으로.
   //   학생 id 가 없는 화면(선생님 홈·마스터 홈·링크 찾기)은 여기 주소를 쓰지 않는다(선생님 홈은 제 주소를 따로 씀 — 134차수).
   const routeOn = !!studentId;
@@ -152,7 +153,7 @@ export default function App() {
     }
   }, [viewingVideo]);
   const loadDataRef = useRef(null);
-  const { loadData } = useBundleLoader({ setBundleVocaHw, displayedBundleRef, setAttLog, setAttStatus, setChecklistData, setCustomHolidays, setError, setExamRanges, setExams, setLastLoadedAt, setLoadErrorCode, setLoading, setMakeups, setMasterWithdrawn, setOfflineNotice, setPopups, setProgressTree, setRecords, setRefreshing, setStudent, setSurveyResponses, setSurveys, setSyncSource, setTodos, setVideoStatsUnavailable, setVideoWatch, setVideos, setVocabWrongWords, setWithdrawnName, studentId, viewingVideoRef, withdrawnRef });
+  const { loadData } = useBundleLoader({ setBundleVocaHw, displayedBundleRef, setAttLog, setAttStatus, setChecklistData, setCustomHolidays, setError, setExamRanges, setExams, setLastLoadedAt, setLoadErrorCode, setLoading, setMakeups, setMasterWithdrawn, setCurriculum, setOfflineNotice, setPopups, setProgressTree, setRecords, setRefreshing, setStudent, setSurveyResponses, setSurveys, setSyncSource, setTodos, setVideoStatsUnavailable, setVideoWatch, setVideos, setVocabWrongWords, setWithdrawnName, studentId, viewingVideoRef, withdrawnRef });
   loadDataRef.current = loadData;
   const { toggleVideo } = useVideoSession({ activeSecRef, awayCountRef, awaySecRef, awayStartRef, currentSessionIdRef, flushingRef, lastActiveAtRef, lastSavedAwayCountRef, lastSavedAwaySecRef, lastSavedFocusSecRef, lastSavedPlaySecRef, longestAwayRef, setLastVideoSaveStatus, setPendingVideoCount, setVideoWatch, setViewStartTime, setViewingVideo, studentId, videoSaveChunkSeqRef, videoSaveInFlightRef, viewStartTime, viewingVideo, withdrawnRef, ytDurationSecRef, ytFocusSecRef, ytPlaySecRef, ytPlayerStateRef , onVocabResultsSent: () => loadDataRef.current && loadDataRef.current({ manual: true }) });   // [135차수 j] manual 이어야 자동 받기가 도는 중에도 뒤이어 한 번 더 받는다
 
@@ -205,7 +206,7 @@ export default function App() {
   if (!student) return null;
   const { activeDate, allDates, doneTasks, getFailReason, isCheckedView, isFailed, pct, pinnedMessages, stepGroups, todayStrForTab, todoRevealHeld, totalTasks } = computeTodoView({ checklistData, records, selectedDate, studentId, todos, vocaHwRec });
   const { hasVocabWrong, startVocaHwTest, studentVideos, taskVoca, vocaPassLabel, vocabWarn } = computeVocaView({ activeDate, customHolidays, makeups, progressTree, setVocaHwTask, stepGroups, student, studentId, videos, vocabWrongWords });
-  const { activeSurveys, attNoticeAll, attWeek, calSub, examDdays, moreGroups, nearestExam, unansweredSurveys, wrongCount } = computeMoreView({attStatus, customHolidays, exams, hasVocabWrong, makeups, pinnedMessages, progressTree, student, surveyResponses, surveys, todayStrForTab, vocabWarn, vocabWrongWords });
+  const { activeSurveys, attNoticeAll, attWeek, calSub, examDdays, moreGroups, nearestExam, unansweredSurveys, wrongCount } = computeMoreView({attStatus, curriculum, customHolidays, exams, hasVocabWrong, makeups, pinnedMessages, progressTree, roadmapSub: (() => { const rm = computeRoadmap({ curriculum, student, todos, progressTree }); return rm && rm.myStage ? `지금 ${rm.myStage}단계${rm.stageInfo?.range ? ` (${rm.stageInfo.range})` : ""} · 내가 어디까지 왔는지` : ""; })(), student, surveyResponses, surveys, todayStrForTab, vocabWarn, vocabWrongWords });
   const { allTaskItems, goTab, picker, scrollToVideoCard, topTabOf, watchBySid } = makeTabNav({ confirmLeaveTab, headerRef, setSelectedVideoBook, setTab, setVideosFeaturedId, setVocaExtraBook, setVocaOpenLast, setVocaOpenTask, startVocaHwTest, stepGroups, studentId, studentVideos, tab, taskVoca, toggleVideo, videoWatch, viewingVideo, vocaHwBusyRef, vocaHwRec });
   goTabRef.current = goTab; pickerRef.current = picker;
   // [147차수] 첫 자료가 들어온 뒤 한 번만: 급한 것(오답 기한·설문·시험·새 공지·원장 카드)을 카드로 모아 띄운다
@@ -412,8 +413,8 @@ export default function App() {
           </MoreSubFrame>
         )}
         {tab === "progress" && (
-          <MoreSubFrame title="학습 진도" onBack={backToMore}>
-            <StudentProgressTree student={student} todos={todos} progressTree={progressTree} />
+          <MoreSubFrame title="마플 로드맵" onBack={backToMore}>
+            <RoadmapScreen student={student} todos={todos} progressTree={progressTree} curriculum={curriculum} />
           </MoreSubFrame>
         )}
         </div>

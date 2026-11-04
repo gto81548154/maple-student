@@ -4,7 +4,7 @@ import { fmtTime } from "../domain/time.jsx";
 
 // [121차수] 더보기 목록에 쓸 값 계산(시험 D-Day·설문·오답 수·등원 안내) — App.jsx에서 그대로 옮김. 훅이 아니라 보통 함수.
 export function computeMoreView(D) {
-  const { customHolidays, exams, hasVocabWrong, makeups, pinnedMessages, progressTree, student, surveyResponses, surveys, todayStrForTab, vocabWarn, vocabWrongWords } = D;
+  const { curriculum, customHolidays, exams, hasVocabWrong, makeups, pinnedMessages, progressTree, student, surveyResponses, surveys, todayStrForTab, vocabWarn, vocabWrongWords } = D;
   const examDdays = buildStudentExamDdays(student, exams, 2);
   // ─── [103차수 09-08] 더보기·홈 요약에 쓰는 파생값 — 전부 이미 받은 자료에서 계산(서버 추가 요청 없음) ───
   // 진행 중 설문(기간 안) — 공지·설문 화면과 더보기 숫자가 같은 목록을 쓴다 (워커도 거르지만 캐시 번들 대비 이중 안전장치)
@@ -42,7 +42,8 @@ export function computeMoreView(D) {
       { key: "record", icon: "🎤", title: "녹음 제출", sub: "읽고 녹음해서 보내기" },
       // [0812 대시보드] 모의고사는 중학생에게도 보여준다(원장 결정). 회차가 없으면 빈 안내만 뜬다.
       { key: "mock", icon: "✏️", title: "모의고사", sub: "응시·점수 기록" },
-      ...((progressTree?.lanes || []).length ? [{ key: "progress", icon: "📈", title: "학습 진도", sub: "교재별 진행 상황" }] : []),
+      // [149차수] "학습 진도" → "마플 로드맵"(1~7단계 지도 + 교재별 진행 상황). 커리큘럼이나 진도 맵 중 하나라도 있으면 보인다
+      ...(((progressTree?.lanes || []).length || (curriculum?.lanes || []).length) ? [{ key: "progress", icon: "🗺️", title: "마플 로드맵", sub: D.roadmapSub || "내가 어디까지 왔는지" }] : []),
     ] },
     { title: "앱", items: [{ key: "settings", icon: "⚙️", title: "앱 설정", sub: "알림 · 홈 화면 추가 · 업데이트" }] },
   ];

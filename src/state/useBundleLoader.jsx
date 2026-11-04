@@ -6,7 +6,7 @@ import { applyServerAppSettings } from "../data/holidays.jsx";
 
 // [120차수] 서버 자료 불러오기(첫 불러오기·자동 새로고침·[다시 받기]·실패 시 폰 저장본) — App.jsx에서 그대로 옮김.
 export function useBundleLoader(D) {
-  const { setBundleVocaHw, displayedBundleRef, setAttLog, setAttStatus, setChecklistData, setCustomHolidays, setError, setExamRanges, setExams, setLastLoadedAt, setLoadErrorCode, setLoading, setMakeups, setMasterWithdrawn, setOfflineNotice, setPopups, setProgressTree, setRecords, setRefreshing, setStudent, setSurveyResponses, setSurveys, setSyncSource, setTodos, setVideoStatsUnavailable, setVideoWatch, setVideos, setVocabWrongWords, setWithdrawnName, studentId, viewingVideoRef, withdrawnRef } = D;
+  const { setBundleVocaHw, displayedBundleRef, setAttLog, setAttStatus, setChecklistData, setCustomHolidays, setError, setExamRanges, setExams, setLastLoadedAt, setLoadErrorCode, setLoading, setMakeups, setMasterWithdrawn, setCurriculum, setOfflineNotice, setPopups, setProgressTree, setRecords, setRefreshing, setStudent, setSurveyResponses, setSurveys, setSyncSource, setTodos, setVideoStatsUnavailable, setVideoWatch, setVideos, setVocabWrongWords, setWithdrawnName, studentId, viewingVideoRef, withdrawnRef } = D;
   // [100차수] 요청 진행 상태 — 예전엔 true/false 하나라서, 자동 받기 중에 [다시 받기]를 누르면 아무 표시 없이 그냥 끝났다.
   //   이제: 무엇이 도는지("auto"/"manual") + 수동 1건 예약 + 수동 성공 후 60초 유예창 + 학생 바뀜 감지(epoch)를 따로 기억한다.
   //   규칙: 아무것도 없을 때 → 그대로 실행 / 자동 중 + 수동 → 즉시 "받는 중…" 켜고 자동이 끝나면 fresh=1 수동 1회
@@ -47,6 +47,7 @@ export function useBundleLoader(D) {
     setSurveys(Array.isArray(bundle.surveys) ? bundle.surveys : []);
     setSurveyResponses(bundle.surveyResponses || {});
     setPopups(Array.isArray(bundle.popups) ? bundle.popups : []);   // [147차수]
+    setCurriculum(isPlainObject(bundle.curriculum) ? bundle.curriculum : null);   // [149차수]
     setExamRanges(normalizeExamRanges(bundle.examRanges ?? bundle.examr3)); // [99차수] 구버전 백업(칸 없음)도 null로 무사히 열린다
     setVocabWrongWords(dropOldVocabWrongMonths(bundle.vocabWrongWords));   // [148차수] 10월까지 틀린 단어는 안 본다(폰 저장본도 같이)
     setSyncSource(bundle.source || "");

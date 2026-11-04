@@ -242,6 +242,8 @@ const loadStudentBundleFromWorker = async (studentId, { forceFresh = false } = {
     vocaHw: payload.vocaHw === null ? null : (isPlainObject(payload.vocaHw) ? payload.vocaHw : undefined),   // 내 단어숙제 도장 { 날짜: 도장 } · null = 서버가 못 읽음
     // [147차수] 원장이 올린 "앱 켤 때 카드" 목록(워커 13단계가 주면). 옛 워커면 빈 배열.
     popups: Array.isArray(payload.popups) ? payload.popups : [],
+    // [149차수] 정규 커리큘럼 지도(1~7단계, 줄·책) — 워커 14단계가 주면. 옛 워커면 null.
+    curriculum: isPlainObject(payload.curriculum) ? payload.curriculum : null,
   };
 };
 export const loadStudentBundle = async (studentId, opts = {}) => {

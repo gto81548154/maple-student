@@ -262,7 +262,7 @@ export function renderHomeTab(C) {
                 {[
                   { key: "examInfo", icon: "📋", iconBg: GREEN_BG, label: "시험 정보", count: 0, sub: nearestExam ? `${nearestExam.name} ${nearestExam.ddayLabel}` : "다가오는 시험 없음", tone: nearestExam ? "green" : "" },
                   { key: "notices", icon: "📣", iconBg: UI.bg, label: "공지", count: pinnedMessages.length, sub: unansweredSurveys.length ? `응답할 설문 ${unansweredSurveys.length}개` : (activeSurveys.length ? `설문 ${activeSurveys.length}개 응답 완료` : "새 공지가 없어요"), tone: unansweredSurveys.length ? "warn" : "" },
-                  ...((progressTree?.lanes || []).length ? [{ key: "progress", icon: "📈", iconBg: PURPLE_BG, label: "학습 진도", count: 0, sub: "교재별 진행 상황", tone: "" }] : []),
+                  ...((progressTree?.lanes || []).length ? [{ key: "progress", icon: "🗺️", iconBg: PURPLE_BG, label: "마플 로드맵", count: 0, sub: "교재별 진행 상황", tone: "" }] : []),
                 ].map((r, i) => (
                   <button key={r.key} type="button" onClick={() => goTab(r.key)}
                     style={rowBtn({ minHeight: 56, padding: "12px 18px", borderTop: i ? `1px solid ${UI.bg}` : "none" })}>
