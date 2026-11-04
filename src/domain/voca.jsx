@@ -20,10 +20,11 @@ const VOCA_BOOK_LABELS = {
   ve_adv:    { full: "어휘끝 중학 고난도",    short: "어휘끝 고난도" },
   ve_ety:    { full: "어휘끝 어원편",         short: "어원편" },
   vocabible: { full: "보카바이블 A·B",        short: "보카바이블" },
+  toeic_hk:  { full: "해커스 토익 보카",      short: "토익 보카" },   // [150차수] 단어 검색 결과 배지용
 };
 export const vocaFullLabel = (id) => (VOCA_BOOK_LABELS[id] ? VOCA_BOOK_LABELS[id].full : "");
 export const vocaShortLabel = (id) => (VOCA_BOOK_LABELS[id] ? VOCA_BOOK_LABELS[id].short : "단어장");
-export const VOCA_UNIT_WORDS = { wm_sn: "DAY", wm_basic: "DAY", wm_hi: "DAY", ve_ess: "UNIT", ve_adv: "UNIT", ve_ety: "DAY" };
+export const VOCA_UNIT_WORDS = { wm_sn: "DAY", wm_basic: "DAY", wm_hi: "DAY", ve_ess: "UNIT", ve_adv: "UNIT", ve_ety: "DAY", vocabible: "강", toeic_hk: "DAY" };   // [150차수] 보카바이블은 "강"
 // 숙제 항목에서 "단어-워마 수능 25 26 27 28" 같은 줄을 찾아 { book, lecs }로 돌려준다.
 // 책 이름이 잡히고 1~60 사이 숫자가 있는 첫 줄을 쓴다. 없으면 null. (2000 같은 큰 숫자는 걸러짐)
 // [0813 검토수정] ① "25~28" 같은 물결표(및 붙임표) 범위를 26·27까지 펼쳐서 읽는다

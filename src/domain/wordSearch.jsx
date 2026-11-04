@@ -4,8 +4,10 @@ import { VOCA_UNIT_WORDS, vocaShortLabel } from "./voca.jsx";
 // 원장 결정(10-07): 홈 맨 위 검색 칸. 찾는 범위 = 정규 단어장 + 내 학교 내신 단어(지금 준비하는 시험 범위).
 //   우리 단어장에 없는 단어는 네이버 사전 링크로 넘긴다(네이버 뜻을 앱 안으로 가져오지 않는다).
 
-// 검색에 넣는 정규 단어장(쉬운 책 → 어려운 책 순서). 보카바이블(잠긴 책)·토익 책(원장 전용)은 넣지 않는다.
-export const SEARCH_REGULAR_BOOKS = ["ve_ess", "ve_adv", "wm_basic", "wm_sn", "wm_hi", "ve_ety"];
+// 검색에 넣는 정규 단어장(쉬운 책 → 어려운 책 순서).
+// [150차수 원장 결정 11-04] 보카바이블(잠긴 책)·해커스 토익 보카(원장 전용)도 검색에는 넣는다 — 책장에서 잠겨 있어도 뜻 찾기는 되게.
+//   맨 뒤에 두어 같은 낱말이면 정규 책 뜻이 먼저 나온다. 워커가 그 책 파일을 안 주면(404) 조용히 건너뛴다.
+export const SEARCH_REGULAR_BOOKS = ["ve_ess", "ve_adv", "wm_basic", "wm_sn", "wm_hi", "ve_ety", "vocabible", "toeic_hk"];
 
 const HANGUL_RE = /[ㄱ-ㆎ가-힣]/;
 const hasHangul = (s) => HANGUL_RE.test(String(s || ""));
