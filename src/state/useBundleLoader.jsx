@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { IS_STAFF_VIEW, IS_TEACHER_MODE } from "../core/auth.jsx";
-import { FRESH_GRACE_MS, WITHDRAWN_STRIKE_LIMIT, addWithdrawnStrike, bundlePollDelayMs, clearWithdrawnStrikes, getStudentBundleStorageKey, isPlainObject, loadStudentBundle, makeLoadErrorCode, normalizeExamRanges, restoreStudentBundleFromLocal, saveStudentBundleToLocal } from "../core/bundle.jsx";
+import { FRESH_GRACE_MS, WITHDRAWN_STRIKE_LIMIT, addWithdrawnStrike, bundlePollDelayMs, clearWithdrawnStrikes, dropOldVocabWrongMonths, getStudentBundleStorageKey, isPlainObject, loadStudentBundle, makeLoadErrorCode, normalizeExamRanges, restoreStudentBundleFromLocal, saveStudentBundleToLocal } from "../core/bundle.jsx";
 import { mergeVideoWatchSnapshots } from "../core/videoWatch.jsx";
 import { applyServerAppSettings } from "../data/holidays.jsx";
 
@@ -48,7 +48,7 @@ export function useBundleLoader(D) {
     setSurveyResponses(bundle.surveyResponses || {});
     setPopups(Array.isArray(bundle.popups) ? bundle.popups : []);   // [147차수]
     setExamRanges(normalizeExamRanges(bundle.examRanges ?? bundle.examr3)); // [99차수] 구버전 백업(칸 없음)도 null로 무사히 열린다
-    setVocabWrongWords(isPlainObject(bundle.vocabWrongWords) ? bundle.vocabWrongWords : {});
+    setVocabWrongWords(dropOldVocabWrongMonths(bundle.vocabWrongWords));   // [148차수] 10월까지 틀린 단어는 안 본다(폰 저장본도 같이)
     setSyncSource(bundle.source || "");
     // [98차수] 폰에 저장해 둔 옛 화면을 쓸 때는 학생이 알아듣게 — 언제 것인지 + 새 숙제·강의가 안 보일 수 있다는 것.
     setOfflineNotice(bundle.source === "local-backup"

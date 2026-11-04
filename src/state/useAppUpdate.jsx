@@ -38,10 +38,13 @@ export function useAppUpdate(D) {
       finally { busy = false; }
     };
     const onVis = () => { if (!document.hidden) check(); };
+    // [148차수] 머리글 ↻ 새로고침을 누를 때도 새 판을 같이 확인한다(App이 이 이벤트를 쏜다)
+    const onManual = () => check();
     check();
     document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("maple:check-update", onManual);
     const timer = setInterval(check, VERSION_CHECK_MS);
-    return () => { dead = true; document.removeEventListener("visibilitychange", onVis); clearInterval(timer); };
+    return () => { dead = true; document.removeEventListener("visibilitychange", onVis); window.removeEventListener("maple:check-update", onManual); clearInterval(timer); };
   }, []);
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;

@@ -1,5 +1,5 @@
 import { IS_MASTER_MODE, IS_STAFF_VIEW, IS_TEACHER_MODE, MASTER_MK, TEACHER_AUTH, teacherLinkDead } from "./auth.jsx";
-import { STUDENT_SYNC_API_URL } from "./config.jsx";
+import { STUDENT_SYNC_API_URL, VOCAB_WRONG_FROM_MONTH } from "./config.jsx";
 import { fetchTextWithTimeout } from "./net.jsx";
 
 const resolveStudentSyncUrl = (studentId, { forceFresh = false } = {}) => {
@@ -132,6 +132,13 @@ const normalizeVideoWatchForStudent = (source = {}, studentId) => {
 };
 // 오답 단어 TEST: Worker가 이미 학생 1명치 { "YYYY-MM": { words } }를 보내면 그대로 사용한다.
 // 혹시 전체 { studentId: {...} } 형태로 오면 해당 학생만 추출해 타학생 노출을 막는다.
+// [148차수] VOCAB_WRONG_FROM_MONTH 앞의 달 칸은 버린다(10월까지 리셋). 달 키가 아닌 것은 그대로 둔다.
+export const dropOldVocabWrongMonths = (v) => {
+  if (!isPlainObject(v)) return {};
+  const out = {};
+  Object.keys(v).forEach((k) => { if (!/^\d{4}-\d{2}$/.test(k) || k >= VOCAB_WRONG_FROM_MONTH) out[k] = v[k]; });
+  return out;
+};
 const normalizeVocabWrongWordsForStudent = (source = {}, studentId) => {
   const sid = String(studentId);
   if (!source || typeof source !== "object" || Array.isArray(source)) return {};

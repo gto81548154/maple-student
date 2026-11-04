@@ -4,7 +4,8 @@ import { MAX_W, TAB_BAR_H, TAP, UI } from "../theme/tokens.jsx";
 // ═══ [103차수 09-08 디자인 개편 · 140차수 토스 스타일 1단계 · 141차수 탭 줄 아래로] 학생 화면 공통 틀 — 머리글 · 아래 탭 5개 · 더보기 ═══
 // 계획서(01_IMPLEMENTATION_PLAN.md) 4·5·10절. 선생님 홈(TeacherHome)·마스터 홈(MasterHome)은 이 틀을 쓰지 않는다.
 // 머리글(시안 D 모양): 왼쪽 = MP 로고 + 이름 + 학교학년 / 오른쪽 한 줄 = 흰색 둥근 [↻ 새로고침] 버튼 + 남색 둥근 [출석 QR] 버튼. 폭 390px에서도 꺾이지 않게 배치.
-export function StudentHeader({ innerRef, student, attToken, onQr, refreshing, onRefresh }) {
+// [148차수] updateReady 가 켜지면 새로고침 단추가 빨간 점 달린 "업데이트!"로 바뀌고, 누르면 onUpdate(새 판 적용).
+export function StudentHeader({ innerRef, student, attToken, onQr, refreshing, onRefresh, updateReady, onUpdate }) {
   const schoolLine = [student?.school, student?.grade].filter(Boolean).join(" ");
   return (
     <div ref={innerRef} style={{ background: UI.bg, padding: "12px 16px 10px", color: UI.text }}>
@@ -17,11 +18,21 @@ export function StudentHeader({ innerRef, student, attToken, onQr, refreshing, o
           )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+          {updateReady ? (
+            <button type="button" onClick={onUpdate} aria-label="앱 업데이트 적용"
+              style={{ position: "relative", flexShrink: 0, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4, padding: "0 10px", minHeight: TAP, borderRadius: 12, border: `1.5px solid ${UI.blue}`, background: UI.blueBg, color: UI.blue, cursor: "pointer", fontSize: 12, fontWeight: 800, fontFamily: "inherit", animation: "mapleUpdPulse 1.6s ease-in-out infinite" }}>
+              <style>{`@keyframes mapleUpdPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(36,102,217,0.35); } 50% { box-shadow: 0 0 0 6px rgba(36,102,217,0); } }`}</style>
+              <span aria-hidden="true" style={{ fontSize: 13, lineHeight: 1 }}>🆕</span>
+              <span>업데이트!</span>
+              <span aria-hidden="true" style={{ position: "absolute", top: -4, right: -4, width: 10, height: 10, borderRadius: 5, background: "#E53935", border: "2px solid #fff" }} />
+            </button>
+          ) : (
           <button type="button" onClick={onRefresh} disabled={refreshing} aria-label="새로고침"
             style={{ flexShrink: 0, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4, padding: "0 10px", minHeight: TAP, borderRadius: 12, border: `1px solid ${UI.line}`, background: "#fff", color: UI.sub, cursor: refreshing ? "default" : "pointer", fontSize: 12, fontWeight: 700, opacity: refreshing ? 0.65 : 1, fontFamily: "inherit" }}>
             <span aria-hidden="true" style={{ fontSize: 14, fontWeight: 800, color: UI.text, lineHeight: 1 }}>{refreshing ? "…" : "↻"}</span>
             <span>새로고침</span>
           </button>
+          )}
           {/* [마스터·교사] 남의 화면에서 출석 QR을 띄워 잘못 찍히는 일이 없도록 숨긴다(원본 규칙 그대로). */}
           {IS_STAFF_VIEW ? (
             <span style={{ flexShrink: 0, whiteSpace: "nowrap", fontSize: 12, fontWeight: 700, color: UI.dim, padding: "0 4px" }}>QR 숨김</span>

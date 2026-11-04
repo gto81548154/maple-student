@@ -1,7 +1,7 @@
 
 // [0824 3차수] 배포 확인용 차수 표시 — 원장앱 APP_BUILD와 같은 장치. 학생 화면에는 안 띄우고
 //   마스터 홈(원장 전용) 머리글에만 뜬다(원장 결정). 새 차수 파일을 만들 때마다 이 글자를 같이 바꿀 것.
-export const STUDENT_APP_BUILD = "학생앱 147차수 · 2026-11-04 · 앱 켤 때 안내 카드(오답 기한·설문·시험·공지)";
+export const STUDENT_APP_BUILD = "학생앱 148차수 · 2026-11-04 · 오답 단어 11월부터 새로 + 머리글 업데이트! 단추";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
@@ -19,6 +19,9 @@ if (!STUDENT_SYNC_API_URL) {
 export const VOCA_APP_URL = import.meta.env.VITE_VOCA_APP_URL || "/voca.html";
 // [단어 TEST] 탭 스위치 — 마플보카 3단계 배포(워커 /voca/* + public/voca.html + R2 단어 데이터) 완료 후 true로 변경
 export const VOCA_TAB_ENABLED = true;
+// [148차수] 오답 복습은 이 달부터 쌓인 단어만 본다(원장 결정 11-04: 10월까지 틀린 단어는 리셋, 11월부터 새로 저장).
+//   서버 자료는 그대로 두고 학생앱이 이 달 앞의 달 칸을 안 읽는다. 다시 보이게 하려면 이 값을 앞당기면 된다.
+export const VOCAB_WRONG_FROM_MONTH = "2026-11";
 export const WORKER_ORIGIN = (() => { try { return new URL(STUDENT_SYNC_API_URL).origin; } catch (e) { return ""; } })();
 // ─── 영상 시청 기록 저장 API (Turso 원본 DB로 저장) ───
 // .env 예시: VITE_VIDEO_WATCH_API_URL=https://mapl-sync-worker.yourname.workers.dev/video-watch

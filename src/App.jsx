@@ -275,7 +275,8 @@ export default function App() {
       )}
       {/* [103차수] 작은 머리글 — 아바타·시험 D-Day·시험 범위·고정 공지는 더보기(시험 정보 / 공지·설문)로 이사(계획서 4절) */}
       <StudentHeader innerRef={headerRef} student={student} attToken={attToken} onQr={() => setShowAttQr(true)}
-        refreshing={refreshing} onRefresh={() => loadData({ manual: true })} lastLoadedAt={lastLoadedAt} syncSource={syncSource} />
+        refreshing={refreshing} onRefresh={() => { try { window.dispatchEvent(new Event("maple:check-update")); } catch (e) {} loadData({ manual: true }); }} lastLoadedAt={lastLoadedAt} syncSource={syncSource}
+        updateReady={swUpdate.state === "found" || swUpdate.state === "swapped"} onUpdate={applyAppUpdate} />
 
       {showAttQr && student && attToken && (
         <AttQrModal
