@@ -233,6 +233,8 @@ const loadStudentBundleFromWorker = async (studentId, { forceFresh = false } = {
     // [137차수] 워커(리마스터 2차~)가 새로 주는 칸. 옛 워커면 둘 다 undefined.
     settings: isPlainObject(payload.settings) ? payload.settings : undefined,                       // 앱 설정(공휴일 등)
     vocaHw: payload.vocaHw === null ? null : (isPlainObject(payload.vocaHw) ? payload.vocaHw : undefined),   // 내 단어숙제 도장 { 날짜: 도장 } · null = 서버가 못 읽음
+    // [147차수] 원장이 올린 "앱 켤 때 카드" 목록(워커 13단계가 주면). 옛 워커면 빈 배열.
+    popups: Array.isArray(payload.popups) ? payload.popups : [],
   };
 };
 export const loadStudentBundle = async (studentId, opts = {}) => {

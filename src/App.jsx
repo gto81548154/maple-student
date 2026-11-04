@@ -16,6 +16,7 @@ import { TeacherHome } from "./screens/teacher/TeacherHome.jsx";
 import { TeacherLinkDeadScreen } from "./screens/teacher/TeacherLinkDeadScreen.jsx";
 import { VocabWrongTab } from "./screens/vocab/VocabWrongTab.jsx";
 import { MAX_W, TAB_BAR_H, TAP, UI } from "./theme/tokens.jsx";
+import { HomePopup } from "./ui/HomePopup.jsx";
 import { KakaoOpenBanner } from "./ui/KakaoOpenBanner.jsx";
 import { AttQrModal } from "./ui/Qr.jsx";
 import { MoreMenu, MoreSubFrame, StudentHeader, StudentTabBar } from "./ui/StudentChrome.jsx";
@@ -35,6 +36,7 @@ import { useVideoSession } from "./state/useVideoSession.jsx";
 import { computeTodoView } from "./state/computeTodoView.jsx";
 import { computeVocaView } from "./state/computeVocaView.jsx";
 import { computeMoreView } from "./state/computeMoreView.jsx";
+import { computeHomePopup, hideHomePopupToday } from "./state/computeHomePopup.jsx";
 import { makeTabNav } from "./state/makeTabNav.jsx";
 
 import { renderLoadingScreen } from "./screens/status/LoadingScreen.jsx";
@@ -51,7 +53,7 @@ export default function App() {
   //       아예 버튼을 안 띄우고 안내 문구로 바꾼다.
   const attToken = params.get("t") || "";
   useAppBoot();
-  const { bundleVocaHw, setBundleVocaHw, attLog, attStatus, checklistData, customHolidays, displayedBundleRef, error, examRanges, exams, lastLoadedAt, loadErrorCode, loading, loadingSlow, makeups, masterWithdrawn, offlineNotice, progressTree, records, refreshing, setAttLog, setAttStatus, setChecklistData, setCustomHolidays, setError, setExamRanges, setExams, setLastLoadedAt, setLoadErrorCode, setLoading, setMakeups, setMasterWithdrawn, setOfflineNotice, setProgressTree, setRecords, setRefreshing, setStudent, setSurveyResponses, setSurveys, setSyncSource, setTodos, setVideoStatsUnavailable, setVideos, setVocabWrongWords, setWithdrawnName, student, surveyResponses, surveys, syncSource, todos, videoStatsUnavailable, videos, vocabWrongWords, withdrawnName } = useBundleState();
+  const { bundleVocaHw, setBundleVocaHw, attLog, attStatus, checklistData, customHolidays, displayedBundleRef, error, examRanges, exams, lastLoadedAt, loadErrorCode, loading, loadingSlow, makeups, masterWithdrawn, offlineNotice, progressTree, records, refreshing, setAttLog, setAttStatus, setChecklistData, setCustomHolidays, setError, setExamRanges, setExams, setLastLoadedAt, setLoadErrorCode, setLoading, setMakeups, setMasterWithdrawn, setOfflineNotice, setProgressTree, setRecords, setRefreshing, setStudent, setSurveyResponses, setSurveys, setSyncSource, setTodos, setVideoStatsUnavailable, setVideos, setVocabWrongWords, setWithdrawnName, student, surveyResponses, surveys, syncSource, todos, videoStatsUnavailable, videos, vocabWrongWords, withdrawnName, popups, setPopups } = useBundleState();
   // [0812 대시보드] 첫 화면 = 홈 카드판. [133차수] 주소(#탭)에 화면이 적혀 있으면 그 화면(새로고침해도 보던 탭 그대로). 단어 탭이 꺼져 있으면 홈으로.
   //   학생 id 가 없는 화면(선생님 홈·마스터 홈·링크 찾기)은 여기 주소를 쓰지 않는다(선생님 홈은 제 주소를 따로 씀 — 134차수).
   const routeOn = !!studentId;
@@ -68,6 +70,9 @@ export default function App() {
   const { vocaHwRec } = useVocaHw({ bundleVocaHw, selectedDate, studentId, tab, todos });
   const { activeSecRef, awayCountRef, awaySecRef, awayStartRef, currentSessionIdRef, lastActiveAtRef, lastSavedAwayCountRef, lastSavedAwaySecRef, lastSavedFocusSecRef, lastSavedPlaySecRef, lastVideoSaveStatus, longestAwayRef, pendingVideoCount, selectedVideoBook, setLastVideoSaveStatus, setPendingVideoCount, setSelectedVideoBook, setVideoWatch, setVideosFeaturedId, setViewStartTime, setViewingVideo, videoSaveChunkSeqRef, videoSaveInFlightRef, videoWatch, videosFeaturedId, viewStartTime, viewingVideo, ytDurationSecRef, ytFocusSecRef, ytPlaySecRef, ytPlayerStateRef } = useVideoState();
   const mockBusyRef = useRef(false); // [101차수] 모의고사 시험·답 입력·제출 중(MockExamTab이 알려준다)
+  // [147차수] 앱을 켤 때 한 번 뜨는 안내 카드 — 자료를 처음 받은 뒤 한 번만 계산해 띄운다(탭을 옮겨도 다시 안 뜸)
+  const [popupCards, setPopupCards] = useState(null);
+  const popupDoneRef = useRef(false);
   const recordBusyRef = useRef(false); // [145차수] 녹음 제출 화면에서 녹음 중인지(RecordScreen이 알려준다) — 녹음 중엔 새 판을 적용하지 않는다
   const mockTimedRef = useRef(false); // [135차수 ac] 시간이 가는 모의고사(50·70분) 시험 화면인지 — 탭을 떠나거나 뒤로가기할 때 한 번 묻는다
   // [08-07] 한 번 차단된 링크인지. true가 되면 30초 자동 새로고침이 서버를 그만 두드린다.
@@ -147,7 +152,7 @@ export default function App() {
     }
   }, [viewingVideo]);
   const loadDataRef = useRef(null);
-  const { loadData } = useBundleLoader({ setBundleVocaHw, displayedBundleRef, setAttLog, setAttStatus, setChecklistData, setCustomHolidays, setError, setExamRanges, setExams, setLastLoadedAt, setLoadErrorCode, setLoading, setMakeups, setMasterWithdrawn, setOfflineNotice, setProgressTree, setRecords, setRefreshing, setStudent, setSurveyResponses, setSurveys, setSyncSource, setTodos, setVideoStatsUnavailable, setVideoWatch, setVideos, setVocabWrongWords, setWithdrawnName, studentId, viewingVideoRef, withdrawnRef });
+  const { loadData } = useBundleLoader({ setBundleVocaHw, displayedBundleRef, setAttLog, setAttStatus, setChecklistData, setCustomHolidays, setError, setExamRanges, setExams, setLastLoadedAt, setLoadErrorCode, setLoading, setMakeups, setMasterWithdrawn, setOfflineNotice, setPopups, setProgressTree, setRecords, setRefreshing, setStudent, setSurveyResponses, setSurveys, setSyncSource, setTodos, setVideoStatsUnavailable, setVideoWatch, setVideos, setVocabWrongWords, setWithdrawnName, studentId, viewingVideoRef, withdrawnRef });
   loadDataRef.current = loadData;
   const { toggleVideo } = useVideoSession({ activeSecRef, awayCountRef, awaySecRef, awayStartRef, currentSessionIdRef, flushingRef, lastActiveAtRef, lastSavedAwayCountRef, lastSavedAwaySecRef, lastSavedFocusSecRef, lastSavedPlaySecRef, longestAwayRef, setLastVideoSaveStatus, setPendingVideoCount, setVideoWatch, setViewStartTime, setViewingVideo, studentId, videoSaveChunkSeqRef, videoSaveInFlightRef, viewStartTime, viewingVideo, withdrawnRef, ytDurationSecRef, ytFocusSecRef, ytPlaySecRef, ytPlayerStateRef , onVocabResultsSent: () => loadDataRef.current && loadDataRef.current({ manual: true }) });   // [135차수 j] manual 이어야 자동 받기가 도는 중에도 뒤이어 한 번 더 받는다
 
@@ -203,6 +208,18 @@ export default function App() {
   const { activeSurveys, attNoticeAll, attWeek, calSub, examDdays, moreGroups, nearestExam, unansweredSurveys, wrongCount } = computeMoreView({attStatus, customHolidays, exams, hasVocabWrong, makeups, pinnedMessages, progressTree, student, surveyResponses, surveys, todayStrForTab, vocabWarn, vocabWrongWords });
   const { allTaskItems, goTab, picker, scrollToVideoCard, topTabOf, watchBySid } = makeTabNav({ confirmLeaveTab, headerRef, setSelectedVideoBook, setTab, setVideosFeaturedId, setVocaExtraBook, setVocaOpenLast, setVocaOpenTask, startVocaHwTest, stepGroups, studentId, studentVideos, tab, taskVoca, toggleVideo, videoWatch, viewingVideo, vocaHwBusyRef, vocaHwRec });
   goTabRef.current = goTab; pickerRef.current = picker;
+  // [147차수] 첫 자료가 들어온 뒤 한 번만: 급한 것(오답 기한·설문·시험·새 공지·원장 카드)을 카드로 모아 띄운다
+  if (!popupDoneRef.current) {
+    popupDoneRef.current = true;
+    const cards = computeHomePopup({ examDdays, pinnedMessages, popups, todayStr: todayStrForTab, unansweredSurveys, vocabWarn, wrongCount });
+    if (cards.length) setTimeout(() => setPopupCards(cards), 0);
+  }
+  const closePopup = () => setPopupCards(null);
+  const popupGo = (card) => {
+    closePopup();
+    if (card.url && /^https?:\/\//.test(card.url)) { try { window.open(card.url, "_blank", "noopener"); } catch (e) {} return; }
+    if (card.tab && STUDENT_ROUTE_IDS.includes(card.tab)) goTab(card.tab);
+  };
   // 위 탭 5개 — 순서·자리 고정(강의가 없는 학생도 강의 탭은 있고 안에서 "등록된 강의가 없어요"). 단어 탭은 VOCA_TAB_ENABLED를 따른다.
   // [0825 8차수] 단어 숙제가 남아 있는 동안 "단어" 탭은 빨간 칸 — 누르면 바로 숙제 TEST. [94차수] 선생님 화면은 빨간 칸 없음
   const topTabs = [
@@ -220,6 +237,11 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", background: UI.bg, fontFamily: F, color: UI.text }}>
       {/* [103차수] 카카오톡 안에서 열었을 때만 "브라우저로 열기" 띠. 홈 화면 추가·알림 안내는 더보기 → 앱 설정으로 이사(원장 결정 09-08) */}
+      {/* [147차수] 앱 켤 때 안내 카드 */}
+      {popupCards && popupCards.length > 0 && (
+        <HomePopup cards={popupCards} onClose={closePopup} onGo={popupGo}
+          onHideToday={() => { hideHomePopupToday(todayStrForTab, popupCards.map((c) => c.key)); closePopup(); }} />
+      )}
       <KakaoOpenBanner />
       {/* [마스터] 지금 남의 화면을 보고 있다는 표시 + 홈 복귀. 학생에게는 절대 안 뜬다(열쇠 없음). */}
       {IS_MASTER_MODE && (
