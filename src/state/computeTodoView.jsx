@@ -5,8 +5,11 @@ import { buildStepGroups, filterTodoDatesForReveal, pickDefaultTodoDate, stripLa
 export function computeTodoView(D) {
   const { checklistData, records, selectedDate, studentId, todos, vocaHwRec } = D;
   const sRec = records[studentId] || records[Number(studentId)] || {};
+  // [151차수 원장 결정 11-04] 학생에게 보이는 공지 = 수업 기록 중 "👀 학생에게 보이기"(studentVisible)를 켠 글만.
+  //   예전엔 📌 고정(pinned)을 기준으로 해서 선생님끼리 보는 메모까지 학생에게 떴다. 이제 고정은 원장앱 안에서만 쓰는 표시다.
+  //   원장앱 15단계가 스위치를 켜 주기 전에는 학생에게 공지가 안 보인다(새는 쪽보다 안 보이는 쪽이 안전).
   const pinnedMessages = Object.entries(sRec)
-    .filter(([, v]) => v && v.pinned)
+    .filter(([, v]) => v && v.studentVisible === true)
     .sort(([a], [b]) => b.localeCompare(a));
   // allDates: homework/academy 또는 steps5 중 하나라도 데이터가 있는 날짜
   // [0813] 전체 목록(allDatesFull)을 먼저 만들고, 기본 날짜를 정한 뒤 단추 3개를 뽑는다.
