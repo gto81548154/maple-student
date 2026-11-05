@@ -2,3 +2,7 @@
 public/version.json
 # wrangler가 배포 때 만드는 임시 폴더
 .wrangler/
+# 빌드 결과물·설치 폴더·잠금 파일 — 깃에 넣지 않는다(배포는 Cloudflare가 main에서 직접 빌드)
+dist/
+node_modules/
+package-lock.json
