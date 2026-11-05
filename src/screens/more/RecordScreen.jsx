@@ -5,7 +5,7 @@ import { WORKER_ORIGIN } from "../../core/config.jsx";
 import { fetchWithTimeout } from "../../core/net.jsx";
 import { DK, getTodayStr } from "../../domain/time.jsx";
 import { TAP, UI } from "../../theme/tokens.jsx";
-import { blobToBase64, fmtSec, useRecorder } from "./useRecorder.jsx";
+import { MAX_BYTES, blobToBase64, fmtSec, useRecorder } from "./useRecorder.jsx";
 
 // ═══ [145차수] 더보기 → 녹음 제출 ═══
 //   학생이 폰에서 소리를 녹음해 학원에 보낸다(선생님은 원장앱 PDF 수업실에서 듣는다 — 원장앱 299차수).
@@ -16,7 +16,6 @@ import { blobToBase64, fmtSec, useRecorder } from "./useRecorder.jsx";
 //   워커가 아직 안 올라갔을 수 있으니 404·연결 실패는 "지금은 제출할 수 없어요"로 조용히 처리한다(앱이 멈추지 않게).
 //   [152차수] 녹음 로직은 useRecorder 훅으로 옮겼다(파닉스 숙제와 같이 씀). 이 화면은 "🎤 파닉스" 안 맨 아래 "자유 녹음" 칸으로 들어간다. 화면 모양·동작은 그대로.
 const MAX_SEC = 90;                    // 녹음 최대 길이(초) — 원장 확정
-const MAX_BYTES = 2 * 1024 * 1024;     // 파일 최대 2MB — 원장 확정
 const LABEL_MAX = 80;
 const fmtClock = (iso) => { const d = new Date(iso); if (isNaN(d.getTime())) return ""; return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`; };
 const dateOf = (it) => {

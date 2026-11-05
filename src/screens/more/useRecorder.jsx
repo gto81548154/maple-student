@@ -16,6 +16,7 @@ const pickMime = () => {
 export const canRecord = () => !!(navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function" && typeof MediaRecorder !== "undefined" && pickMime());
 // 워커에 보내는 형식 이름은 세 가지 중 하나("audio/webm;codecs=opus" → "audio/webm")
 const baseMime = (m) => String(m || "").split(";")[0].trim().toLowerCase();
+export const MAX_BYTES = 2 * 1024 * 1024;     // 녹음 파일 최대 2MB — 원장 확정(145차수). 두 화면이 같이 쓴다
 export const fmtSec = (s) => { const n = Math.max(0, Math.round(Number(s) || 0)); return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`; };
 // 파일 → base64 (data:…;base64, 앞부분은 떼고 보낸다)
 export const blobToBase64 = (blob) => new Promise((resolve, reject) => {
@@ -41,6 +42,7 @@ export function useRecorder({ maxSec, onBusy }) {
   const discardRef = useRef(false);   // 화면을 나가서 멈춘 녹음은 버린다(제출 안 됨)
   const previewRef = useRef(null);    // 들어보기 <audio>
   const aliveRef = useRef(true);
+  const startingRef = useRef(false);  // start()가 마이크를 여는 동안 true — 빠르게 두 번 눌러도 마이크를 두 번 열지 않는다
   const onBusyRef = useRef(onBusy); onBusyRef.current = onBusy;
   const busy = phase === "recording" || phase === "sending";
   useEffect(() => { if (typeof onBusyRef.current === "function") onBusyRef.current(phase === "recording"); }, [phase]);
@@ -72,14 +74,16 @@ export function useRecorder({ maxSec, onBusy }) {
   };
   // ─── 녹음 시작 ───
   const start = async (beforeStart) => {
-    if (busy) return false;
+    if (busy || startingRef.current || (recRef.current && recRef.current.state === "recording")) return false;
+    startingRef.current = true;
     setNotice("");
-    if (!supported) { setNotice("이 폰에서는 녹음이 안 돼요"); return false; }
+    if (!supported) { startingRef.current = false; setNotice("이 폰에서는 녹음이 안 돼요"); return false; }
     stopPreview();
     if (typeof beforeStart === "function") beforeStart();
     let stream;
     try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-    catch (e) { setNotice("마이크 사용을 허용해 주세요"); return false; }
+    catch (e) { startingRef.current = false; setNotice("마이크 사용을 허용해 주세요"); return false; }
+    startingRef.current = false;
     if (!aliveRef.current) { try { stream.getTracks().forEach((t) => t.stop()); } catch (e) {} return false; }
     const mime = pickMime();
     let rec;

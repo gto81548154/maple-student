@@ -59,8 +59,9 @@ export function renderHomeTab(C) {
           // [152차수] 파닉스 숙제 — 안 끝난 것(덜 보낸 것, 마감 뒤 7일 안)만. 마감 가까운 것이 앞. 선생님·원장 보기 화면에서는 단추를 안 띄운다(녹음을 못 보내므로)
           const phonicsPending = IS_STAFF_VIEW ? [] : pendingPhonicsTasks(phonicsTasks, todayStrForTab);
           const phonicsFirst = phonicsPending[0] || null;
-          const totalRemainingN = uncheckedHwCount + vocaRemaining + videoRemaining + vocabWrongRemaining + phonicsPending.length;
-          const hasAnyTodayWork = step1Items.length > 0 || !!(VOCA_TAB_ENABLED && taskVoca) || taskVideosList.length > 0 || picker?.main?.kind === "task" || hasVocabWrong || phonicsPending.length > 0;
+          const phonicsRemainingN = dateIsToday ? phonicsPending.length : 0;   // 파닉스는 날짜와 상관없는 숙제라 "오늘" 요약에만 더한다(지난·다음 날짜 숫자에는 안 더함)
+          const totalRemainingN = uncheckedHwCount + vocaRemaining + videoRemaining + vocabWrongRemaining + phonicsRemainingN;
+          const hasAnyTodayWork = step1Items.length > 0 || !!(VOCA_TAB_ENABLED && taskVoca) || taskVideosList.length > 0 || picker?.main?.kind === "task" || hasVocabWrong || phonicsRemainingN > 0;
 
           // ── 모양 (토스 스타일: 흰 둥근 카드 22px, 테두리·그림자 최소, 남색·초록·보라·회색·경고빨강만) ──
           const GREEN = UI.okFg, GREEN_BG = UI.okBg, PURPLE = "#5B3FB8", PURPLE_BG = "#EFEAFB";

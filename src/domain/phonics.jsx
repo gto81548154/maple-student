@@ -1,4 +1,4 @@
-import { DK, shiftYmd } from "./time.jsx";
+import { fmtDateShort, shiftYmd } from "./time.jsx";
 
 // ═══ [152차수] 파닉스 숙제 — 워커 답을 앱이 쓰는 모양으로 고치고, 상태(다 보냄·마감 지남·보낼 수 있음)를 정한다 ═══
 //   워커 길(13단계 워커 지시문 기준): GET /student/phonics-tasks?studentId=&t= → { success, items:[숙제…] }
@@ -66,11 +66,7 @@ export const phonicsRemaining = (t) => Math.max(0, (t?.total || 0) - (t?.done ||
 // 안 끝난 숙제 = 덜 보낸 것(마감이 지났어도 7일 안이면 포함). 홈 단추·더보기 설명이 쓴다
 export const pendingPhonicsTasks = (list, todayStr) => sortPhonicsTasks((list || []).filter((t) => !isPhonicsDone(t) && canSendPhonics(t, todayStr)));
 // "11/7(목)까지"
-export const fmtPhonicsDue = (due) => {
-  if (!due) return "";
-  const d = new Date(due + "T00:00:00"); if (isNaN(d.getTime())) return "";
-  return `${d.getMonth() + 1}/${d.getDate()}(${DK[d.getDay()]})까지`;
-};
+export const fmtPhonicsDue = (due) => { const s = fmtDateShort(due); return s ? s + "까지" : ""; };
 // "11/7까지"(홈 단추용 짧은 글)
 export const fmtPhonicsDueShort = (due) => {
   if (!due) return "";
@@ -87,3 +83,23 @@ export const applyPhonicsSent = (list, taskId, wordNo, rec, taskPatch) => (list 
   const done = Number.isFinite(doneRaw) ? doneRaw : words.filter((w) => w.rec).length;
   return { ...t, words, done: Math.max(0, Math.min(total, done)), total };
 });
+// 서버 목록(next)에 방금 보낸 녹음이 아직 없으면(서버가 잠깐 옛 목록을 줄 때) 폰에 있는 것(prev)을 지키고 숫자를 다시 센다.
+//   같은 단어에 둘 다 있으면 더 나중 것(at)을 쓴다. 서버에 없는 숙제는 서버대로(마감 뒤 7일 지남 등).
+const atMs = (r) => { const t = r && r.at ? new Date(r.at).getTime() : 0; return Number.isFinite(t) ? t : 0; };
+export const mergePhonicsTasks = (prev, next) => {
+  if (!Array.isArray(prev) || !prev.length) return next;
+  return next.map((t) => {
+    const old = prev.find((p) => String(p.id) === String(t.id));
+    if (!old) return t;
+    let kept = false;
+    const words = t.words.map((w) => {
+      const ow = old.words.find((x) => x.no === w.no);
+      if (!ow || !ow.rec) return w;
+      if (!w.rec || atMs(ow.rec) > atMs(w.rec)) { kept = true; return { ...w, rec: ow.rec }; }
+      return w;
+    });
+    if (!kept) return t;
+    const done = Math.max(t.done, words.filter((w) => w.rec).length);
+    return { ...t, words, done: Math.min(t.total, done) };
+  });
+};

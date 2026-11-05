@@ -7,7 +7,7 @@ import { PHONICS_WORD_MAX_SEC, applyPhonicsSent, canSendPhonics, fmtPhonicsDue, 
 import { getTodayStr, shiftYmd } from "../../domain/time.jsx";
 import { TAP, UI } from "../../theme/tokens.jsx";
 import { RecordScreen } from "../more/RecordScreen.jsx";
-import { blobToBase64, fmtSec, useRecorder } from "../more/useRecorder.jsx";
+import { MAX_BYTES, blobToBase64, fmtSec, useRecorder } from "../more/useRecorder.jsx";
 
 // ═══ [152차수] 더보기 → 🎤 파닉스 — 원장이 낸 파닉스 숙제(단어 몇 개)를 단어마다 녹음해서 보낸다(원장 11-05 요청) ═══
 //   ① 목록: 숙제 카드(마감 가까운 것 먼저) "11/7(목)까지 · 워드마스터 Basic DAY 3 · 단어 5개 · 녹음 3/5" + 원장 메모. 다 보냈으면 초록 ✓, 마감 지났는데 덜 보냈으면 빨간 "마감 지남".
@@ -17,7 +17,6 @@ import { blobToBase64, fmtSec, useRecorder } from "../more/useRecorder.jsx";
 //      선생님이 들으면 "선생님 확인 ✓", 메모가 있으면 그 아래 한 줄. 다 보내면 카드 위에 "다 보냈어요 🎉".
 //   ③ 맨 아래 "자유 녹음" 칸 = 145차수 녹음 제출 화면 그대로(메뉴를 이 안으로 합쳤다).
 //   목록 자료는 App(usePhonicsTasks)이 들고 있다 — 홈 단추와 같은 목록. 여기서 보내면 그 자료를 바로 고치고(task.done/total) 뒤이어 한 번 더 받는다.
-const MAX_BYTES = 2 * 1024 * 1024;     // 파일 최대 2MB — 145차수와 같음
 const CARD = { background: UI.card, border: `1px solid ${UI.line}`, borderRadius: 16, padding: "14px 16px" };
 const BTN = { minHeight: TAP, border: "none", borderRadius: 12, padding: "10px 14px", fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" };
 const BTN_PRIMARY = { ...BTN, background: UI.navy, color: "#fff" };
@@ -30,6 +29,12 @@ const progressBar = (ratio, color) => (
   </div>
 );
 
+// "‹ 숙제 목록" 되돌아가기 단추(숙제 안 · 숙제를 못 찾았을 때 둘 다 씀)
+const BackToList = ({ onClick }) => (
+  <button type="button" onClick={onClick} style={{ display: "inline-flex", alignItems: "center", gap: 3, border: "none", background: "transparent", padding: "2px 6px 6px 2px", minHeight: TAP, fontSize: 14, fontWeight: 700, color: UI.blue, cursor: "pointer", fontFamily: "inherit" }}>
+    <span aria-hidden="true" style={{ fontSize: 17, lineHeight: 1 }}>‹</span> 숙제 목록
+  </button>
+);
 // 숙제 카드 한 장(목록용)
 function TaskCard({ task, todayStr, onOpen }) {
   const done = isPhonicsDone(task);
@@ -212,9 +217,7 @@ function TaskDetail({ studentId, task, todayStr, onBack, onTasksChange, onReload
   return (
     <div>
       <style>{`@keyframes mapleRecBlink { 50% { opacity: 0.25; } }`}</style>
-      <button type="button" onClick={onBack} style={{ display: "inline-flex", alignItems: "center", gap: 3, border: "none", background: "transparent", padding: "2px 6px 6px 2px", minHeight: TAP, fontSize: 14, fontWeight: 700, color: UI.blue, cursor: "pointer", fontFamily: "inherit" }}>
-        <span aria-hidden="true" style={{ fontSize: 17, lineHeight: 1 }}>‹</span> 숙제 목록
-      </button>
+      <BackToList onClick={onBack} />
       <div style={{ ...CARD, padding: 0, overflow: "hidden" }}>
         <div style={{ padding: "14px 16px 12px" }}>
           <div style={{ fontSize: 17, fontWeight: 800, color: UI.text, lineHeight: 1.35, wordBreak: "keep-all" }}>{task.title}</div>
@@ -245,17 +248,15 @@ function TaskDetail({ studentId, task, todayStr, onBack, onTasksChange, onReload
 
 export function PhonicsScreen({ studentId, tasks, tasksState, onReload, onTasksChange, openTaskId, onOpenTask, onBusy }) {
   const todayStr = getTodayStr();
-  // 화면에 들어오면 목록을 새로 받는다(홈에서 받아 둔 것이 있어도 — 선생님 확인·메모가 바뀌었을 수 있다)
-  useEffect(() => { onReload(); }, [studentId]);
+  // 화면에 들어오면 목록을 새로 받는다(홈에서 받아 둔 것이 있어도 — 선생님 확인·메모가 바뀌었을 수 있다). 방금(3초 안) 받았거나 받는 중이면 건너뛴다
+  useEffect(() => { onReload({ ifStale: true }); }, [studentId]);
   const list = Array.isArray(tasks) ? tasks : [];
   if (openTaskId) {
     const task = list.find((t) => String(t.id) === String(openTaskId));
     if (task) return <TaskDetail key={task.id} studentId={studentId} task={task} todayStr={todayStr} onBack={() => onOpenTask(null)} onTasksChange={onTasksChange} onReload={onReload} onBusy={onBusy} />;
     return (
       <div>
-        <button type="button" onClick={() => onOpenTask(null)} style={{ display: "inline-flex", alignItems: "center", gap: 3, border: "none", background: "transparent", padding: "2px 6px 6px 2px", minHeight: TAP, fontSize: 14, fontWeight: 700, color: UI.blue, cursor: "pointer", fontFamily: "inherit" }}>
-          <span aria-hidden="true" style={{ fontSize: 17, lineHeight: 1 }}>‹</span> 숙제 목록
-        </button>
+        <BackToList onClick={() => onOpenTask(null)} />
         <div style={{ ...CARD, textAlign: "center", color: UI.dim, fontSize: 13.5, lineHeight: 1.6 }}>{tasksState === "loading" ? "불러오는 중…" : <>이 숙제는 이제 없어요<br /><span style={{ fontSize: 12.5 }}>마감 뒤 7일이 지난 숙제는 안 보여요</span></>}</div>
       </div>
     );
