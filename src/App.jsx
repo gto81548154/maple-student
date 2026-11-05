@@ -71,12 +71,15 @@ export default function App() {
   const [showAttQr, setShowAttQr] = useState(false);
   const showAttQrRef = useRef(false); showAttQrRef.current = showAttQr;
   const [selectedDate, setSelectedDate] = useState(null);
-  const { vocaHwRec } = useVocaHw({ bundleVocaHw, selectedDate, studentId, tab, todos });
+  const { vocaHwRec, vocaHwKnown } = useVocaHw({ bundleVocaHw, selectedDate, studentId, tab, todos });
   const { activeSecRef, awayCountRef, awaySecRef, awayStartRef, currentSessionIdRef, lastActiveAtRef, lastSavedAwayCountRef, lastSavedAwaySecRef, lastSavedFocusSecRef, lastSavedPlaySecRef, lastVideoSaveStatus, longestAwayRef, pendingVideoCount, selectedVideoBook, setLastVideoSaveStatus, setPendingVideoCount, setSelectedVideoBook, setVideoWatch, setVideosFeaturedId, setViewStartTime, setViewingVideo, videoSaveChunkSeqRef, videoSaveInFlightRef, videoWatch, videosFeaturedId, viewStartTime, viewingVideo, ytDurationSecRef, ytFocusSecRef, ytPlaySecRef, ytPlayerStateRef } = useVideoState();
   const mockBusyRef = useRef(false); // [101차수] 모의고사 시험·답 입력·제출 중(MockExamTab이 알려준다)
   // [147차수] 앱을 켤 때 한 번 뜨는 안내 카드 — 자료를 처음 받은 뒤 한 번만 계산해 띄운다(탭을 옮겨도 다시 안 뜸)
   const [popupCards, setPopupCards] = useState(null);
   const popupDoneRef = useRef(false);
+  // [153차수] 단어 숙제 카드 때문에 도장 확인을 최대 5초 기다린다. 그때까지 확인이 안 되면 단어 숙제 카드만 빼고 띄운다(잘못된 "안 했어요"보다 안 뜨는 쪽).
+  const [popupWaitOver, setPopupWaitOver] = useState(false);
+  useEffect(() => { if (!student) return undefined; const t = setTimeout(() => setPopupWaitOver(true), 5000); return () => clearTimeout(t); }, [!!student]);   // eslint-disable-line
   const recordBusyRef = useRef(false); // [145차수] 녹음 제출 화면에서 녹음 중인지(RecordScreen이 알려준다) — 녹음 중엔 새 판을 적용하지 않는다
   const mockTimedRef = useRef(false); // [135차수 ac] 시간이 가는 모의고사(50·70분) 시험 화면인지 — 탭을 떠나거나 뒤로가기할 때 한 번 묻는다
   // [08-07] 한 번 차단된 링크인지. true가 되면 30초 자동 새로고침이 서버를 그만 두드린다.
@@ -247,9 +250,9 @@ export default function App() {
   const { allTaskItems, goTab, picker, scrollToVideoCard, topTabOf, watchBySid } = makeTabNav({ confirmLeaveTab, headerRef, setPhonicsOpenTask, setSelectedVideoBook, setTab, setVideosFeaturedId, setVocaExtraBook, setVocaOpenLast, setVocaOpenTask, startVocaHwTest, stepGroups, studentId, studentVideos, tab, taskVoca, toggleVideo, videoWatch, viewingVideo, vocaHwBusyRef, vocaHwRec });
   goTabRef.current = goTab; pickerRef.current = picker;
   // [147차수] 첫 자료가 들어온 뒤 한 번만: 급한 것(오답 기한·설문·시험·새 공지·원장 카드)을 카드로 모아 띄운다
-  if (!popupDoneRef.current) {
+  if (!popupDoneRef.current && (!taskVoca || vocaHwKnown || popupWaitOver)) {   // [153차수] 단어 숙제가 있으면 도장 확인(또는 5초)을 기다린다
     popupDoneRef.current = true;
-    const cards = computeHomePopup({ examDdays, pinnedMessages, popups, todayStr: todayStrForTab, unansweredSurveys, vocabWarn, wrongCount });
+    const cards = computeHomePopup({ activeDate, examDdays, pinnedMessages, popups, taskVoca, todayStr: todayStrForTab, unansweredSurveys, vocaHwKnown, vocaHwRec, vocabWarn, wrongCount });
     if (cards.length) setTimeout(() => setPopupCards(cards), 0);
   }
   const closePopup = () => setPopupCards(null);

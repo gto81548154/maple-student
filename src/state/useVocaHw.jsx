@@ -58,5 +58,8 @@ export function useVocaHw(D) {
   const fromFetch = fetched && fetched.date === vocaHwDate ? fetched.rec : null;
   const fromBundle = (!IS_TEACHER_MODE && hasBundleMap && vocaHwDate) ? (bundleVocaHw[vocaHwDate] || null) : null;
   const vocaHwRec = fromFetch || fromBundle || null;
-  return { vocaHwRec };
+  // [153차수] 도장 확인이 끝났는지 — 묶음에 도장 표가 왔거나, 따로 물은 답이 그 날짜로 돌아왔으면 true.
+  //   앱 켤 때 "단어 숙제 아직 안 했어요" 카드는 이게 true일 때만 띄운다(도장이 늦게 와서 통과한 학생에게 잘못 뜨지 않게).
+  const vocaHwKnown = !IS_TEACHER_MODE && !!vocaHwDate && (hasBundleMap || !!(fetched && fetched.date === vocaHwDate));
+  return { vocaHwRec, vocaHwKnown };
 }
