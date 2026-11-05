@@ -8,7 +8,7 @@ import { StudentCalendarTab } from "./screens/calendar/StudentCalendarTab.jsx";
 import { MasterHome } from "./screens/master/MasterHome.jsx";
 import { MockExamTab } from "./screens/mock/MockExamTab.jsx";
 import { AppSettingsScreen, ExamInfoScreen, NoticesScreen } from "./screens/more/MoreScreens.jsx";
-import { RecordScreen } from "./screens/more/RecordScreen.jsx";
+import { PhonicsScreen } from "./screens/phonics/PhonicsScreen.jsx";
 import { RewardScreen } from "./screens/more/RewardScreen.jsx";
 import { BookPassCelebration } from "./screens/progress/BookPassCelebration.jsx";
 import { RoadmapScreen } from "./screens/progress/RoadmapScreen.jsx";
@@ -32,6 +32,7 @@ import { useVideoState } from "./state/useVideoState.jsx";
 import { useAppUpdate } from "./state/useAppUpdate.jsx";
 import { usePassQueue } from "./state/usePassQueue.jsx";
 import { usePushSync } from "./state/usePushSync.jsx";
+import { usePhonicsTasks } from "./state/usePhonicsTasks.jsx";
 import { useBundleLoader } from "./state/useBundleLoader.jsx";
 import { useVideoSession } from "./state/useVideoSession.jsx";
 import { computeTodoView } from "./state/computeTodoView.jsx";
@@ -44,8 +45,10 @@ import { renderLoadingScreen } from "./screens/status/LoadingScreen.jsx";
 import { renderWithdrawnScreen } from "./screens/status/WithdrawnScreen.jsx";
 import { renderLoadErrorScreen } from "./screens/status/LoadErrorScreen.jsx";
 
-// [133차수] 주소(#해시)에 쓰는 학생 화면 이름 — 위 탭 5개 + 더보기 안 화면 9개(145차수: 녹음 제출 record · 146차수: 장학금 reward 추가). 모르는 이름은 홈으로.
-const STUDENT_ROUTE_IDS = ["home", "tasks", "voca", "videos", "more", "cal", "vocabWrong", "mock", "progress", "notices", "examInfo", "settings", "record", "reward"];
+// [133차수] 주소(#해시)에 쓰는 학생 화면 이름 — 위 탭 5개 + 더보기 안 화면 9개(146차수: 장학금 reward · 152차수: 🎤 파닉스 phonics — 145차수 녹음 제출 record 를 안에 합침). 모르는 이름은 홈으로.
+const STUDENT_ROUTE_IDS = ["home", "tasks", "voca", "videos", "more", "cal", "vocabWrong", "mock", "progress", "notices", "examInfo", "settings", "phonics", "reward"];
+// [152차수] 옛 주소 #record(녹음 제출)는 #phonics 로 바꿔 읽는다(홈 화면에 추가해 둔 옛 바로가기 대비)
+try { if (/^#\/?record(\b|$)/.test(window.location.hash)) window.history.replaceState(window.history.state, "", "#phonics"); } catch (e) {}
 
 export default function App() {
   const params = new URLSearchParams(window.location.search);
@@ -114,13 +117,34 @@ export default function App() {
       if (window.scrollY > y) window.scrollTo({ top: y, behavior: "auto" });
     } catch (e) {}
   };
-  applyRouteRef.current = (target) => { cameFromRef.current = null; setTabInternal(target); scrollToContentTop(); };
+  applyRouteRef.current = (target, st) => {
+    cameFromRef.current = null; setTabInternal(target); scrollToContentTop();
+    // [152차수] 뒤로·앞으로 가기로 파닉스 칸에 오면 그 칸의 숙제(pt)를 같이 연다(없으면 목록)
+    if (target === "phonics") setPhonicsOpenTask(st && st.pt ? String(st.pt) : null);
+  };
   // 뒤로가기·새로고침으로 강의 탭에 오면 goTab 을 안 거치므로 대표 강의가 비어 있다 → 그때의 시작 강의(picker)로 채운다
   const pickerRef = useRef(null);
   useEffect(() => { if (tab === "videos" && videosFeaturedId == null && pickerRef.current && pickerRef.current.main) setVideosFeaturedId(pickerRef.current.main.video.id); }, [tab]);
   const setTab = (k) => { cameFromRef.current = tabRef.current; pushTabRoute(k); setTabInternal(k); };
   const { passQueue, setPassQueue } = usePassQueue({ progressTree, student, todos });
   usePushSync({ student });
+  // [152차수] 파닉스 숙제 목록 — 홈 단추·더보기 설명·🎤 파닉스 화면이 같이 본다(앱 켤 때 한 번 받고, 파닉스 화면에서 다시 받는다)
+  const { phonicsTasks, setPhonicsTasks, phonicsState, reloadPhonics } = usePhonicsTasks({ studentId, enabled: routeOn });
+  // [152차수] 🎤 파닉스 안에서 연 숙제(단어 목록 화면). 열면 주소를 한 칸 더 쌓아({ pt: 숙제 id }) 폰 뒤로가기 한 번 = 숙제 목록으로(출석 QR 창과 같은 방식 — 134차수).
+  //   새로고침해도 그 칸에 pt 가 남아 있으면 같은 숙제를 다시 연다.
+  const [phonicsOpenTask, setPhonicsOpenTask] = useState(() => { try { const st = window.history.state; return (routeOn && tab === "phonics" && st && st.pt) ? String(st.pt) : null; } catch (e) { return null; } });
+  const phonicsOpenRef = useRef(null); phonicsOpenRef.current = phonicsOpenTask;
+  const prevPhonicsOpenRef = useRef(null);
+  useEffect(() => {
+    const prev = prevPhonicsOpenRef.current; prevPhonicsOpenRef.current = phonicsOpenTask;
+    if (phonicsOpenTask && !prev) {
+      let st = null; try { st = window.history.state; } catch (e) {}
+      if (!(st && st.pg === "phonics" && String(st.pt || "") === String(phonicsOpenTask))) pushTabRoute("phonics", { pt: String(phonicsOpenTask) });
+    } else if (!phonicsOpenTask && prev) {
+      try { const st = window.history.state; if (st && st.pt && st.pg === "phonics" && readHistIdx() > 0) goBackRoute(); } catch (e) {}
+    }
+  }, [phonicsOpenTask]);
+  useEffect(() => { if (tab !== "phonics" && phonicsOpenRef.current) setPhonicsOpenTask(null); }, [tab]);   // 다른 탭으로 가면 연 숙제는 닫는다(주소는 이미 그 탭 것이라 되돌리지 않음)
 
   // viewingVideo state가 바뀔 때마다 ref를 최신으로 맞춰준다.
   useEffect(() => { viewingVideoRef.current = viewingVideo; }, [viewingVideo]);
@@ -161,10 +185,23 @@ export default function App() {
   sameRouteRef.current = (st) => {
     if (!(st && st.qr) && showAttQrRef.current) setShowAttQr(false);
     if (!(st && st.v) && viewingVideoRef.current) toggleVideo(viewingVideoRef.current);
+    // [152차수] 파닉스 숙제 칸(pt)에서 뒤로 → 숙제 목록. 목록에서 앞으로 → 그 숙제
+    if (tabRef.current === "phonics") { const pt = st && st.pt ? String(st.pt) : null; if (pt !== phonicsOpenRef.current) setPhonicsOpenTask(pt); }
   };
   // [133차수] "‹ 더보기" — 더보기 목록에서 들어온 화면이면 폰 뒤로가기와 똑같이(기록 한 칸 뒤로), 홈 바로가기로 바로 들어온 화면이면 더보기 목록을 새로 연다.
   const backToMore = () => { if (cameFromRef.current === "more" && readHistIdx() > 0) goBackRoute(); else goTabRef.current("more"); };
   const goTabRef = useRef(null);
+  // [152차수] 푸시 알림을 눌렀을 때 — 앱이 이미 열려 있으면 서비스 워커가 "이 화면으로" 메시지를 보낸다(예: 🎤 파닉스 숙제 알림 → 파닉스). 모르는 화면 이름은 무시.
+  useEffect(() => {
+    if (!routeOn || !("serviceWorker" in navigator)) return undefined;
+    const onMsg = (ev) => {
+      const d = ev && ev.data;
+      if (!d || d.type !== "maple:open-tab" || typeof d.tab !== "string" || !STUDENT_ROUTE_IDS.includes(d.tab)) return;
+      if (goTabRef.current) goTabRef.current(d.tab);
+    };
+    try { navigator.serviceWorker.addEventListener("message", onMsg); } catch (e) { return undefined; }
+    return () => { try { navigator.serviceWorker.removeEventListener("message", onMsg); } catch (e) {} };
+  }, []);
 
   // [마스터] 열쇠는 있고 학생 id는 없음 → 원장 전용 홈. 학생 데이터 로딩은 이미 건너뛴 상태.
   if (IS_MASTER_MODE && !studentId) {
@@ -206,8 +243,8 @@ export default function App() {
   if (!student) return null;
   const { activeDate, allDates, doneTasks, getFailReason, isCheckedView, isFailed, pct, pinnedMessages, stepGroups, todayStrForTab, todoRevealHeld, totalTasks } = computeTodoView({ checklistData, records, selectedDate, studentId, todos, vocaHwRec });
   const { hasVocabWrong, startVocaHwTest, studentVideos, taskVoca, vocaPassLabel, vocabWarn } = computeVocaView({ activeDate, customHolidays, makeups, progressTree, setVocaHwTask, stepGroups, student, studentId, videos, vocabWrongWords });
-  const { activeSurveys, attNoticeAll, attWeek, calSub, examDdays, moreGroups, nearestExam, unansweredSurveys, wrongCount } = computeMoreView({attStatus, curriculum, customHolidays, exams, hasVocabWrong, makeups, pinnedMessages, progressTree, roadmapSub: (() => { const rm = computeRoadmap({ curriculum, student, todos, progressTree }); return rm && rm.myStage ? `지금 ${rm.myStage}단계${rm.stageInfo?.range ? ` (${rm.stageInfo.range})` : ""} · 내가 어디까지 왔는지` : ""; })(), student, surveyResponses, surveys, todayStrForTab, vocabWarn, vocabWrongWords });
-  const { allTaskItems, goTab, picker, scrollToVideoCard, topTabOf, watchBySid } = makeTabNav({ confirmLeaveTab, headerRef, setSelectedVideoBook, setTab, setVideosFeaturedId, setVocaExtraBook, setVocaOpenLast, setVocaOpenTask, startVocaHwTest, stepGroups, studentId, studentVideos, tab, taskVoca, toggleVideo, videoWatch, viewingVideo, vocaHwBusyRef, vocaHwRec });
+  const { activeSurveys, attNoticeAll, attWeek, calSub, examDdays, moreGroups, nearestExam, unansweredSurveys, wrongCount } = computeMoreView({attStatus, curriculum, customHolidays, exams, hasVocabWrong, makeups, phonicsState, phonicsTasks, pinnedMessages, progressTree, roadmapSub: (() => { const rm = computeRoadmap({ curriculum, student, todos, progressTree }); return rm && rm.myStage ? `지금 ${rm.myStage}단계${rm.stageInfo?.range ? ` (${rm.stageInfo.range})` : ""} · 내가 어디까지 왔는지` : ""; })(), student, surveyResponses, surveys, todayStrForTab, vocabWarn, vocabWrongWords });
+  const { allTaskItems, goTab, picker, scrollToVideoCard, topTabOf, watchBySid } = makeTabNav({ confirmLeaveTab, headerRef, setPhonicsOpenTask, setSelectedVideoBook, setTab, setVideosFeaturedId, setVocaExtraBook, setVocaOpenLast, setVocaOpenTask, startVocaHwTest, stepGroups, studentId, studentVideos, tab, taskVoca, toggleVideo, videoWatch, viewingVideo, vocaHwBusyRef, vocaHwRec });
   goTabRef.current = goTab; pickerRef.current = picker;
   // [147차수] 첫 자료가 들어온 뒤 한 번만: 급한 것(오답 기한·설문·시험·새 공지·원장 카드)을 카드로 모아 띄운다
   if (!popupDoneRef.current) {
@@ -234,7 +271,7 @@ export default function App() {
   const F = "'Pretendard Variable', -apple-system, sans-serif";
 
   // [119차수] 탭별 그리기 함수(screens/…)에 넘겨줄 값 묶음. 그리기 함수는 여기서 필요한 것만 꺼내 쓴다.
-  const C = { activeDate, activeSurveys, allDates, allTaskItems, attLog, attNoticeAll, attStatus, attWeek, calSub, customHolidays, doneTasks, examDdays, examRanges, exams, getFailReason, goTab, hasVocabWrong, isCheckedView, isFailed, lastVideoSaveStatus, makeups, nearestExam, pct, pendingVideoCount, picker, pinnedMessages, progressTree, scrollToVideoCard, selectedVideoBook, setSelectedDate, setSelectedVideoBook, setVocaHwTask, setVocaOpenLast, setVocaOpenTask, stepGroups, student, studentId, studentVideos, taskVoca, todayStrForTab, todoRevealHeld, toggleVideo, totalTasks, unansweredSurveys, videos, videosFeaturedId, viewingVideo, vocaExtraBook, vocaHwBusyRef, vocaHwRec, vocaHwTask, vocaOpenLast, vocaOpenTask, vocaPassLabel, vocabWarn, watchBySid, wrongCount };
+  const C = { activeDate, activeSurveys, allDates, allTaskItems, attLog, attNoticeAll, attStatus, attWeek, calSub, customHolidays, doneTasks, examDdays, examRanges, exams, getFailReason, goTab, hasVocabWrong, isCheckedView, isFailed, lastVideoSaveStatus, makeups, nearestExam, pct, pendingVideoCount, phonicsState, phonicsTasks, picker, pinnedMessages, progressTree, scrollToVideoCard, selectedVideoBook, setSelectedDate, setSelectedVideoBook, setVocaHwTask, setVocaOpenLast, setVocaOpenTask, stepGroups, student, studentId, studentVideos, taskVoca, todayStrForTab, todoRevealHeld, toggleVideo, totalTasks, unansweredSurveys, videos, videosFeaturedId, viewingVideo, vocaExtraBook, vocaHwBusyRef, vocaHwRec, vocaHwTask, vocaOpenLast, vocaOpenTask, vocaPassLabel, vocabWarn, watchBySid, wrongCount };
   return (
     <div style={{ minHeight: "100vh", background: UI.bg, fontFamily: F, color: UI.text }}>
       {/* [103차수] 카카오톡 안에서 열었을 때만 "브라우저로 열기" 띠. 홈 화면 추가·알림 안내는 더보기 → 앱 설정으로 이사(원장 결정 09-08) */}
@@ -376,12 +413,13 @@ export default function App() {
           </MoreSubFrame>
         )}
 
-        {/* [145차수] 더보기 → 녹음 제출. 화면을 나가면(탭 이동) 녹음은 멈추고 버려진다(RecordScreen 정리) */}
-        {tab === "record" && (
-          <MoreSubFrame title="녹음 제출" onBack={backToMore}>
-            <RecordScreen studentId={studentId} onBusy={(b) => { recordBusyRef.current = !!b; }} />
-          </MoreSubFrame>
-        )}
+        {/* [145차수 → 152차수] 더보기 → 🎤 파닉스 — 숙제 목록 → 숙제 안(단어별 녹음) + 맨 아래 자유 녹음(옛 녹음 제출 화면). 화면을 나가면(탭 이동) 녹음은 멈추고 버려진다(useRecorder 정리) */}
+        {tab === "phonics" && (() => {
+          const screen = <PhonicsScreen studentId={studentId} tasks={phonicsTasks} tasksState={phonicsState} onReload={reloadPhonics} onTasksChange={setPhonicsTasks}
+            openTaskId={phonicsOpenTask} onOpenTask={(id) => setPhonicsOpenTask(id ? String(id) : null)} onBusy={(b) => { recordBusyRef.current = !!b; }} />;
+          // 숙제 안(단어 목록)에서는 "‹ 더보기" 대신 화면 안의 "‹ 숙제 목록" 하나만 보인다(되돌아가기 단추가 두 줄로 겹치지 않게)
+          return phonicsOpenTask ? screen : <MoreSubFrame title="파닉스" onBack={backToMore}>{screen}</MoreSubFrame>;
+        })()}
 
         {/* [146차수] 더보기 → 장학금·친구 소개 — 학생이 신청, 원장이 원장앱에서 확인 뒤 기프티콘 지급 */}
         {tab === "reward" && (

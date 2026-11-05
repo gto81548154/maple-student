@@ -1,4 +1,6 @@
+import { IS_STAFF_VIEW } from "../core/auth.jsx";
 import { attTag, computeAttNotice, computeAttWeek, fmtAttDayParen } from "../domain/attendance.jsx";
+import { fmtPhonicsDueShort, pendingPhonicsTasks } from "../domain/phonics.jsx";
 import { buildStudentExamDdays, nearestExamOf } from "../domain/dday.jsx";
 import { fmtTime } from "../domain/time.jsx";
 
@@ -19,6 +21,11 @@ export function computeMoreView(D) {
   const nearestExam = nearestExamOf(examDdays);
   const wrongCount = Object.values(vocabWrongWords || {}).reduce((n, m) =>
     n + Object.values(m?.words || {}).filter(w => (w.status || "active") === "active" && Array.isArray(w.correctAnswers) && w.correctAnswers.length > 0).length, 0);
+  // [152차수] 더보기 "파닉스" 줄 설명 — 안 끝난 숙제(덜 보낸 것)가 있으면 "안 끝난 숙제 2개 · 11/7까지", 없으면 안내 글
+  const phonicsPending = IS_STAFF_VIEW ? [] : pendingPhonicsTasks(D.phonicsTasks, todayStrForTab);
+  const phonicsSub = phonicsPending.length
+    ? `안 끝난 숙제 ${phonicsPending.length}개${phonicsPending[0].due ? ` · ${fmtPhonicsDueShort(phonicsPending[0].due)}` : ""}`
+    : (D.phonicsState === "ok" && (D.phonicsTasks || []).length) ? "숙제 다 보냈어요 · 자유 녹음" : "단어 녹음 숙제 · 자유 녹음";
   const attNoticeAll = computeAttNotice(student, makeups, customHolidays, D.attStatus);
   // [109차수 09-08] 홈 위 칸 "이번 주 7일" 줄(오늘부터) + 더보기·홈 바로가기 "수업 일정" 줄이 같이 쓰는 한 줄 설명
   const attWeek = computeAttWeek(student, makeups, customHolidays, 7, D.attStatus);
@@ -38,8 +45,8 @@ export function computeMoreView(D) {
       ...(hasVocabWrong ? [{ key: "vocabWrong", icon: "📝", title: "오답 복습",
           sub: vocabWarn.overdue > 0 ? `단어 시험 틀린 단어 ${vocabWarn.overdue}개 · 기한 지남` : vocabWarn.dueThisWeek > 0 ? `틀린 단어 ${vocabWarn.dueThisWeek}개 · ${vocabWarn.sundayLabel}까지 (D-${vocabWarn.dday})` : `남은 단어 ${wrongCount}개`,
           subTone: vocabWarn.overdue > 0 ? "warn" : undefined }] : []),
-      // [145차수] 녹음 제출 — 읽고 녹음해서 학원에 보내기(선생님은 원장앱에서 듣는다)
-      { key: "record", icon: "🎤", title: "녹음 제출", sub: "읽고 녹음해서 보내기" },
+      // [145차수 → 152차수] "녹음 제출"은 "🎤 파닉스" 안(맨 아래 자유 녹음 칸)으로 합쳤다. 설명 = 안 끝난 파닉스 숙제 수(있으면 빨강)
+      { key: "phonics", icon: "🎤", title: "파닉스", sub: phonicsSub, subTone: phonicsPending.length ? "warn" : undefined },
       // [0812 대시보드] 모의고사는 중학생에게도 보여준다(원장 결정). 회차가 없으면 빈 안내만 뜬다.
       { key: "mock", icon: "✏️", title: "모의고사", sub: "응시·점수 기록" },
       // [149차수] "학습 진도" → "마플 로드맵"(1~7단계 지도 + 교재별 진행 상황). 커리큘럼이나 진도 맵 중 하나라도 있으면 보인다

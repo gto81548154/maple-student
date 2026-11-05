@@ -2,6 +2,7 @@ import { useState } from "react";
 import { IS_STAFF_VIEW, IS_TEACHER_MODE } from "../../core/auth.jsx";
 import { VOCA_TAB_ENABLED } from "../../core/config.jsx";
 import { attTag, fmtAttDayParen } from "../../domain/attendance.jsx";
+import { fmtPhonicsDueShort, pendingPhonicsTasks, phonicsRemaining } from "../../domain/phonics.jsx";
 import { fmtDateKR, fmtTime, isToday } from "../../domain/time.jsx";
 import { stripBox } from "../../domain/todo.jsx";
 import { TASK_VIDEO_DONE_PCT, watchPctOf } from "../../domain/videoMatch.jsx";
@@ -13,7 +14,7 @@ import { WordSearch } from "./WordSearch.jsx";
 // [119차수 · 140차수 토스 스타일 2단계] 홈 탭 그리기 — 시안 C 모양(단, 오늘 숙제가 맨 위).
 // 순서: ① 맨 위 큰 한 줄 요약 → ② 단어 검색 → ③ [오늘 숙제] → ④ [지금 폰으로 할 공부] → ⑤ [다음 수업] → ⑥ [시험 정보 · 공지]
 export function renderHomeTab(C) {
-  const { activeDate, activeSurveys, allDates, attLog, attNoticeAll, attStatus, calSub, customHolidays, exams, getFailReason, goTab, hasVocabWrong, isCheckedView, isFailed, makeups, nearestExam, picker, pinnedMessages, progressTree, stepGroups, student, studentId, studentVideos, taskVoca, todayStrForTab, unansweredSurveys, videos, vocaHwRec, vocaPassLabel, vocabWarn, watchBySid, wrongCount } = C;
+  const { activeDate, activeSurveys, allDates, attLog, attNoticeAll, attStatus, calSub, customHolidays, exams, getFailReason, goTab, hasVocabWrong, isCheckedView, isFailed, makeups, nearestExam, phonicsTasks, picker, pinnedMessages, progressTree, stepGroups, student, studentId, studentVideos, taskVoca, todayStrForTab, unansweredSurveys, videos, vocaHwRec, vocaPassLabel, vocabWarn, watchBySid, wrongCount } = C;
           const step1Items = (stepGroups.find(s => s.key === "step1")?.items) || [];
           // 카드 안 "검사 n/m" = 이 카드의 항목 기준(재시는 분모·분자에서 제외 — 숙제 탭 진행률과 같은 규칙). 5단계 전체 숫자와 섞지 않는다.
           const step1Countable = step1Items.filter(it => !isFailed(it));
@@ -55,8 +56,11 @@ export function renderHomeTab(C) {
                 : (picker?.main?.kind === "task" && watchPctOf(watchBySid[picker.main.video.id]) < TASK_VIDEO_DONE_PCT ? 1 : 0))
             : 0;
           const vocabWrongRemaining = hasVocabWrong ? 1 : 0;
-          const totalRemainingN = uncheckedHwCount + vocaRemaining + videoRemaining + vocabWrongRemaining;
-          const hasAnyTodayWork = step1Items.length > 0 || !!(VOCA_TAB_ENABLED && taskVoca) || taskVideosList.length > 0 || picker?.main?.kind === "task" || hasVocabWrong;
+          // [152차수] 파닉스 숙제 — 안 끝난 것(덜 보낸 것, 마감 뒤 7일 안)만. 마감 가까운 것이 앞. 선생님·원장 보기 화면에서는 단추를 안 띄운다(녹음을 못 보내므로)
+          const phonicsPending = IS_STAFF_VIEW ? [] : pendingPhonicsTasks(phonicsTasks, todayStrForTab);
+          const phonicsFirst = phonicsPending[0] || null;
+          const totalRemainingN = uncheckedHwCount + vocaRemaining + videoRemaining + vocabWrongRemaining + phonicsPending.length;
+          const hasAnyTodayWork = step1Items.length > 0 || !!(VOCA_TAB_ENABLED && taskVoca) || taskVideosList.length > 0 || picker?.main?.kind === "task" || hasVocabWrong || phonicsPending.length > 0;
 
           // ── 모양 (토스 스타일: 흰 둥근 카드 22px, 테두리·그림자 최소, 남색·초록·보라·회색·경고빨강만) ──
           const GREEN = UI.okFg, GREEN_BG = UI.okBg, PURPLE = "#5B3FB8", PURPLE_BG = "#EFEAFB";
@@ -155,6 +159,21 @@ export function renderHomeTab(C) {
                   <span style={{ fontSize: 18, fontWeight: 800, color: UI.text, letterSpacing: -0.3 }}>지금 폰으로 할 공부</span>
                   <span style={{ fontSize: 12.5, fontWeight: 500, color: UI.sub }}>누르면 바로 시작해요</span>
                 </div>
+
+                {/* [152차수] 파닉스 숙제 단추 — 안 끝난 숙제가 있을 때만. 마감 가까운 것 하나만 단추로, 더 있으면 "외 1개". 누르면 그 숙제 안(단어 목록)으로 */}
+                {phonicsFirst && (
+                  <button type="button" onClick={() => goTab("phonics", { phonicsTask: phonicsFirst.id })} data-testid="home-phonics"
+                    style={rowBtn({ borderBottom: `1px solid ${UI.bg}` })}>
+                    <span aria-hidden="true" style={rowIcon(UI.warnBg, UI.warnFg)}>🎤</span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: "block", fontSize: 15, fontWeight: 800, color: UI.text, lineHeight: 1.35, wordBreak: "keep-all" }}>
+                        🎤 파닉스 숙제 {phonicsFirst.total}개{phonicsFirst.due ? ` · ${fmtPhonicsDueShort(phonicsFirst.due)}` : ""}{phonicsPending.length > 1 ? ` 외 ${phonicsPending.length - 1}개` : ""}
+                      </span>
+                      <span style={{ display: "block", fontSize: 12.5, marginTop: 2, color: UI.warnFg, fontWeight: 700, lineHeight: 1.4 }}>{phonicsRemaining(phonicsFirst)}개 남음{phonicsFirst.due && todayStrForTab > phonicsFirst.due ? " · 마감 지남" : ""}</span>
+                    </span>
+                    <span style={{ ...pill("greenfill"), background: UI.navy }}>녹음하기</span>
+                  </button>
+                )}
 
                 {VOCA_TAB_ENABLED && (
                   <button type="button" onClick={() => goTab("voca")} style={rowBtn()}>

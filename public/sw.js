@@ -14,6 +14,7 @@ self.addEventListener("push", (event) => {
     let title = "마플영어";
     let body = "새 소식이 도착했어요. 앱에서 확인해 주세요!";
     let silent = false; // true면 소리·진동 없이 알림센터·배지만 (투두 배지용)
+    let tab = "";       // [152차수] 알림을 누르면 열 화면 이름(예: "phonics"). 워커가 tab을 주면 그것, 아니면 제목으로 짐작(🎤 파닉스 숙제 … → phonics)
     // 1) 이 기기 구독의 endpoint로 알림 문구 조회 (실패해도 기본 문구로 알림은 뜬다)
     try {
       const sub = await self.registration.pushManager.getSubscription();
@@ -25,6 +26,8 @@ self.addEventListener("push", (event) => {
         });
         const d = await r.json().catch(() => null);
         if (d && d.title) { title = String(d.title); body = String(d.body || ""); silent = d.silent === true; }
+        if (d && typeof d.tab === "string" && /^[a-zA-Z]+$/.test(d.tab)) tab = d.tab;
+        else if (/파닉스/.test(title)) tab = "phonics";
       }
     } catch (e) { /* 조회 실패 시 기본 문구 사용 */ }
     // 2) 앱 아이콘 배지 (지원 기기: 설치된 PWA — 안드로이드/아이폰 16.4+)
@@ -39,14 +42,16 @@ self.addEventListener("push", (event) => {
       badge: APP_ICON,
       silent, // 무음 알림: 화면에 번쩍 뜨지 않고 알림센터에만 조용히 들어간다 (기종에 따라 정도 차이)
       tag: silent ? "mapl-quiet" : "mapl-latest", // 태그 분리: 무음 알림이 설문 알림을 덮어쓰지 않게
-      data: { url: "/" },
+      data: { url: "/", tab },
     });
   })());
 });
 
 // 알림을 누르면 학생앱을 연다 (이미 열려 있으면 그 창으로 포커스)
+// [152차수] 알림에 화면 이름(tab)이 있으면: 열려 있는 창에는 "이 화면으로" 메시지를 보내고(앱이 받아서 이동), 새로 열 때는 주소 #화면이름 으로 연다.
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
+  const tab = (event.notification && event.notification.data && typeof event.notification.data.tab === "string") ? event.notification.data.tab : "";
   event.waitUntil((async () => {
     try {
       if (self.registration.clearAppBadge) await self.registration.clearAppBadge();
@@ -54,8 +59,12 @@ self.addEventListener("notificationclick", (event) => {
     } catch (e) { /* 무시 */ }
     const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     for (const c of all) {
-      if ("focus" in c) return c.focus();
+      if ("focus" in c) {
+        const w = await c.focus();
+        if (tab) { try { c.postMessage({ type: "maple:open-tab", tab }); } catch (e) { /* 무시 */ } }
+        return w;
+      }
     }
-    return self.clients.openWindow("/");
+    return self.clients.openWindow(tab ? "/#" + tab : "/");
   })());
 });

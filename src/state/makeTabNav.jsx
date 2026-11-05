@@ -4,14 +4,14 @@ import { TAB_BAR_H } from "../theme/tokens.jsx";
 
 // [121차수] 탭 이동(goTab)과 강의 고르기 값(최근 본 강의·오늘 숙제 강의) — App.jsx에서 그대로 옮김. 훅이 아니라 보통 함수.
 export function makeTabNav(D) {
-  const { confirmLeaveTab, headerRef, setSelectedVideoBook, setTab, setVideosFeaturedId, setVocaExtraBook, setVocaOpenLast, setVocaOpenTask, startVocaHwTest, stepGroups, studentId, studentVideos, tab, taskVoca, toggleVideo, videoWatch, viewingVideo, vocaHwBusyRef, vocaHwRec } = D;
+  const { confirmLeaveTab, headerRef, setPhonicsOpenTask, setSelectedVideoBook, setTab, setVideosFeaturedId, setVocaExtraBook, setVocaOpenLast, setVocaOpenTask, startVocaHwTest, stepGroups, studentId, studentVideos, tab, taskVoca, toggleVideo, videoWatch, viewingVideo, vocaHwBusyRef, vocaHwRec } = D;
   // ─── [103차수 09-08] 화면 이동은 전부 이 한 함수로 (계획서 5절) ───
   //   위 탭·홈 바로가기·더보기 목록·"‹ 더보기"·[복습하기]가 모두 goTab을 부른다. 그래서
   //   ① 오답 TEST·단어 숙제 TEST 도중의 나가기 확인창(confirmLeaveTab)이 어디서 이동하든 똑같이 걸리고
   //   ② 확인을 취소하면 iframe 신호(숙제 TEST 시작·마지막 책 열기)·고른 강의·화면 상태를 하나도 바꾸지 않는다(확인 뒤에만 실행)
   //   ③ 이미 있는 화면을 또 누르면 아무것도 안 한다 — 단어 탭 재클릭이 "숙제 TEST 시작" 신호를 또 보내던 일(96차수 수정)이 다시 생기지 않는다
   //   더보기 하위 화면(일정·오답·모의·진도·공지·시험·설정)은 tab 값은 따로 두고 위 탭에서는 "더보기"가 켜진 것으로 보인다(topTabOf).
-  const MORE_SUB_KEYS = ["cal", "vocabWrong", "mock", "progress", "notices", "examInfo", "settings", "record", "reward"];   // [145차수] record = 녹음 제출 · [146차수] reward = 장학금·친구 소개
+  const MORE_SUB_KEYS = ["cal", "vocabWrong", "mock", "progress", "notices", "examInfo", "settings", "phonics", "reward"];   // [145차수 → 152차수] phonics = 🎤 파닉스(녹음 제출을 안에 합침) · [146차수] reward = 장학금·친구 소개
   const topTabOf = (key) => (MORE_SUB_KEYS.includes(key) ? "more" : key);
   // 탭을 바꿀 때 본문 시작점(붙박이 탭 줄 바로 아래)까지만 올린다. 그보다 위에 있으면 그대로 둔다(머리글이 보이는 중이면 안 움직임).
   const scrollToContentTop = () => {
@@ -37,9 +37,13 @@ export function makeTabNav(D) {
       // [135차수 o] 예외: 단어 탭에 이미 있는데(검색의 [단어장 열기]로 책을 연 상태 등) 빨간 "단어" 탭을 또 누르면 숙제 TEST를 시작한다.
       //   이미 숙제 TEST를 푸는 중이면 예전처럼 아무것도 안 한다(96차수 — 시작 신호를 또 보내지 않음).
       if (nextKey === "voca" && !opts.vocaTask && taskVoca && !vocaHwRec && !IS_STAFF_VIEW && !(vocaHwBusyRef && vocaHwBusyRef.current)) { setVocaOpenTask(null); startVocaHwTest(); }
+      // [152차수] 파닉스 화면에 이미 있는데 홈 단추(숙제 지정)로 또 오면 그 숙제를 연다
+      if (nextKey === "phonics" && opts.phonicsTask && setPhonicsOpenTask) setPhonicsOpenTask(String(opts.phonicsTask));
       return true;
     }
     if (!confirmLeaveTab(nextKey)) return false;            // 나가기 취소 — 아래 아무것도 실행하지 않는다
+    // [152차수] 🎤 파닉스 — 홈 단추·알림은 숙제 하나를 바로 연다(opts.phonicsTask). 더보기 목록에서 오면 목록부터.
+    if (nextKey === "phonics" && setPhonicsOpenTask) setPhonicsOpenTask(opts.phonicsTask ? String(opts.phonicsTask) : null);
     if (nextKey === "voca") {
       // [0825 5차수] 단어 숙제가 남아 있으면 숙제 TEST부터, 통과했거나 숙제가 없으면 책장(마지막 책)
       // [94차수 09-05] 선생님 화면(보기 전용)은 도장을 못 읽으므로 늘 책장으로만 — 숙제 TEST를 열지 않는다. [135차수] 마스터 화면도 같음
