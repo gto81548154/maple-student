@@ -122,6 +122,28 @@ const examMatchesStudentSchoolForDday = (exam = {}, student = {}) => {
   // 정확 일치만 허용한다.
   return examSchool === stuSchool;
 };
+// [153차수] 학년을 나눠 따로 보는 내신 시험 — 중3만 2학기 기말을 일찍 봐서 "윤슬중 기말(3학년)"·"(1,2학년)"처럼 이름에 학년이 붙는다.
+//   이름에 학년 표시가 있으면 그 학년 학생에게만 보인다(원장앱 314차수와 같은 규칙). 표시가 없거나 학생 학년을 모르면 예전처럼 보인다.
+const examGradeTagForDday = (name = "") => {
+  const m = String(name || "").match(/\(\s*([1-3](?:\s*[,·~\-]\s*[1-3])*)\s*학년\s*\)/);
+  if (!m) return null;
+  const out = new Set();
+  m[1].split(/\s*[,·]\s*/).forEach(part => {
+    const r = part.match(/^([1-3])\s*[~\-]\s*([1-3])$/);
+    if (r) { const a = Number(r[1]), b = Number(r[2]); for (let g = Math.min(a, b); g <= Math.max(a, b); g += 1) out.add(String(g)); return; }
+    (part.match(/[1-3]/g) || []).forEach(d => out.add(d));
+  });
+  return out.size ? [...out] : null;
+};
+const examMatchesStudentGradeForDday = (exam = {}, student = {}) => {
+  const tag = examGradeTagForDday(exam.name);
+  if (!tag) return true;
+  // 학년 칸이 비어 있으면 "이름-윤슬중2"처럼 하이픈 뒤 학교학년에서 읽는다(이름 자체의 숫자는 안 봄)
+  const suffix = String(student.name || "").split("-").slice(1).join("-");
+  const grade = getStudentGradeForDday(student) || ((suffix.match(/(?:중|고)\s*([123])\s*(?:학년)?\s*$/) || [])[1] || "");
+  if (!grade) return true;
+  return tag.includes(String(grade));
+};
 const MOCK_DDAY_ALLOWED_MONTHS_BY_GRADE = {
   // 학생앱 D-DAY 정책: 고등학생 모의고사는 3·6·9·10월만 표시한다.
   // 7월 등 학년/학교에서 실제 응시하지 않는 모의고사가 학생앱에 뜨는 것을 방지한다.
@@ -184,7 +206,7 @@ export const isExamVisibleForStudentDday = (exam = {}, student = {}) => {
       mockExamMatchesGradeForDday(exam, student) &&
       mockExamMatchesMonthPolicyForDday(exam, student);
   }
-  if (type === "내신") return examMatchesStudentSchoolForDday(exam, student);
+  if (type === "내신") return examMatchesStudentSchoolForDday(exam, student) && examMatchesStudentGradeForDday(exam, student); // [153차수] "(3학년)" 시험은 3학년만
   return false;
 };
 const sortExamDdayItems = (a, b) => {
