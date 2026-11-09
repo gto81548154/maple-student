@@ -69,7 +69,15 @@ export function createToeicSync({ storage, locks, key, url, fetcher = fetch, uui
         const response = await fetcher(url(), { method, cache: 'no-store', signal: controller.signal,
           ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}) });
         if (response.status === 401 || response.status === 403) throw new Error('원장 링크를 다시 열어 주세요. 저장 대기 기록은 이 기기에 남아 있어요.');
-        if (!response.ok) throw new Error('서버에 저장하지 못했어요. 잠시 후 다시 시도해 주세요.');
+        if (!response.ok) {
+          // [162] 서버가 보낸 거절 이유를 그대로 보여 준다(전에는 "서버에 저장하지 못했어요"로 뭉개졌음).
+          let reason = '';
+          try { reason = String((await response.json())?.error || '').trim().slice(0, 200); } catch {}
+          const e = new Error(reason ? `서버가 거절했어요: ${reason}` : `서버에 저장하지 못했어요(${response.status}). 잠시 후 다시 시도해 주세요.`);
+          e.status = response.status;
+          e.reason = reason;
+          throw e;
+        }
         let data;
         try { data = await response.json(); } catch { throw new Error('서버 응답을 확인하지 못했어요. 다시 시도해 주세요.'); }
         if (!data?.success) throw new Error('서버가 저장을 완료하지 못했어요. 다시 시도해 주세요.');
