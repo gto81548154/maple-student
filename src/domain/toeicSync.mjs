@@ -29,6 +29,9 @@ export function projectToeic(base, ops, clientId) {
   return { tests, p5 };
 }
 
+// {id, sec}만 있는 "음원 위치" 기록인지.
+export const isPosition = p => !!p && typeof p.id === 'string' && 'sec' in p && Object.keys(p).length === 2;
+
 export function opKind(payload) {
   if (!payload) return '';
   if ('submitAnswers' in payload) return 'submitAnswers';
@@ -181,6 +184,10 @@ export function createToeicSync({ storage, locks, key, url, fetcher = fetch, uui
     try {
       await locked(() => {
         const state = read();
+        // [162] 음원 위치(15초마다)는 같은 회차의 바로 앞 위치 기록을 덮어쓴다. 보내는 중일 수 있는 맨 앞 기록은 건드리지 않는다.
+        const last = state.ops[state.ops.length - 1];
+        const coalesce = isPosition(payload) && last && isPosition(last.payload) && last.payload.id === payload.id && (state.ops.length > 1 || !saving);
+        if (coalesce) { write({ ...state, ops: [...state.ops.slice(0, -1), { seq: last.seq, payload }] }); return; }
         if (state.ops.length >= TOEIC_QUEUE_LIMIT) throw new Error('저장 대기 기록이 많아요. 먼저 다시 저장을 눌러 주세요. 이번 입력은 저장하지 못했어요.');
         // Persist before showing the optimistic result. Credentials never enter the outbox.
         const next = { ...state, ops: [...state.ops, { seq: state.nextSeq, payload }], nextSeq: state.nextSeq + 1 };
