@@ -1089,8 +1089,8 @@ const BOOKS = [
   { id:'ve_ess',    title:'어휘끝 중학 필수',      sub:'중1~중2',     unit:'UNIT' },
   { id:'ve_adv',    title:'어휘끝 중학 고난도',    sub:'중2~중3',     unit:'UNIT' },
   { id:'ve_ety',    title:'어휘끝 어원편',      sub:'고1~고3',     unit:'DAY' },
-  // [117차수 09-28 원장 지시] 해커스 토익 보카(노랭이) — 원장 본인만 보는 책. 학생·선생님·선별 화면에는 아예 안 나온다.
-  { id:'toeic_hk',  title:'해커스 토익 보카',      sub:'토익',        unit:'DAY',  priv:true, owner:true },
+  // [토익 2차] 해커스 토익 보카 — 배정 여부와 관계없이 학생·선생님·선별 책장에 표시.
+  { id:'toeic_hk',  title:'해커스 토익 보카',      sub:'토익',        unit:'DAY' },
 ];
 /* [117차수] 원장 본인에게만 보이는 책인지 — 원장 링크(mk=1, 선생님 id 아님)이거나 단독 열람일 때만 true */
 const OWNER_VIEW = () => !STU || (STU.master && !IS_TEACHER_VOCA);
@@ -1420,7 +1420,7 @@ function paintNsBar(){
 const dataBase = () => (STU && STU.api) ? STU.api + '/voca/books'
   : (DATA_BASE || (CFG.url ? syncBase() + '/voca/books' : ''));   // 단독 열람은 설정의 워커 주소 재사용
 const bookUrl = b => dataBase() ? `${dataBase().replace(/\/+$/, '')}/${b.id}.json` : '';
-const bookReady = b => !!bookUrl(b) && (b.ns || b.owner || !READY_IDS || READY_IDS.includes(b.id));   // [117차수] 원장 전용 책은 index.json에 안 올려도 된다(보이는 건 shelfStates가 원장에게만 허락)   // [내신 2차수] 내신 책은 학교·범위로 이미 걸러졌다
+const bookReady = b => !!bookUrl(b) && (b.ns || b.id === 'toeic_hk' || b.owner || !READY_IDS || READY_IDS.includes(b.id));   // 토익 파일은 준비됨: 옛 index.json에서 빠져 있어도 열기. 내신·다른 책 규칙은 유지.
 /* ── 히든보스 (2026-08-04 원장 최종 확정: 중간보스는 폐지) ──
  * 하이스트는 일반 책과 똑같이 배정 규칙만 따른다(배정 목록이 비면 전권 표시).
  * 히든보스 보카바이블: 하이스트 왕관 3개(3회독 완주)면 열림. 원장(마스터·단독)은 항상 전부 보임.
@@ -1434,7 +1434,9 @@ function shelfStates(){
   const st = {};
   const stu = STU && !STU.master;
   for (const b of BOOKS){
-    // [117차수] 원장 전용 책(노랭이) — 원장 본인이 아니거나 선별 화면이면 숨김(잠금 카드도 없음)
+    // [토익 2차] 배정·학습 기록이 없어도 공개. 기존 정렬에서 정규 책 뒤에 놓인다.
+    if (b.id === 'toeic_hk'){ st[b.id] = 'normal'; continue; }
+    // 다른 원장 전용 책이 추가될 경우의 기존 제한
     if (b.owner){ st[b.id] = (OWNER_VIEW() && !PICKMODE) ? 'normal' : 'hide'; continue; }
     // [08-27 원장 지시] 선생님에게는 원장 전용 책을 아예 안 보여준다(잠금 카드도 없음)
     if (IS_TEACHER_VOCA && b.id === 'vocabible'){ st[b.id] = 'hide'; continue; }

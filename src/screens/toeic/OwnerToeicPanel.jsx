@@ -2,9 +2,11 @@ import { TAP } from "../../theme/tokens.jsx";
 import { useEffect, useRef, useState } from "react";
 import { TOEIC_BOOKS, TOEIC_TESTS, fmtClock, parseToeicId, toeicDoneCount, toeicFileUrl, toeicId, toeicNextLc } from "../../domain/toeic.jsx";
 
+import { ToeicAnswerSheet } from "./ToeicAnswerSheet.jsx";
+
 // 토익 탭 화면
 export function OwnerToeicPanel({ toeic, pickId, onPicked }) {
-  const { tests, loaded, err, save } = toeic;
+  const { tests, loaded, save } = toeic;
   const [sel, setSel] = useState(() => pickId || "");
   const [book, setBook] = useState(() => (parseToeicId(pickId) || {}).v || TOEIC_BOOKS[0]);
   const [rate, setRate] = useState(1);
@@ -41,6 +43,11 @@ export function OwnerToeicPanel({ toeic, pickId, onPicked }) {
     if (sel && cur && cur.part === "lc" && audioRef.current) { sendPos(true); try { audioRef.current.pause(); } catch (e) {} }
     setSel(id); setPos(0); setDur(0); setPaused(true); resumedRef.current = "";
     save(id, { open: true });
+  };
+  const selectBook = (v) => {
+    if (book === v) return;
+    if (audioRef.current) { sendPos(true); audioRef.current.pause(); }
+    setBook(v); setSel(""); setPos(0); setDur(0); setPaused(true); resumedRef.current = "";
   };
   const sendPos = (force) => {
     const a = audioRef.current;
@@ -81,6 +88,7 @@ export function OwnerToeicPanel({ toeic, pickId, onPicked }) {
   }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveScore = () => {
+    if (rec.grade || rec.gradePending) return;
     const t = scoreText.trim();
     if (t === "") { save(sel, { score: null }); return; }
     const n = Number(t);
@@ -114,9 +122,8 @@ export function OwnerToeicPanel({ toeic, pickId, onPicked }) {
   if (!loaded) return <div style={{ padding: 40, textAlign: "center", color: "#999", fontSize: 14 }}>불러오는 중...</div>;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {err && <div style={{ padding: "9px 12px", borderRadius: 10, background: "#f3eefa", border: "1px solid #d9c9ee", color: "#6b3fa0", fontSize: 12, fontWeight: 700 }}>{err}</div>}
       <div style={{ display: "flex", gap: 6 }}>
-        {[1, 2, 3, 4].map(v => <button key={v} onClick={() => setBook(v)} style={chip(book === v)}>{v}권</button>)}
+        {[1, 2, 3, 4].map(v => <button key={v} onClick={() => selectBook(v)} style={chip(book === v)}>{v}권</button>)}
       </div>
 
       <div style={cardBox}>
@@ -162,7 +169,7 @@ export function OwnerToeicPanel({ toeic, pickId, onPicked }) {
           <a href={toeicFileUrl(cur.v, cur.part, cur.nn, "a")} target="_blank" rel="noopener noreferrer" style={pdfBtn}>해설 보기</a>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
             <span style={{ fontSize: 13.5, fontWeight: 800, color: "#1a1a2e" }}>맞은 개수</span>
-            <input value={scoreText} onChange={(e) => setScoreText(e.target.value.replace(/[^0-9]/g, "").slice(0, 3))} onBlur={saveScore}
+            <input disabled={!!rec.grade || !!rec.gradePending} aria-label="맞은 개수 수동 기록" value={scoreText} onChange={(e) => setScoreText(e.target.value.replace(/[^0-9]/g, "").slice(0, 3))} onBlur={saveScore}
               inputMode="numeric" placeholder="0" style={{ width: 72, minHeight: TAP, padding: "7px 8px", borderRadius: 8, boxSizing: "border-box", border: "1px solid #d6d9de", fontSize: 15, fontWeight: 800, fontFamily: "inherit", textAlign: "center" }} />
             <span style={{ fontSize: 13.5, fontWeight: 800, color: "#7b8494" }}>/ 100</span>
           </div>
@@ -170,6 +177,7 @@ export function OwnerToeicPanel({ toeic, pickId, onPicked }) {
             display: "block", width: "100%", padding: "12px 0", borderRadius: 10, marginTop: 10, fontSize: 14.5, fontWeight: 900, cursor: "pointer", fontFamily: "inherit",
             border: "none", background: rec.done ? "#e3f3ea" : "#1f7a4d", color: rec.done ? "#1f7a4d" : "#fff",
           }}>{rec.done ? "✓ 다 풀었어요 (누르면 취소)" : "✓ 다 풀었어요"}</button>
+          <ToeicAnswerSheet key={sel} id={sel} toeic={toeic} />
         </div>
       )}
       {!cur && <div style={{ fontSize: 12.5, color: "#9aa0ab", fontWeight: 700, textAlign: "center", padding: 8 }}>위에서 회차를 누르면 음원·문제지·해설이 열려요</div>}

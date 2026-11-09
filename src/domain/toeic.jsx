@@ -12,7 +12,8 @@ import { teacherUrl } from "../core/auth.jsx";
 //   파일은 R2 toeic/ 칸(워커가 원장 링크 열쇠로만 연다), 기록은 워커 /teacher/toeic(toeic3)에 저장.
 //   선생님 화면에는 탭도, 홈 카드도 안 나온다(home.isOwner일 때만).
 // ═══════════════════════════════════════════════════════════════════
-export const TOEIC_BOOKS = [3, 2, 1, 4];
+import { TOEIC_BOOKS } from "./toeicP5.mjs";
+export { TOEIC_BOOKS, TOEIC_P5_TYPES, pickToeicP5, toeicP5Stats, toeicP5TypeStats } from "./toeicP5.mjs";
    // 푸는 순서(원장과 정한 순서 3→2→1→4)
 export const TOEIC_TESTS = Array.from({ length: 10 }, (_, i) => String(i + 1).padStart(2, "0"));
 export const toeicId = (v, part, nn) => `v${v}-${part}-${nn}`;
@@ -44,20 +45,4 @@ export const toeicDoneCount = (tests, v, part) => TOEIC_TESTS.filter(nn => tests
 export const fmtClock = (sec) => {
   const n = Math.max(0, Math.floor(Number(sec) || 0));
   return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
-};
-export const TOEIC_P5_TYPES = ["전체", "어휘", "품사", "전치사·접속사", "동사 형태", "대명사", "기타 문법"];
-const toeicP5Order = (q) => TOEIC_BOOKS.indexOf(q.v) * 10000 + q.t * 1000 + q.n;
-export const pickToeicP5 = (all, rec, type, count = 5, skip = []) => {
-  const pool = (all || []).filter(q => (type === "전체" || q.type === type) && !skip.includes(q.id));
-  const wrong = pool.filter(q => rec[q.id] && rec[q.id].last === "X").sort((a, b) => toeicP5Order(a) - toeicP5Order(b));
-  const fresh = pool.filter(q => !rec[q.id]).sort((a, b) => toeicP5Order(a) - toeicP5Order(b));
-  const seen = pool.filter(q => rec[q.id] && rec[q.id].last !== "X")
-    .sort((a, b) => ((rec[a.id].r || 0) - (rec[b.id].r || 0)) || (toeicP5Order(a) - toeicP5Order(b)));
-  const out = [...wrong.slice(0, 2)];
-  for (const q of [...fresh, ...wrong.slice(2), ...seen]) { if (out.length >= count) break; if (!out.includes(q)) out.push(q); }
-  return out;
-};
-export const toeicP5Stats = (rec) => {
-  const vals = Object.values(rec || {});
-  return { done: vals.length, wrongNow: vals.filter(x => x && x.last === "X").length };
 };

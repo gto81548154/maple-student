@@ -1,3 +1,4 @@
+import { ToeicSaveStatus } from "../toeic/ToeicSaveStatus.jsx";
 import { TAP } from "../../theme/tokens.jsx";
 import { OwnerToeicP5 } from "../toeic/OwnerToeicP5.jsx";
 import { OwnerToeicPanel } from "../toeic/OwnerToeicPanel.jsx";
@@ -7,6 +8,7 @@ export function renderTeacherToeicTab(C) {
   const { setToeicMode, setToeicPick, toeic, toeicMode, toeicPick } = C;
   return (
           <div>
+            <ToeicSaveStatus toeic={toeic} />
             <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
               {[{ key: "tests", label: "회차 (LC·RC)" }, { key: "p5", label: "파트5 5문제" }].map(m => (
                 <button key={m.key} onClick={() => setToeicMode(m.key)} style={{minHeight: TAP, 
