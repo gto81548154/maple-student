@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { TAP } from "../../theme/tokens.jsx";
-import { TEACHER_AUTH } from "../../core/auth.jsx";
-import { WORKER_ORIGIN } from "../../core/config.jsx";
+import { toeicDraftKey, TOEIC_DRAFT_EVENT } from "./useOwnerToeic.jsx";
 import { toeicChoices, toeicQuestionNumbers } from "../../domain/toeicAnswerKeys.mjs";
 import { validateToeicAnswers } from "../../domain/toeicGrading.mjs";
 
@@ -9,7 +8,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const empty = () => Array(100).fill(null);
 export function ToeicAnswerSheet({ id, toeic }) {
   const rec = toeic.tests[id] || {}, section = id.split("-")[1];
-  const storageKey = "mapl_toeic_draft_v1:" + WORKER_ORIGIN + ":" + (TEACHER_AUTH?.tid || "") + ":" + id;
+  const storageKey = toeicDraftKey(id);
   const read = () => {
     try {
       const raw = localStorage.getItem(storageKey);
@@ -38,8 +37,11 @@ export function ToeicAnswerSheet({ id, toeic }) {
   }, [unchanged, isPending, message]);
   useEffect(() => {
     const changed = e => { if (e.key === storageKey) { setLocal(read()); setMessage("다른 창에서 바꾼 이 기기의 답을 불러왔어요."); setConfirm(false); } };
+    // [162] 저장 상태 칸에서 막힌 기록을 버리면 그 답이 기기 보관 답으로 돌아온다.
+    const restored = e => { if (e.detail?.id === id) { setLocal(read()); setMessage("보내지 못한 답을 이 기기 보관 답으로 되돌렸어요. 다시 저장하거나 채점할 수 있어요."); setConfirm(false); submitted.current = ""; } };
     window.addEventListener("storage", changed);
-    return () => window.removeEventListener("storage", changed);
+    window.addEventListener(TOEIC_DRAFT_EVENT, restored);
+    return () => { window.removeEventListener("storage", changed); window.removeEventListener(TOEIC_DRAFT_EVENT, restored); };
   }, [storageKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // An optimistic server draft is already durable in the ordered outbox.
   useEffect(() => {

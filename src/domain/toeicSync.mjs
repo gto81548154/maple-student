@@ -29,10 +29,24 @@ export function projectToeic(base, ops, clientId) {
   return { tests, p5 };
 }
 
+export function opKind(payload) {
+  if (!payload) return '';
+  if ('submitAnswers' in payload) return 'submitAnswers';
+  if ('answerDraft' in payload) return 'answerDraft';
+  if ('p5' in payload) return 'p5';
+  if ('score' in payload) return 'score';
+  if ('done' in payload) return 'done';
+  if ('sec' in payload) return 'sec';
+  if ('open' in payload) return 'open';
+  return 'etc';
+}
+
 export function createToeicSync({ storage, locks, key, url, fetcher = fetch, uuid = () => crypto.randomUUID(), timeoutMs = 12000 }) {
   const listeners = new Set();
   let loaded = false, saving = false, error = '', canSync = false, blocked = false;
   let flushing = null, loading = null, fallback = null, answerSheetVersion = 0;
+  // [162] 서버가 거절한(4xx/5xx) 맨 앞 기록. 다시 보내도 같은 답이 올 수 있어 "버리기"를 열어 준다.
+  let stuck = null;
   const queueLock = key + ':edit', sendLock = key + ':send';
   const read = () => {
     const raw = storage.getItem(key);
@@ -51,13 +65,20 @@ export function createToeicSync({ storage, locks, key, url, fetcher = fetch, uui
   const snapshot = () => {
     try {
       const state = read();
-      return { ...projectToeic(state.base, state.ops, state.clientId), loaded, saving, err: error, pending: state.ops.length };
+      const head = state.ops[0];
+      const stuckInfo = stuck && head && head.seq === stuck.seq ? { ...stuck, id: head.payload.id || '', kind: opKind(head.payload) } : null;
+      return { ...projectToeic(state.base, state.ops, state.clientId), loaded, saving, err: error, pending: state.ops.length, stuck: stuckInfo };
     } catch (e) {
-      return { tests: {}, p5: {}, loaded: true, saving: false, err: e.message, pending: 0 };
+      return { tests: {}, p5: {}, loaded: true, saving: false, err: e.message, pending: 0, stuck: null };
     }
   };
   const emit = () => { const value = snapshot(); for (const listener of listeners) listener(value); };
-  const fail = e => { blocked = true; error = e instanceof TypeError || e.name === 'AbortError' ? '인터넷 연결을 확인한 뒤 다시 저장을 눌러 주세요.' : e.message || '저장하지 못했어요. 다시 시도해 주세요.'; emit(); };
+  const fail = (e, op) => {
+    blocked = true;
+    error = e instanceof TypeError || e.name === 'AbortError' ? '인터넷 연결을 확인한 뒤 다시 저장을 눌러 주세요.' : e.message || '저장하지 못했어요. 다시 시도해 주세요.';
+    stuck = op && e.status >= 400 ? { seq: op.seq, status: e.status, reason: e.reason || '' } : null;
+    emit();
+  };
   const request = async (method, body) => {
     const controller = new AbortController();
     let timer;
@@ -88,6 +109,11 @@ export function createToeicSync({ storage, locks, key, url, fetcher = fetch, uui
       })(), timeout]);
     } finally { clearTimeout(timer); }
   };
+  // [162] 대기 기록 번호를 start부터 1씩 다시 매긴다(내용은 그대로).
+  const renumber = (state, start) => {
+    const ops = state.ops.map((op, i) => ({ ...op, seq: start + i }));
+    return { ...state, ops, nextSeq: start + ops.length };
+  };
   const acceptBase = (state, base) => {
     if ((Number(base._syncRev) || 0) >= (Number(state.base._syncRev) || 0)) state.base = base;
     const confirmed = Number(state.base._syncClients?.[state.clientId]?.seq) || 0;
@@ -102,12 +128,13 @@ export function createToeicSync({ storage, locks, key, url, fetcher = fetch, uui
       return await locks.request(sendLock, { ifAvailable: true }, async lock => {
         if (!lock) return false;
         saving = true; emit();
+        let current = null;
         try {
           // Finite drain; further user actions can start another drain.
           for (let n = 0; n < TOEIC_QUEUE_LIMIT; n++) {
             const state = await locked(() => read());
-            const op = state.ops[0];
-            if (!op) { error = ''; return true; }
+            const op = current = state.ops[0];
+            if (!op) { error = ''; stuck = null; return true; }
             if (('answerDraft' in op.payload || 'submitAnswers' in op.payload) && answerSheetVersion !== 1) {
               throw new Error('답안 저장·채점 서버 업데이트가 필요해요. 입력은 이 기기에 보관했어요.');
             }
@@ -116,12 +143,12 @@ export function createToeicSync({ storage, locks, key, url, fetcher = fetch, uui
               throw new Error('저장 확인이 맞지 않아요. 대기 기록을 유지했어요.');
             }
             await locked(() => { const latest = read(); acceptBase(latest, data.toeic); write(latest); });
-            emit();
+            stuck = null; emit();
           }
           return true;
-        } finally { saving = false; emit(); }
+        } catch (e) { e.op = current; throw e; } finally { saving = false; emit(); }
       });
-    })().catch(e => { fail(e); return false; }).finally(() => { flushing = null; });
+    })().catch(e => { fail(e, e.op); return false; }).finally(() => { flushing = null; });
     return flushing;
   };
   const load = () => {
@@ -147,6 +174,26 @@ export function createToeicSync({ storage, locks, key, url, fetcher = fetch, uui
     } catch (e) { fail(new Error(e.name === 'QuotaExceededError' ? '기기 저장 공간이 부족해 이번 입력을 보관하지 못했어요.' : e.message)); return false; }
   };
   const retry = async () => { if (flushing) return flushing; if (!await load()) return false; return flush(); };
+  // [162] 서버가 거절한 맨 앞 기록만 버린다(번호가 맞을 때만). 버린 기록의 내용을 돌려줘 호출한 쪽이 답을 기기에 남길 수 있게 한다.
+  const discardHead = async () => {
+    if (flushing) await flushing.catch(() => {});
+    let removed = null;
+    try {
+      await locked(() => {
+        const state = read();
+        const head = state.ops[0];
+        if (!head || !stuck || head.seq !== stuck.seq) return;
+        removed = head.payload;
+        // 서버는 기기별 번호가 1씩 이어져야 받는다. 거절된 기록은 서버에 영수증이 없으므로 뒤 기록을 그 번호부터 다시 매긴다.
+        write(renumber({ ...state, ops: state.ops.slice(1) }, head.seq));
+      });
+    } catch (e) { fail(e); return null; }
+    if (!removed) return null;
+    stuck = null; blocked = false; error = '';
+    emit();
+    if (canSync) void flush();
+    return removed;
+  };
   return { snapshot, subscribe(fn) { listeners.add(fn); fn(snapshot()); return () => listeners.delete(fn); },
-    load, flush, retry, enqueue, refresh: emit };
+    load, flush, retry, enqueue, discardHead, refresh: emit };
 }
