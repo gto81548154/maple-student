@@ -1,7 +1,7 @@
 
 // [0824 3차수] 배포 확인용 차수 표시 — 원장앱 APP_BUILD와 같은 장치. 학생 화면에는 안 띄우고
 //   마스터 홈(원장 전용) 머리글에만 뜬다(원장 결정). 새 차수 파일을 만들 때마다 이 글자를 같이 바꿀 것.
-export const STUDENT_APP_BUILD = "학생앱 161차수 · 2026-11-09 · 토익 입력·채점";
+export const STUDENT_APP_BUILD = "학생앱 162차수 · 2026-11-09 · 토익 저장 안정화";
 // ─── 학생앱 동기화 API ───
 // Worker API(Turso 원본 DB) 단일 경로
 // .env 예시: VITE_STUDENT_SYNC_API_URL=https://mapl-sync-worker.yourname.workers.dev/student-bundle
