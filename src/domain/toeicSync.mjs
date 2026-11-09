@@ -114,10 +114,12 @@ export function createToeicSync({ storage, locks, key, url, fetcher = fetch, uui
     const ops = state.ops.map((op, i) => ({ ...op, seq: start + i }));
     return { ...state, ops, nextSeq: start + ops.length };
   };
-  const acceptBase = (state, base) => {
-    if ((Number(base._syncRev) || 0) >= (Number(state.base._syncRev) || 0)) state.base = base;
+  // force: 서버가 번호를 거절한 직후 새로 읽은 기록 — 서버 판이 더 옛날(복원)이어도 그대로 믿고 대기 번호를 이어 붙인다.
+  const acceptBase = (state, base, force = false) => {
+    if (force || (Number(base._syncRev) || 0) >= (Number(state.base._syncRev) || 0)) state.base = base;
     const confirmed = Number(state.base._syncClients?.[state.clientId]?.seq) || 0;
     state.ops = state.ops.filter(op => op.seq > confirmed);
+    if (force && state.ops.length && state.ops[0].seq !== confirmed + 1) Object.assign(state, renumber(state, confirmed + 1));
     state.nextSeq = Math.max(state.nextSeq, confirmed + 1);
   };
   const flush = () => {
@@ -128,7 +130,7 @@ export function createToeicSync({ storage, locks, key, url, fetcher = fetch, uui
       return await locks.request(sendLock, { ifAvailable: true }, async lock => {
         if (!lock) return false;
         saving = true; emit();
-        let current = null;
+        let current = null, resyncedSeq = 0;
         try {
           // Finite drain; further user actions can start another drain.
           for (let n = 0; n < TOEIC_QUEUE_LIMIT; n++) {
@@ -138,7 +140,21 @@ export function createToeicSync({ storage, locks, key, url, fetcher = fetch, uui
             if (('answerDraft' in op.payload || 'submitAnswers' in op.payload) && answerSheetVersion !== 1) {
               throw new Error('답안 저장·채점 서버 업데이트가 필요해요. 입력은 이 기기에 보관했어요.');
             }
-            const data = await request('POST', { ...op.payload, syncVersion: ('answerDraft' in op.payload || 'submitAnswers' in op.payload) ? 2 : TOEIC_SYNC_VERSION, clientId: state.clientId, seq: op.seq });
+            let data;
+            try {
+              data = await request('POST', { ...op.payload, syncVersion: ('answerDraft' in op.payload || 'submitAnswers' in op.payload) ? 2 : TOEIC_SYNC_VERSION, clientId: state.clientId, seq: op.seq });
+            } catch (e) {
+              // [162] 409는 "번호가 안 이어진다"일 수 있다(서버 기록을 백업에서 되돌린 뒤 등).
+              // 보내기 잠금을 쥔 채 서버 영수증을 새로 읽어, 번호만 어긋난 것이면 이어 붙이고 한 번 더 보낸다.
+              if (e.status !== 409 || resyncedSeq === op.seq) throw e;
+              const fresh = await request('GET');
+              const serverSeq = Number(fresh.toeic._syncClients?.[state.clientId]?.seq) || 0;
+              if (serverSeq + 1 >= op.seq) throw e;           // 번호가 이어지는데(또는 이미 쓴 번호인데) 거절 → 진짜 충돌(내용 다름·겹침). 번호가 비어 있을 때만 이어 붙인다.
+              await locked(() => { const latest = read(); acceptBase(latest, fresh.toeic, true); write(latest); });
+              resyncedSeq = serverSeq + 1;
+              emit();
+              continue;
+            }
             if (data.ack?.clientId !== state.clientId || data.ack?.seq !== op.seq || (Number(data.toeic._syncClients?.[state.clientId]?.seq) || 0) < op.seq) {
               throw new Error('저장 확인이 맞지 않아요. 대기 기록을 유지했어요.');
             }
