@@ -9,6 +9,8 @@ import { TAP, UI } from "../../theme/tokens.jsx";
 //   frame="card"  : 수업 일정 화면 — 달력을 흰 카드로 감싸고, 고른 날 정보는 아래 따로 카드로 그린다.
 //   frame="plain" : 홈 카드 안 — 감싸지 않고 그대로 그리고, 고른 날 정보는 같은 카드 안에 줄을 그어 이어 붙인다.
 //   folded=true   : 오늘이 든 주 + 다음 주(2주)만 보인다. 이때는 달 넘기기 ◀ ▶를 숨긴다(펼치면 다시 보인다).
+//   [164차수 원장 결정 11-11] 처음에는 아무 날도 고르지 않고, 달력 아래에 "그 달 남은 수업"을 쭉 보여 준다(오늘 수업은 오늘 밤까지 남고, 지난 수업은 뺀다).
+//     날짜를 누르면 전처럼 그날 기록(등원·지각·결석·출석)이 나오고, 같은 날짜를 또 누르거나 "남은 수업 보기"를 누르면 목록으로 돌아온다. 접힘(2주)일 때는 보이는 2주 안의 수업만 적는다.
 //   [141차수] 오늘 칸 = 남색 꽉 채움 + 흰 글씨(홈 요일 줄과 같게). 시험 기간 = 연노랑 바탕 + "시험기간"(영어 시험 날은 "영어시험") 글자. 주황 점은 없앴다.
 const WEEK_KO = ["일", "월", "화", "수", "목", "금", "토"];
 const EXAM_BG = "#FFF6D5", EXAM_FG = "#8A5A00";
@@ -17,7 +19,7 @@ export function StudentMonthCalendar({ student, makeups, customHolidays, exams, 
   const todayObj = new Date(); todayObj.setHours(0, 0, 0, 0);
   const todayStr = fmtYMD(todayObj);
   const [ym, setYm] = useState({ y: todayObj.getFullYear(), m: todayObj.getMonth() });
-  const [selDate, setSelDate] = useState(todayStr);
+  const [selDate, setSelDate] = useState(null);
 
   const sid = String(student?.id || "");
   const allHol = { ...HOLIDAYS, ...(customHolidays || {}) };
@@ -107,7 +109,7 @@ export function StudentMonthCalendar({ student, makeups, customHolidays, exams, 
           const hasMark = !!(info.visMk || attended || info.attMark?.type === "late" || info.attMark?.type === "absent");
           const numColor = isToday ? "#fff" : out ? "#b6bac4" : info.hol ? "#D2402E" : dObj.getDay() === 0 ? "#D2402E" : dObj.getDay() === 6 ? "#2A6FDB" : "#333";
           return (
-            <button key={ds} type="button" data-student-calendar-date={ds} onClick={() => { if (out) setYm({ y: dObj.getFullYear(), m: dObj.getMonth() }); setSelDate(ds); }} style={{
+            <button key={ds} type="button" data-student-calendar-date={ds} onClick={() => { if (out) setYm({ y: dObj.getFullYear(), m: dObj.getMonth() }); setSelDate(isSel ? null : ds); }} style={{
               minHeight: 52, padding: "5px 1px 4px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit",
               opacity: out ? 0.5 : 1,
               border: isSel ? "1.8px solid #2A6FDB" : isToday ? `1.5px solid ${UI.navy}` : (info.attendTime != null && info.isVac) ? "1.5px solid #F2C14E" : "1px solid transparent",
@@ -172,8 +174,51 @@ export function StudentMonthCalendar({ student, makeups, customHolidays, exams, 
     ));
   })();
   const detailTitle = sel && (
-    <div style={{ fontSize: 14.5, fontWeight: 800, color: "#2A2A28", marginBottom: 8 }}>
-      {Number(selDate.slice(5, 7))}월 {Number(selDate.slice(8, 10))}일 ({WEEK_KO[new Date(selDate + "T00:00:00").getDay()]})
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+      <div style={{ fontSize: 14.5, fontWeight: 800, color: "#2A2A28" }}>
+        {Number(selDate.slice(5, 7))}월 {Number(selDate.slice(8, 10))}일 ({WEEK_KO[new Date(selDate + "T00:00:00").getDay()]})
+      </div>
+      <button type="button" data-student-calendar-back="1" onClick={() => setSelDate(null)} style={{ border: "none", background: "transparent", color: "#2A6FDB", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", padding: "6px 2px" }}>남은 수업 보기 ›</button>
+    </div>
+  );
+
+  // [164차수] 남은 수업 목록 — 오늘부터(오늘 포함) 그 달 끝까지 등원하는 날. 접힘이면 보이는 2주 안에서만.
+  const upcoming = (() => {
+    const days = folded ? cells : cells.filter((d) => d.getMonth() === ym.m && d.getFullYear() === ym.y);
+    const list = [];
+    days.forEach((dObj) => {
+      const ds = fmtYMD(dObj);
+      if (ds < todayStr) return;
+      const info = dayInfo(ds, dObj);
+      if (info.attendTime == null) return;
+      list.push({ ds, dObj, info });
+    });
+    return list;
+  })();
+  const monthIsPast = !folded && (ym.y < todayObj.getFullYear() || (ym.y === todayObj.getFullYear() && ym.m < todayObj.getMonth()));
+  const listTitle = folded ? "2주 안 남은 수업" : (ym.y === todayObj.getFullYear() && ym.m === todayObj.getMonth()) ? `${ym.m + 1}월 남은 수업` : `${ym.m + 1}월 수업`;
+  const pill = (text, bg) => <span style={{ fontSize: 11, fontWeight: 800, color: "#fff", background: bg, padding: "2px 8px", borderRadius: 999, flexShrink: 0 }}>{text}</span>;
+  const upcomingBlock = (
+    <div data-student-calendar-upcoming="1">
+      <div style={{ fontSize: 14.5, fontWeight: 800, color: "#2A2A28", marginBottom: 6 }}>{listTitle}</div>
+      {upcoming.length === 0 ? (
+        <div style={{ fontSize: 13, color: "#999", padding: "4px 0" }}>{monthIsPast ? "지난 달이에요." : "남은 수업이 없어요."}</div>
+      ) : upcoming.map(({ ds, dObj, info }, i) => (
+        <button key={ds} type="button" data-student-calendar-upcoming-date={ds} onClick={() => setSelDate(ds)} style={{
+          display: "flex", alignItems: "center", gap: 8, width: "100%", minHeight: 40, padding: "7px 0", border: "none", borderTop: i ? "1px solid #f6f4ef" : "none",
+          background: "transparent", cursor: "pointer", fontFamily: "inherit", textAlign: "left", boxSizing: "border-box",
+        }}>
+          <span style={{ fontSize: 13.5, fontWeight: 700, color: "#333", flexShrink: 0 }}>
+            {folded || dObj.getMonth() !== ym.m ? `${dObj.getMonth() + 1}/${dObj.getDate()}` : `${dObj.getDate()}일`} ({WEEK_KO[dObj.getDay()]})
+          </span>
+          {ds === todayStr && pill("오늘", UI.navy)}
+          {info.visMk && pill(info.visMk.isOverride ? "시간변경" : "보강", "#8E44AD")}
+          {!info.visMk && info.isVac && pill("방학 시간표", "#B45309")}
+          {info.dayExams.length > 0 && pill(info.engExam ? "영어시험" : "시험기간", "#8A5A00")}
+          <span style={{ marginLeft: "auto", fontSize: 13.5, fontWeight: 800, color: "#2A6FDB", flexShrink: 0 }}>{info.attendTime ? info.attendTime : "시간 미정"}</span>
+        </button>
+      ))}
+      <div style={{ fontSize: 11.5, color: "#999", marginTop: 8 }}>날짜를 누르면 그날 기록(출석·지각·결석)을 볼 수 있어요.</div>
     </div>
   );
 
@@ -181,11 +226,13 @@ export function StudentMonthCalendar({ student, makeups, customHolidays, exams, 
     return (
       <div>
         {calendar}
-        {sel && (
+        {sel ? (
           <div data-student-calendar-detail="1" style={{ marginTop: 12, padding: "12px 2px 0", borderTop: "1px solid #f2efe9" }}>
             {detailTitle}
             {detailRows}
           </div>
+        ) : (
+          <div style={{ marginTop: 12, padding: "12px 2px 0", borderTop: "1px solid #f2efe9" }}>{upcomingBlock}</div>
         )}
       </div>
     );
@@ -195,11 +242,13 @@ export function StudentMonthCalendar({ student, makeups, customHolidays, exams, 
       <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #eee", padding: "14px 12px", boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
         {calendar}
       </div>
-      {sel && (
+      {sel ? (
         <div data-student-calendar-detail="1" style={{ background: "#fff", borderRadius: 14, border: "1px solid #eee", padding: "14px 16px", marginTop: 12, boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
           {detailTitle}
           {detailRows}
         </div>
+      ) : (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #eee", padding: "14px 16px", marginTop: 12, boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>{upcomingBlock}</div>
       )}
     </div>
   );
