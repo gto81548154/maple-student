@@ -197,27 +197,31 @@ export function StudentMonthCalendar({ student, makeups, customHolidays, exams, 
   })();
   const monthIsPast = !folded && (ym.y < todayObj.getFullYear() || (ym.y === todayObj.getFullYear() && ym.m < todayObj.getMonth()));
   const listTitle = folded ? "2주 안 남은 수업" : (ym.y === todayObj.getFullYear() && ym.m === todayObj.getMonth()) ? `${ym.m + 1}월 남은 수업` : `${ym.m + 1}월 수업`;
-  const pill = (text, bg) => <span style={{ fontSize: 11, fontWeight: 800, color: "#fff", background: bg, padding: "2px 8px", borderRadius: 999, flexShrink: 0 }}>{text}</span>;
+  // [165차수 원장 요청 11-11] 한 줄로 쭉 내려가면 너무 길어서 두 줄(왼쪽 → 오른쪽)로 나눠 적는다. 화면이 아주 좁으면 저절로 한 줄이 된다. 칸이 좁아 알약 글자를 줄였다.
+  const pill = (text, bg) => <span style={{ fontSize: 10.5, fontWeight: 800, color: "#fff", background: bg, padding: "1px 6px", borderRadius: 999, flexShrink: 0, whiteSpace: "nowrap" }}>{text}</span>;
   const upcomingBlock = (
     <div data-student-calendar-upcoming="1">
       <div style={{ fontSize: 14.5, fontWeight: 800, color: "#2A2A28", marginBottom: 6 }}>{listTitle}</div>
       {upcoming.length === 0 ? (
         <div style={{ fontSize: 13, color: "#999", padding: "4px 0" }}>{monthIsPast ? "지난 달이에요." : "남은 수업이 없어요."}</div>
-      ) : upcoming.map(({ ds, dObj, info }, i) => (
-        <button key={ds} type="button" data-student-calendar-upcoming-date={ds} onClick={() => setSelDate(ds)} style={{
-          display: "flex", alignItems: "center", gap: 8, width: "100%", minHeight: 40, padding: "7px 0", border: "none", borderTop: i ? "1px solid #f6f4ef" : "none",
-          background: "transparent", cursor: "pointer", fontFamily: "inherit", textAlign: "left", boxSizing: "border-box",
-        }}>
-          <span style={{ fontSize: 13.5, fontWeight: 700, color: "#333", flexShrink: 0 }}>
-            {folded || dObj.getMonth() !== ym.m ? `${dObj.getMonth() + 1}/${dObj.getDate()}` : `${dObj.getDate()}일`} ({WEEK_KO[dObj.getDay()]})
-          </span>
-          {ds === todayStr && pill("오늘", UI.navy)}
-          {info.visMk && pill(info.visMk.isOverride ? "시간변경" : "보강", "#8E44AD")}
-          {!info.visMk && info.isVac && pill("방학 시간표", "#B45309")}
-          {info.dayExams.length > 0 && pill(info.engExam ? "영어시험" : "시험기간", "#8A5A00")}
-          <span style={{ marginLeft: "auto", fontSize: 13.5, fontWeight: 800, color: "#2A6FDB", flexShrink: 0 }}>{info.attendTime ? info.attendTime : "시간 미정"}</span>
-        </button>
-      ))}
+      ) : (
+        <div style={{ columns: "132px 2", columnGap: 18, columnRule: "1px solid #f2efe9" }}>
+          {upcoming.map(({ ds, dObj, info }) => (
+            <button key={ds} type="button" data-student-calendar-upcoming-date={ds} onClick={() => setSelDate(ds)} style={{
+              display: "flex", alignItems: "center", gap: 5, width: "100%", minHeight: 36, padding: "6px 0", border: "none", borderBottom: "1px solid #f6f4ef",
+              background: "transparent", cursor: "pointer", fontFamily: "inherit", textAlign: "left", boxSizing: "border-box", breakInside: "avoid",
+            }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#333", flexShrink: 0, whiteSpace: "nowrap" }}>
+                {folded || dObj.getMonth() !== ym.m ? `${dObj.getMonth() + 1}/${dObj.getDate()}` : `${dObj.getDate()}일`} ({WEEK_KO[dObj.getDay()]})
+              </span>
+              {ds === todayStr && pill("오늘", UI.navy)}
+              {info.visMk && pill(info.visMk.isOverride ? "변경" : "보강", "#8E44AD")}
+              {!info.visMk && info.isVac && pill("방학", "#B45309")}
+              <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 800, color: "#2A6FDB", flexShrink: 0, whiteSpace: "nowrap" }}>{info.attendTime ? info.attendTime : "미정"}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div style={{ fontSize: 11.5, color: "#999", marginTop: 8 }}>날짜를 누르면 그날 기록(출석·지각·결석)을 볼 수 있어요.</div>
     </div>
   );
