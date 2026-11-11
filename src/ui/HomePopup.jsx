@@ -4,7 +4,8 @@ import { MAX_W, TAP, UI } from "../theme/tokens.jsx";
 // ═══ [147차수] 앱을 켤 때 가운데 뜨는 안내 카드(여러 장이면 1/3 넘기기) ═══
 //   카드: { key, tone("navy"|"warn"), icon, title, body, image, cta, tab, url }
 //   아래 두 글자 단추: [오늘 하루 안 보기] [닫기]. 큰 단추(cta)를 누르면 그 화면으로 간다.
-export function HomePopup({ cards, onClose, onHideToday, onGo }) {
+//   [163차수] 공지 카드(card.forever)를 보고 있을 때는 왼쪽 단추가 [앞으로 안 보기]로 바뀐다 — 그 공지만 영영 끄고, 다른 카드가 남아 있으면 창은 그대로 둔다.
+export function HomePopup({ cards, onClose, onHideToday, onHideForever, onGo }) {
   const [idx, setIdx] = useState(0);
   const n = cards.length;
   const card = cards[Math.min(idx, n - 1)];
@@ -39,7 +40,9 @@ export function HomePopup({ cards, onClose, onHideToday, onGo }) {
           </div>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, padding: "0 4px" }}>
-          <button type="button" onClick={onHideToday} style={small}>오늘 하루 안 보기</button>
+          {card.forever && onHideForever
+            ? <button type="button" onClick={() => onHideForever(card)} style={small}>앞으로 안 보기</button>
+            : <button type="button" onClick={onHideToday} style={small}>오늘 하루 안 보기</button>}
           <button type="button" onClick={onClose} style={small}>닫기</button>
         </div>
       </div>

@@ -38,7 +38,7 @@ import { useVideoSession } from "./state/useVideoSession.jsx";
 import { computeTodoView } from "./state/computeTodoView.jsx";
 import { computeVocaView } from "./state/computeVocaView.jsx";
 import { computeMoreView } from "./state/computeMoreView.jsx";
-import { computeHomePopup, hideHomePopupToday } from "./state/computeHomePopup.jsx";
+import { computeHomePopup, dismissNoticeForever, hideHomePopupToday } from "./state/computeHomePopup.jsx";
 import { makeTabNav } from "./state/makeTabNav.jsx";
 
 import { renderLoadingScreen } from "./screens/status/LoadingScreen.jsx";
@@ -278,7 +278,8 @@ export default function App() {
       {/* [147차수] 앱 켤 때 안내 카드 */}
       {popupCards && popupCards.length > 0 && (
         <HomePopup cards={popupCards} onClose={closePopup} onGo={popupGo}
-          onHideToday={() => { hideHomePopupToday(todayStrForTab, popupCards.map((c) => c.key)); closePopup(); }} />
+          onHideToday={() => { hideHomePopupToday(todayStrForTab, popupCards.map((c) => c.key)); closePopup(); }}
+          onHideForever={(card) => { dismissNoticeForever(card.noticeKey); const rest = popupCards.filter((c) => c.key !== card.key); if (rest.length) setPopupCards(rest); else closePopup(); }} />
       )}
       <KakaoOpenBanner />
       {/* [마스터] 지금 남의 화면을 보고 있다는 표시 + 홈 복귀. 학생에게는 절대 안 뜬다(열쇠 없음). */}
