@@ -18,6 +18,8 @@ import { TeacherLinkDeadScreen } from "./screens/teacher/TeacherLinkDeadScreen.j
 import { VocabWrongTab } from "./screens/vocab/VocabWrongTab.jsx";
 import { MAX_W, TAB_BAR_H, TAP, UI } from "./theme/tokens.jsx";
 import { HomePopup } from "./ui/HomePopup.jsx";
+import { LabPopup } from "./ui/LabPopup.jsx";
+import { getExamRangeTextForStudent, getStudentSchoolCodeForRange } from "./domain/examRange.jsx";
 import { KakaoOpenBanner } from "./ui/KakaoOpenBanner.jsx";
 import { AttQrModal } from "./ui/Qr.jsx";
 import { MoreMenu, MoreSubFrame, StudentHeader, StudentTabBar } from "./ui/StudentChrome.jsx";
@@ -76,6 +78,7 @@ export default function App() {
   const mockBusyRef = useRef(false); // [101차수] 모의고사 시험·답 입력·제출 중(MockExamTab이 알려준다)
   // [147차수] 앱을 켤 때 한 번 뜨는 안내 카드 — 자료를 처음 받은 뒤 한 번만 계산해 띄운다(탭을 옮겨도 다시 안 뜸)
   const [popupCards, setPopupCards] = useState(null);
+  const [labOpen, setLabOpen] = useState(false); // [168차수] 새 팝업(준비 중)
   const popupDoneRef = useRef(false);
   const recordBusyRef = useRef(false); // [145차수] 녹음 제출 화면에서 녹음 중인지(RecordScreen이 알려준다) — 녹음 중엔 새 판을 적용하지 않는다
   const mockTimedRef = useRef(false); // [135차수 ac] 시간이 가는 모의고사(50·70분) 시험 화면인지 — 탭을 떠나거나 뒤로가기할 때 한 번 묻는다
@@ -253,6 +256,9 @@ export default function App() {
     if (cards.length) setTimeout(() => setPopupCards(cards), 0);
   }
   const closePopup = () => setPopupCards(null);
+  // [168차수] 새 팝업(준비 중) — 더보기 → 안 쓰는 기능에서 눌렀을 때만 열린다. 시험 범위 글은 시험 정보 화면과 같은 규칙으로 찾는다.
+  const labExam = nearestExam && nearestExam.type === "내신" ? nearestExam : (examDdays.find((x) => x && x.type === "내신") || nearestExam);
+  const labRange = labExam && labExam.type === "내신" ? getExamRangeTextForStudent(examRanges, getStudentSchoolCodeForRange(student || {}), { name: labExam.name, date: labExam.start, kind: labExam.kind, semester: labExam.semester }) : null;
   const popupGo = (card) => {
     closePopup();
     if (card.url && /^https?:\/\//.test(card.url)) { try { window.open(card.url, "_blank", "noopener"); } catch (e) {} return; }
@@ -280,6 +286,10 @@ export default function App() {
         <HomePopup cards={popupCards} onClose={closePopup} onGo={popupGo}
           onHideToday={() => { hideHomePopupToday(todayStrForTab, popupCards.map((c) => c.key)); closePopup(); }}
           onHideForever={(card) => { dismissNoticeForever(card.noticeKey); const rest = popupCards.filter((c) => c.key !== card.key); if (rest.length) setPopupCards(rest); else closePopup(); }} />
+      )}
+      {labOpen && (
+        <LabPopup pinnedMessages={pinnedMessages} exam={labExam} rangeText={labRange?.text || ""} doneTasks={doneTasks} totalTasks={totalTasks} activeDate={activeDate} classLine={calSub}
+          onClose={() => setLabOpen(false)} onGo={(k) => { setLabOpen(false); if (STUDENT_ROUTE_IDS.includes(k)) goTab(k); }} />
       )}
       <KakaoOpenBanner />
       {/* [마스터] 지금 남의 화면을 보고 있다는 표시 + 홈 복귀. 학생에게는 절대 안 뜬다(열쇠 없음). */}
@@ -385,7 +395,7 @@ export default function App() {
             단계 순서·이름·조교/강사 배지·항목 키·원문·상태 판정(isCheckedView·isFailed·getFailReason)은 전부 원본. 학생 수동 완료 없음. */}
         {tab === "tasks" && renderTasksTab(C)}
         {/* [103차수] 더보기 — 목록 + 하위 화면(기존 화면을 MoreSubFrame 안에 그대로 넣는다). "‹ 더보기"도 goTab이라 나가기 확인창이 똑같이 걸린다 */}
-        {tab === "more" && <MoreMenu groups={moreGroups} onPick={(k) => goTab(k)} />}
+        {tab === "more" && <MoreMenu groups={moreGroups} onPick={(k) => (k === "labPopup" ? setLabOpen(true) : goTab(k))} />}
         {tab === "notices" && (
           <MoreSubFrame title="공지·설문" onBack={backToMore}>
             <NoticesScreen pinnedMessages={pinnedMessages} surveys={activeSurveys} surveyResponses={surveyResponses} student={student}
