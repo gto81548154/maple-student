@@ -47,7 +47,15 @@ const restoreStudentLink = () => {
     const sp = new URLSearchParams(window.location.search);
     // [마스터] 마스터 모드에서는 학생 링크를 저장하지 않는다.
     // 저장하면 다음 실행 때 아래 복원 로직이 그 학생 화면을 띄워 마스터 진입로가 막힌다.
-    if (sp.has("master")) return;
+    if (sp.has("master")) {
+      // [171차수] 주소에 master와 학생 id가 같이 있는데 이 폰에 원장 열쇠가 없으면(다른 브라우저로 열기·주소 복사·저장 지움)
+      //   예전에는 그냥 그 학생인 것처럼 켜져서 "앱 접속"이 찍히고 강의 시청·알림·숙제 TEST가 학생 것으로 남았다.
+      //   이제 학생 id·열쇠를 주소에서 떼고 로그인 화면으로 보낸다. 원장 열쇠가 있는 폰은 전과 같다.
+      if (!getMasterMk() && sp.get("id")) {
+        window.history.replaceState(null, "", window.location.pathname + "?master=1");
+      }
+      return;
+    }
     // [교사] 선생님 링크(tid·tk)가 실려 오면 그것부터 저장한다. 학생 화면을 열어보는 중이라
     //   id가 함께 있어도 학생 링크로 저장하면 안 된다(다음에 열 때 학생 화면이 떠 교사 진입로가 막힌다).
     if (sp.get("tid") && sp.get("tk")) { saveTeacherLink(sp.get("tid"), sp.get("tk")); return; }

@@ -950,6 +950,7 @@ const STU = (() => {
     name: q.get('n') || '',
     api: (q.get('api') || '').replace(/\/+$/, ''),
     books: (q.get('books') || '').split(',').map(x => x.trim()).filter(Boolean),
+    ro: q.get('ro') === '1',       // [171차수] 보기 전용 — 원장이 학생 화면을 열어 볼 때. 이 기기·서버 어디에도 학생 기록을 저장하지 않는다
     master: q.get('mk') === '1',   // 원장 전용 앱(마스터 홈)에서 열렸는지 — 원장 전용 책까지 책장에 올린다
     /* [교사 선별 2026-08-27] 선별 권한과 "원장 전용 책 진열"을 갈랐다.
      *   pk=1   : 단어 선별을 할 수 있다(선생님도 켜짐). mk=1은 여기에 더해 원장 전용 책까지 진열한다.
@@ -1011,6 +1012,7 @@ const store = {
   },
   _t: null,
   save(){                          // 항상 ROOT 전체를 저장합니다 (인자는 무시)
+    if (STU && STU.ro) return;     // [171차수] 보기 전용: 화면에서만 바뀌고 저장·전송은 안 한다(학생 기록을 건드리지 않게)
     ROOT.ts = Date.now();
     clearTimeout(this._t);
     this._t = setTimeout(async () => {
@@ -1051,6 +1053,7 @@ async function pullServer(){
 let _pushT = null;
 function pushServer(immediate){
   if (!syncOn()) return;
+  if (STU && STU.ro) return;       // [171차수] 보기 전용에서는 서버에 올리지 않는다
   clearTimeout(_pushT);
   _pushT = setTimeout(async () => {
     try{
@@ -1761,6 +1764,7 @@ async function openBook(id){
   maybeCelebrate();
 }
 function goShelf(){
+  if (HW){ askConfirm(HW_QUIT_ASK, () => { hwAbort(); goShelf(); }); return; }   // [171차수] 숙제 TEST 중에는 물어본 뒤에만 책장으로
   BOOK = null; S = null; BOOKST = null;
   LAYER = 'main'; document.documentElement.classList.remove('bh');
   $('#brandSub').textContent = '단어장 선택';
@@ -1798,7 +1802,7 @@ function showWithdrawnScreen(){
     + 'border-top:2px solid #201E1D">'
     + ''
     + '<div style="font-size:18px;font-weight:800;color:#201E1D;margin-bottom:10px;line-height:1.5">'
-    + (STU && STU.name ? STU.name + ' 학생, ' : '') + '지금은 수업이 멈춰 있어요</div>'
+    + (STU && STU.name ? nsEsc(STU.name) + ' 학생, ' : '')   /* [171차수] 주소에 실려 온 이름은 글자 그대로만 보여 준다 */ + '지금은 수업이 멈춰 있어요</div>'
     + '<div style="font-size:14px;color:#6E6A66;line-height:1.75">다시 등록하면 '
     + '<b style="color:#C22006">바로 이어서</b> 쓸 수 있어요.<br>그동안 공부한 기록은 그대로 남아 있습니다.</div>'
     + '<div style="margin-top:12px;padding:12px 14px;background:#FCE9E4;border-radius:0;font-size:13px;'
@@ -1820,8 +1824,10 @@ async function checkWithdrawnAndBlock(){
   try {
     const r = await fetch(progUrl(), { headers: progHeaders(), cache: 'no-store', signal: ac.signal });
     if (r.status === 403 || r.status === 404){
-      try { localStorage.removeItem(KEY); } catch(e){}   // 이 기기에 남은 진도도 지운다
-      if (window.storage){ try { await window.storage.delete(KEY); } catch(e){} }
+      if (!STU.ro){                                       // [171차수] 보기 전용에서는 기기 기록도 건드리지 않는다
+        try { localStorage.removeItem(KEY); } catch(e){}   // 이 기기에 남은 진도도 지운다
+        if (window.storage){ try { await window.storage.delete(KEY); } catch(e){} }
+      }
       showWithdrawnScreen();
       return true;
     }
@@ -1933,6 +1939,7 @@ const $ = q => document.querySelector(q);
 const scr = { shelf:$('#scrShelf'), home:$('#scrHome'), study:$('#scrStudy'), sum:$('#scrSum'),
               flash:$('#scrFlash'), blink:$('#scrBlink'), mc:$('#scrMc'), pick:$('#scrPick') };
 function show(name){
+  if (HW && name !== 'mc') hwAbort();              // [171차수] 숙제 TEST는 문제 화면(mc)에 있을 때만 살아 있다 — 다른 화면으로 가면 숙제는 끝(통과 아님)
   if (name !== 'blink') stopBlink();               // 블링크 화면을 떠나면 자동 넘김 정지
   Object.values(scr).forEach(s => s.classList.remove('show'));
   scr[name].classList.add('show');
@@ -2193,6 +2200,7 @@ let Q = [], qi = 0, sesOk = 0, sesWrong = [], sesInputs = {};   // sesInputs: AI
 let HWSI = {};                  // [0818 회전 1차수] 숙제 모드: { 단어id: 몇 번째 뜻을 물을지 } — 숙제 시작 때 채운다
 let SES = { kind:'test' };               // 이번 세션의 학습 방식: test | mc | card | blink
 function startSession(list, opts){
+  if (HW) hwAbort();                                // [171차수] 보통 공부를 시작하면 남아 있던 "숙제 중" 표시는 무조건 끈다
   if (!list.length) return;
   SES = { kind: (opts && opts.kind) || 'test' };
   if (SES.kind === 'mc' && S.round > 1){ toast('객관식은 1회독에서만 쓸 수 있어요'); return; }
@@ -2846,13 +2854,20 @@ $('#mcStar').onclick = () => {
   $('#mcStar').classList.toggle('on', !!p.s);
   store.save(); renderHome();
 };
+/* [171차수] 숙제 TEST 그만두기 — "숙제 중" 표시(HW)를 확실히 끈다.
+ *   전에는 [그만두기]에서만 껐다. 그래서 숙제 도중 [책장]·[마플보카]를 눌러 빠져나간 뒤 다른 객관식을 한 문제만 풀어도
+ *   "숙제 클리어" 도장이 찍혔다. 이제 숙제 화면(mc)을 벗어나는 모든 길에서 꺼진다(아래 show() 참고). */
+function hwAbort(){
+  HW = null; hwWrong = 0; hwFirstWrong = 0; hwRedo = 0;
+  if (hwRedoTimer){ clearInterval(hwRedoTimer); hwRedoTimer = null; }
+  $('#mHwRedo').classList.remove('show');
+  postHwState();                                    // [97차수 재삽입] 그만두기 → 시험 중 아님
+}
+const HW_QUIT_ASK = { title:'숙제 그만두기', body:'숙제가 아직 안 끝났어요. 나가면 다음에 처음부터 다시 풀어요. 그만둘까요?', yes:'그만두기', danger:true };
 $('#mcQuit').onclick = () => {
   if (HW){                                          // [숙제 3차수] 중간에 나가면 처음부터 — 확인 후 종료
-    askConfirm({ title:'숙제 그만두기', body:'숙제가 아직 안 끝났어요. 나가면 다음에 처음부터 다시 풀어요. 그만둘까요?', yes:'그만두기', danger:true },
-      () => { HW = null; hwWrong = 0; hwFirstWrong = 0; hwRedo = 0;
-              if (hwRedoTimer){ clearInterval(hwRedoTimer); hwRedoTimer = null; }
-              $('#mHwRedo').classList.remove('show');
-              postHwState();                        // [97차수 재삽입] 그만두기 → 시험 중 아님
+    askConfirm(HW_QUIT_ASK,
+      () => { hwAbort();
               renderHome(); show('home'); });
     return;
   }
@@ -2920,7 +2935,7 @@ function hwPendDrop(date){
 }
 /* 도장 하나를 서버로 보낸다 — 성공 {late}, 실패 {fail}, 보낼 곳 없음(단독 열람) {offline} */
 async function sendHwRecord(rec){
-  if (!STU || !STU.api || !STU.t) return { offline: true };
+  if (!STU || !STU.api || !STU.t || STU.ro) return { offline: true };   // [171차수] 보기 전용은 도장을 보내지 않는다
   try{
     const u = `${STU.api}/voca/hw-clear?id=${encodeURIComponent(STU.id)}&t=${encodeURIComponent(STU.t)}`;
     const r = await fetch(u, { method:'POST', headers:{ 'Content-Type':'application/json' },
@@ -2938,7 +2953,7 @@ async function sendHwRecord(rec){
 let hwFlushBusy = false;
 async function hwPendFlush(){
   if (hwFlushBusy) return;                            // 겹쳐 돌지 않게
-  if (!STU || STU.master || !STU.api || !STU.t) return;
+  if (!STU || STU.master || STU.ro || !STU.api || !STU.t) return;
   const m = hwPendLoad();
   const dates = Object.keys(m).sort();                // 오래된 날짜부터
   if (!dates.length) return;
@@ -3794,7 +3809,11 @@ async function prefetchBooks(){
   if (syncOn()){
     const r = await pullServer();
     if (r && !r.err && r.data){
-      if ((r.data.ts||0) > (ROOT.ts||0)){
+      if (STU && STU.ro){                             // [171차수] 보기 전용: 이 기기에 남은 것 말고 항상 서버의 학생 기록을 보여 준다
+        const m = migrateRoot(r.data);
+        if (m){ ROOT = Object.assign({ v:3, auto:false, books:{} }, m); rerender(); }
+        toast('보기 전용이에요 · 여기서 누른 것은 저장되지 않아요');
+      } else if ((r.data.ts||0) > (ROOT.ts||0)){
         if (adoptRemote(r.data)){ rerender(); toast('서버의 최신 기록을 불러왔어요'); }
       } else if ((ROOT.ts||0) > (r.data.ts||0)) {
         pushServer(true);

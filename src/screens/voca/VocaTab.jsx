@@ -1,4 +1,4 @@
-import { IS_TEACHER_MODE } from "../../core/auth.jsx";
+import { IS_MASTER_MODE, IS_TEACHER_MODE } from "../../core/auth.jsx";
 import { VOCA_APP_URL, WORKER_ORIGIN } from "../../core/config.jsx";
 import { getNaesinVocaParams } from "../../domain/examRange.jsx";
 import { guessVocaBooks } from "../../domain/voca.jsx";
@@ -23,6 +23,8 @@ export function renderVocaTab(C) {
           if (sp.get("t")) q.set("t", sp.get("t"));
           if (student?.name) q.set("n", student.name);
           if (WORKER_ORIGIN) q.set("api", WORKER_ORIGIN);
+          // [171차수] 원장님이 학생 화면을 열어 볼 때는 "보기 전용" — 단어장에서 무엇을 눌러도 그 학생 기록이 바뀌지 않는다.
+          if (IS_MASTER_MODE) q.set("ro", "1");
           if (books.length) q.set("books", books.join(","));
           const nsp = getNaesinVocaParams(student, examRanges, examDdays);   // [내신 4차수] 내 학교·이번 시험범위
           if (nsp.sc) q.set("sc", nsp.sc);
