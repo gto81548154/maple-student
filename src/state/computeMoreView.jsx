@@ -54,7 +54,8 @@ export function computeMoreView(D) {
     ] },
     { title: "앱", items: [{ key: "settings", icon: "⚙️", title: "앱 설정", sub: "알림 · 홈 화면 추가 · 업데이트" }] },
     // [168차수] 만들어 두기만 하고 아직 안 쓰는 기능을 모아 두는 칸(원장 결정 11-12). 여기서 눌러야만 열리고, 앱을 켤 때 저절로 뜨지 않는다.
-    { title: "안 쓰는 기능", items: [{ key: "labPopup", icon: "🧪", title: "새 팝업 (준비 중)", sub: "공지 · 시험 일정 · 단어 리그" }] },
+    // [169차수] 이 칸은 원장님(마스터)·선생님 화면에서만 보인다. 학생 폰에는 안 나온다.
+    ...(IS_STAFF_VIEW ? [{ title: "안 쓰는 기능", items: [{ key: "labPopup", icon: "🧪", title: "새 팝업 (준비 중)", sub: "공지 · 시험 일정 · 단어 리그" }] }] : []),
   ];
   return { activeSurveys, attNoticeAll, attWeek, calSub, examDdays, moreGroups, nearestExam, unansweredSurveys, wrongCount };
 }
