@@ -5,6 +5,12 @@ import { MIN_AWAY_SEC, VIDEO_PROGRESS_AUTOSAVE_SEC, VIDEO_PROGRESS_SAVE_MIN_SEC,
 import { getTodayStr } from "../domain/time.jsx";
 import { flushPendingVocabTests } from "../domain/vocabTest.jsx";
 
+// [175차수] 이 화면(페이지)이 살아 있는 동안만 쓰는 메모 두 개.
+//   inFlightTotals  = 지금 서버로 보내는 중인 저장이 "어디까지"를 담았는지(보내는 중에 강의를 닫으면 그 뒤 몇 초만 따로 보관하려고).
+//   appliedLocalIds = 이미 폰 화면의 시청 시간에 더해 둔 조각의 이름(나중에 다시 보낼 때 또 더하지 않으려고).
+let inFlightTotals = null;
+const appliedLocalIds = new Set();
+
 // [120차수] 강의 열기·닫기·시청 기록 재기와 보내기(자동 저장·나갈 때 저장·대기열 다시 보내기) — App.jsx에서 그대로 옮김.
 export function useVideoSession(D) {
   const { activeSecRef, awayCountRef, awaySecRef, awayStartRef, currentSessionIdRef, flushingRef, lastActiveAtRef, lastSavedAwayCountRef, lastSavedAwaySecRef, lastSavedFocusSecRef, lastSavedPlaySecRef, longestAwayRef, setLastVideoSaveStatus, setPendingVideoCount, setVideoWatch, setViewStartTime, setViewingVideo, studentId, videoSaveChunkSeqRef, videoSaveInFlightRef, viewStartTime, viewingVideo, withdrawnRef, ytDurationSecRef, ytFocusSecRef, ytPlaySecRef, ytPlayerStateRef, onVocabResultsSent } = D;
@@ -64,23 +70,28 @@ export function useVideoSession(D) {
   };
   const saveCurrentVideoProgress = async ({ reason = "manual", minDeltaSec = 1, partialSave = true } = {}) => {
     if (!viewingVideo || !viewStartTime) return false;
-    if (videoSaveInFlightRef.current) return false;
+    // [175차수] 다른 저장을 보내는 중이면 보통은 건너뛴다. 다만 "닫기"는 건너뛰면 자동 저장 뒤에 본 몇 초가 영영 빠지므로,
+    //   보내는 중인 저장이 담은 곳(inFlightTotals) 뒤의 것만 폰 대기열에 넣어 둔다(다음 기회에 전송).
+    const inFlight = !!videoSaveInFlightRef.current;
+    if (inFlight && (reason !== "close" || !inFlightTotals)) return false;
+    const base = inFlight ? inFlightTotals
+      : { play: lastSavedPlaySecRef.current, focus: lastSavedFocusSecRef.current, away: lastSavedAwaySecRef.current, awayCount: lastSavedAwayCountRef.current };
 
     const totalPlaySec = Math.round(ytPlaySecRef.current);
     const totalFocusSec = Math.round(ytFocusSecRef.current);
     const totalAwaySec = Math.round(awaySecRef.current);
     const totalAwayCount = Math.round(awayCountRef.current);
     const longestAway = Math.round(longestAwayRef.current);
-    const deltaPlaySec = Math.max(0, totalPlaySec - lastSavedPlaySecRef.current);
-    const deltaFocusSec = Math.max(0, totalFocusSec - lastSavedFocusSecRef.current);
-    const deltaAwaySec = Math.max(0, totalAwaySec - lastSavedAwaySecRef.current);
-    const deltaAwayCount = Math.max(0, totalAwayCount - lastSavedAwayCountRef.current);
+    const deltaPlaySec = Math.max(0, totalPlaySec - base.play);
+    const deltaFocusSec = Math.max(0, totalFocusSec - base.focus);
+    const deltaAwaySec = Math.max(0, totalAwaySec - base.away);
+    const deltaAwayCount = Math.max(0, totalAwayCount - base.awayCount);
 
     if (deltaPlaySec < minDeltaSec && deltaAwaySec <= 0) return false;
 
     const rootSessionId = currentSessionIdRef.current || makeVideoSessionId(studentId, viewingVideo.id);
     currentSessionIdRef.current = rootSessionId;
-    const chunkSeq = videoSaveChunkSeqRef.current + 1;
+    const chunkSeq = videoSaveChunkSeqRef.current + (inFlight ? 2 : 1);
     const timestamp = new Date().toISOString();
     const payload = {
       eventType: "session",
@@ -105,7 +116,16 @@ export function useVideoSession(D) {
       partialSave,
     };
 
+    if (inFlight) {   // [175차수] 닫는 순간 다른 저장이 가는 중 → 남은 몇 초는 대기열에(이 조각은 화면에 한 번만 더한다)
+      queuePendingVideoWatch(payload);
+      appliedLocalIds.add(payload.sessionId);
+      setPendingVideoCount(getPendingVideoWatch().length);
+      setVideoWatch(prev => applyVideoWatchLocal(prev || {}, payload));
+      return true;
+    }
+
     videoSaveInFlightRef.current = true;
+    inFlightTotals = { play: totalPlaySec, focus: totalFocusSec, away: totalAwaySec, awayCount: totalAwayCount };
     try {
       await postVideoWatchToWorker(payload);
       if (reason === "autosave") setLastVideoSaveStatus("시청 중 자동 저장됨");
@@ -116,6 +136,7 @@ export function useVideoSession(D) {
     } catch (e) {
       console.error("video-watch Worker 저장 실패, 로컬 대기열에 보관:", e);
       queuePendingVideoWatch(payload);
+      appliedLocalIds.add(payload.sessionId);   // [175차수] 아래에서 화면에 이미 더한다 → 나중에 다시 보낼 때 또 더하지 않는다
       setPendingVideoCount(getPendingVideoWatch().length);
       setLastVideoSaveStatus("저장 대기 중");
     } finally {
@@ -129,11 +150,12 @@ export function useVideoSession(D) {
     //   예전엔 닫을 때 저장이 끝날 때까지 기다려서 이런 일이 없었지만, 이제 저장을 뒤에서 하므로 여기서 막아야
     //   옛 영상의 합계가 새 영상의 기준값에 들어가 새 영상의 첫 부분이 안 잡히는 일이 없다.
     if (currentSessionIdRef.current !== rootSessionId) return true;
-    videoSaveChunkSeqRef.current = chunkSeq;
-    lastSavedPlaySecRef.current = totalPlaySec;
-    lastSavedFocusSecRef.current = totalFocusSec;
-    lastSavedAwaySecRef.current = totalAwaySec;
-    lastSavedAwayCountRef.current = totalAwayCount;
+    // [175차수] 그새 "탭 닫기" 저장이 기준값을 더 앞으로 옮겨 놨을 수 있으니 뒤로 돌리지 않는다(큰 쪽을 둔다).
+    videoSaveChunkSeqRef.current = Math.max(videoSaveChunkSeqRef.current, chunkSeq);
+    lastSavedPlaySecRef.current = Math.max(lastSavedPlaySecRef.current, totalPlaySec);
+    lastSavedFocusSecRef.current = Math.max(lastSavedFocusSecRef.current, totalFocusSec);
+    lastSavedAwaySecRef.current = Math.max(lastSavedAwaySecRef.current, totalAwaySec);
+    lastSavedAwayCountRef.current = Math.max(lastSavedAwayCountRef.current, totalAwayCount);
     return true;
   };
   // YouTube 플레이어 이벤트 수신: 실제 PLAYING 시간만 누적
@@ -208,7 +230,7 @@ export function useVideoSession(D) {
       saveCurrentVideoProgress({ reason: "close", minDeltaSec: 1, partialSave: false })
         .then((saved) => {
           if (saved) return;
-          if (totalPlaySec > 0) setLastVideoSaveStatus("이미 자동 저장된 시청 기록입니다");
+          if (totalPlaySec > 0) setLastVideoSaveStatus("이미 자동 저장된 시청 기록입니다");   // [175차수] 자동 저장 중에 닫아 남은 몇 초는 위에서 대기열에 넣는다(saved=true)
           else setLastVideoSaveStatus("재생한 시간이 없어 시청 기록을 저장하지 않았습니다");
         })
         .catch(() => {});
@@ -270,10 +292,13 @@ export function useVideoSession(D) {
 
         const actualWatchSec = Math.round(ytPlaySecRef.current);
         const focusSec = Math.round(ytFocusSecRef.current);
-        const unsavedWatchSec = Math.max(0, actualWatchSec - lastSavedPlaySecRef.current);
-        const unsavedFocusSec = Math.max(0, focusSec - lastSavedFocusSecRef.current);
-        const unsavedAwaySec = Math.max(0, finalAway - lastSavedAwaySecRef.current);
-        const unsavedAwayCount = Math.max(0, finalAwayCount - lastSavedAwayCountRef.current);
+        // [175차수] 보내는 중인 저장이 있으면 그 저장이 담은 곳 뒤의 것만 센다(같은 초를 두 번 보내지 않게).
+        const ub = (videoSaveInFlightRef.current && inFlightTotals) ? inFlightTotals
+          : { play: lastSavedPlaySecRef.current, focus: lastSavedFocusSecRef.current, away: lastSavedAwaySecRef.current, awayCount: lastSavedAwayCountRef.current };
+        const unsavedWatchSec = Math.max(0, actualWatchSec - ub.play);
+        const unsavedFocusSec = Math.max(0, focusSec - ub.focus);
+        const unsavedAwaySec = Math.max(0, finalAway - ub.away);
+        const unsavedAwayCount = Math.max(0, finalAwayCount - ub.awayCount);
         if (unsavedWatchSec <= 0 && unsavedAwaySec <= 0) return;
 
         const rootSessionId = currentSessionIdRef.current || makeVideoSessionId(studentId, viewingVideo.id);
@@ -302,6 +327,13 @@ export function useVideoSession(D) {
 
         // beforeunload에서는 async fetch를 기다릴 수 없으므로 로컬 대기열에 저장 후 다음 접속 때 Worker로 전송
         queuePendingVideoWatch(payload);
+        // [175차수] 방금 대기열에 넣은 곳까지를 "저장한 것"으로 표시한다 — 탭을 닫을 때 바로 뒤따르는 "화면 가려짐" 저장이
+        //   같은 초를 서버로 한 번 더 보내던 것을 막는다.
+        videoSaveChunkSeqRef.current += 1;
+        lastSavedPlaySecRef.current = Math.max(lastSavedPlaySecRef.current, actualWatchSec);
+        lastSavedFocusSecRef.current = Math.max(lastSavedFocusSecRef.current, focusSec);
+        lastSavedAwaySecRef.current = Math.max(lastSavedAwaySecRef.current, finalAway);
+        lastSavedAwayCountRef.current = Math.max(lastSavedAwayCountRef.current, finalAwayCount);
         try { localStorage.removeItem("pending_away"); } catch (e) { /* ignore */ }
       }
     };
@@ -384,7 +416,9 @@ export function useVideoSession(D) {
         for (const item of pending) {
           try {
             await postVideoWatchToWorker(item);
-            setVideoWatch(prev => applyVideoWatchLocal(prev || {}, item));
+            // [175차수] 저장에 실패했을 때 이미 화면에 더해 둔 조각은 또 더하지 않는다(전에는 두 번 더해져 시청률이 실제보다 높게 보였다).
+            if (appliedLocalIds.has(item.sessionId)) appliedLocalIds.delete(item.sessionId);
+            else setVideoWatch(prev => applyVideoWatchLocal(prev || {}, item));
           } catch (e) {
             failed.push(item);
           }

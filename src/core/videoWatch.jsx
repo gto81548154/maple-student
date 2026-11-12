@@ -26,7 +26,15 @@ export const loadYouTubeIframeApi = () => {
   if (window.YT && window.YT.Player) return Promise.resolve(window.YT);
   if (_youtubeIframeApiPromise) return _youtubeIframeApiPromise;
 
-  _youtubeIframeApiPromise = new Promise((resolve, reject) => {
+  // [175차수] 불러오기에 실패하면 "실패한 약속"과 실패한 <script>를 치운다 — 전에는 그대로 남아서,
+  //   인터넷이 잠깐 끊긴 순간에 강의를 한 번 열면 앱을 완전히 껐다 켤 때까지 모든 강의가 "플레이어를 불러오지 못했습니다"였다.
+  const forget = () => {
+    _youtubeIframeApiPromise = null;
+    try { document.querySelectorAll('script[src="https://www.youtube.com/iframe_api"]').forEach(el => el.remove()); } catch (e) { /* ignore */ }
+  };
+  _youtubeIframeApiPromise = new Promise((resolve, rejectRaw) => {
+    let timer = null;
+    const reject = (err) => { if (timer) clearInterval(timer); forget(); rejectRaw(err); };
     const prevReady = window.onYouTubeIframeAPIReady;
     window.onYouTubeIframeAPIReady = () => {
       if (typeof prevReady === "function") prevReady();
@@ -45,7 +53,7 @@ export const loadYouTubeIframeApi = () => {
 
     // 스크립트가 이미 있었는데 ready 콜백이 지나간 경우를 위한 보정
     const startedAt = Date.now();
-    const timer = setInterval(() => {
+    timer = setInterval(() => {
       if (window.YT && window.YT.Player) {
         clearInterval(timer);
         resolve(window.YT);
@@ -186,7 +194,10 @@ export const mergeVideoWatchSnapshots = (remote = {}, local = {}) => {
       const remoteEntry = merged[sid][vid];
       const remoteTime = remoteEntry?.lastAt ? new Date(remoteEntry.lastAt).getTime() : 0;
       const localTime = localEntry?.lastAt ? new Date(localEntry.lastAt).getTime() : 0;
-      if (!remoteEntry || localTime > remoteTime || (localEntry.watchSec || 0) > (remoteEntry.watchSec || 0)) {
+      // [175차수] 본 시간이 더 많은 쪽을 쓴다(같으면 더 최근 것). 전에는 "더 최근이기만 하면" 폰 것을 써서,
+      //   앱을 켜자마자 밀린 조각 하나를 보낸 직후에는 그 조각(몇 초)이 서버의 전체 시청 시간을 가렸다.
+      const lw = localEntry?.watchSec || 0, rw = remoteEntry?.watchSec || 0;
+      if (!remoteEntry || lw > rw || (lw === rw && localTime > remoteTime)) {
         merged[sid][vid] = localEntry;
       }
     });

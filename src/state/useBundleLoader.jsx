@@ -137,8 +137,16 @@ export function useBundleLoader(D) {
       pollFailRef.current += 1;   // [110차수] 연속 실패 → 다음 자동 새로고침을 150초·240초로 늦춘다(서버가 바쁠 때 더 두드리지 않게)
       // 이미 연 자료를 옛 저장본으로 되돌리거나, 저장 공간 문제 때문에 오류 화면으로 바꾸지 않는다.
       // 명시적 인증 거절은 기존 차단 절차로만 처리한다.
-      if (e?.code !== "withdrawn" && !IS_TEACHER_MODE && displayedBundleRef.current?.studentId === String(studentId)) {
-        setOfflineNotice("연결이 잠시 늦어지고 있어요. 현재 자료로 계속 공부할 수 있어요. 새 숙제와 강의는 연결되면 갱신됩니다.");
+      // [175차수] ① 서버가 "그런 학생 없음"(403/404)을 한두 번 잘못 답한 때에도 지금 화면을 그대로 둔다.
+      //   전에는 이때만 폰 저장본으로 바꿔서, 멀쩡히 보던 화면이 "옛날 것이에요"로 바뀌거나(저장본이 없으면) 연결 오류 화면이 됐다.
+      //   세 번 연속이면 위에서 예전처럼 차단한다. 확인이 늦어지지 않게 이 경우는 "연속 실패"로 세지 않는다(다음 확인을 늦추지 않음).
+      //   ② 지금 보는 것이 폰 저장본(옛 자료)이면 "언제 저장한 것인지" 적힌 안내를 그대로 둔다 — 전에는 다음 실패 때
+      //   "연결이 잠시 늦어지고 있어요"로 바뀌어 옛 자료라는 표시가 사라졌다.
+      if (!IS_TEACHER_MODE && displayedBundleRef.current?.studentId === String(studentId)) {
+        if (e?.code === "withdrawn") pollFailRef.current = Math.max(0, pollFailRef.current - 1);
+        if (displayedBundleRef.current.bundle?.source !== "local-backup") {
+          setOfflineNotice("연결이 잠시 늦어지고 있어요. 현재 자료로 계속 공부할 수 있어요. 새 숙제와 강의는 연결되면 갱신됩니다.");
+        }
         setError(null);
         return;
       }
