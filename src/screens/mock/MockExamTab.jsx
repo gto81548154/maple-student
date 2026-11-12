@@ -26,6 +26,21 @@ export function MockExamTab({ studentId, onBusy }) {
   const [exam, setExamState] = useState(() => loadMockExamState(studentId)); // 진행/완료된 시험 (폰 저장과 동기화)
 
   const setExam = (st) => { setExamState(st); saveMockExamState(studentId, st); };
+  // [176차수] 시계 화면이 아닌 곳(회차 메뉴 등)에 있을 때도 1초마다 남은 시간을 보고, 다 되면 "시험 끝"으로 넘긴다(원장 결정 11-12).
+  //   전에는 시계 화면에서만 끝 처리를 해서, 메뉴에서 시간이 끝나면 답 입력이 "자유 응시"로 들어가 듣기 제외가 빠지고
+  //   "남은 시간" 글도 멈춰 있었다. 시계 화면에 있을 때는 그 화면이 직접 처리한다(음원 멈춤까지).
+  const [, setMenuTick] = useState(0);
+  useEffect(() => {
+    if (!exam || exam.phase !== "running" || view === "exam70" || view === "exam50") return undefined;
+    const check = () => {
+      const left = mockExamRemainingMs(exam.startedAt, exam.mode, Date.now());
+      if (left <= 0) setExam({ ...exam, phase: "done", endedAt: Date.now() + left });
+      else setMenuTick((n) => (n + 1) % 1000000);
+    };
+    check();
+    const t = setInterval(check, 1000);
+    return () => clearInterval(t);
+  }, [exam && exam.phase, exam && exam.startedAt, exam && exam.mode, view]);
 
   const load = async () => {
     setLoading(true); setError("");

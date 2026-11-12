@@ -36,8 +36,14 @@ export function useOwnerToeic(enabled) {
       const body = await sync.discardHead();
       const answers = body && (body.submitAnswers || body.answerDraft);
       if (answers && body.id) {
-        try { window.localStorage.setItem(toeicDraftKey(body.id), JSON.stringify(answers)); } catch { /* 보관 못 해도 버리기는 끝난 상태 */ }
-        window.dispatchEvent(new CustomEvent(TOEIC_DRAFT_EVENT, { detail: { id: body.id } }));
+        // [177차수] 버린 답을 기기 보관 답으로 되살리는 것은 "더 새 답이 없을 때"만 한다. 전에는 무조건 덮어써서,
+        //   막힌 뒤에 새로 넣은 답(기기 보관 답이나 대기 중인 더 나중 저장)이 옛 답으로 바뀌었다.
+        let hasNewer = !!body._superseded;
+        try { if (window.localStorage.getItem(toeicDraftKey(body.id))) hasNewer = true; } catch { /* 못 읽으면 덮어쓰지 않는 쪽이 안전 */ hasNewer = true; }
+        if (!hasNewer) {
+          try { window.localStorage.setItem(toeicDraftKey(body.id), JSON.stringify(answers)); } catch { /* 보관 못 해도 버리기는 끝난 상태 */ }
+          window.dispatchEvent(new CustomEvent(TOEIC_DRAFT_EVENT, { detail: { id: body.id } }));
+        }
       }
       return body;
     },

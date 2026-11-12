@@ -999,6 +999,12 @@ const PICKMODE = (() => {
 /* [교사 선별] 선별본 파일 이름 — 원장은 {책id}.json(정본), 선생님은 {pkid}_{책id}.json(따로 보관). */
 const pickFileName = (bookId) => `${(STU && STU.pkid) ? STU.pkid + '_' : ''}${bookId}.json`;
 const KEY = STU ? `maplevoca_v1_s${STU.id}` : 'maplevoca_v1';   // 학생 모드: 기기 공유 대비 학생별 분리
+/* [176차수] "마지막에 연 책"·"내신 보기"도 학생마다 따로 기억한다(원장 결정 11-12). 전에는 폰 하나에 한 칸뿐이라
+ *   형제가 같은 폰을 쓰면 다른 형제가 마지막에 연 책이 열렸다. 새 칸이 비어 있으면 예전 칸을 한 번 읽어 온다(혼자 쓰는 폰은 그대로 이어지게). */
+const SID_SUFFIX = STU ? `_s${STU.id}` : '';
+const LASTBOOK_KEY = 'maplevoca_lastbook' + SID_SUFFIX;
+const lastBookGet = () => { try{ return localStorage.getItem(LASTBOOK_KEY) || localStorage.getItem('maplevoca_lastbook') || ''; }catch(e){ return ''; } };
+const nsViewKey = () => 'maplevoca_nsview_' + STU.sc + SID_SUFFIX;
 const store = {
   mem: null,
   async load(){
@@ -1416,12 +1422,12 @@ function nsKindLabel(ex, k){
 }
 const nsWeeksOf = ex => [...new Set(ex.sets.map(x => x.week))].sort((a, b) => (a || 99) - (b || 99));   // 주차 없는 것(0)은 맨 뒤 "기타"
 const nsExamLabel = ex => `${ex.year && ex.year !== new Date().getFullYear() ? ex.year + '년 ' : ''}${ex.exam}`;
-function nsSaveView(){ try{ localStorage.setItem('maplevoca_nsview_' + STU.sc, JSON.stringify(NSV)); }catch(e){} }
+function nsSaveView(){ try{ localStorage.setItem(nsViewKey(), JSON.stringify(NSV)); }catch(e){} }
 /* 고른 것(NSV)을 지금 있는 자료에 맞게 고치고, 그 결과 보기(NSVIEW)를 만든다. 내신 자료가 없으면 null */
 function nsResolve(){
   const list = nsExamList();
   if (!list.length){ NSVIEW = null; return null; }
-  if (!NSV){ try{ NSV = JSON.parse(localStorage.getItem('maplevoca_nsview_' + STU.sc) || 'null'); }catch(e){ NSV = null; } }
+  if (!NSV){ try{ NSV = JSON.parse(localStorage.getItem(nsViewKey()) || localStorage.getItem('maplevoca_nsview_' + STU.sc) || 'null'); }catch(e){ NSV = null; } }
   if (!NSV || typeof NSV !== 'object') NSV = {};
   const cur = nsCurKey();
   // 시험: 지금 준비하는 시험이 바뀌었으면(중간 → 기말) 저절로 그 시험으로. 아니면 전에 고른 시험, 없으면 지금 시험 → 가장 최근 시험
@@ -1881,7 +1887,7 @@ async function openBook(id){
   BOOK = b;
   if (b.ns) nsPointTo(b.id, null);                  // [128차수] 내신 책 — 이 책이 보이는 보기로 맞춘다(이미 맞으면 그대로)
   lecListExpanded = false;                          // [107차수] 새 책은 단원 목록을 접힌 상태(10칸)로
-  try{ localStorage.setItem('maplevoca_lastbook', b.id); }catch(e){}   // [0812] 홈 카드 "바로 열기"용 — 이 기기에서 마지막으로 연 책
+  try{ localStorage.setItem(LASTBOOK_KEY, b.id); }catch(e){}   // [0812] 홈 카드 "바로 열기"용 — 이 기기에서 마지막으로 연 책
   BOOKST = (ROOT.books[b.id] ||= newBookState());
   ALL = list || [];
   setLayer('main');                                // 책을 열 때는 언제나 일반 모드로 시작
@@ -3297,6 +3303,7 @@ async function finishHw(){
   $('#hwRetrySend').style.display = 'none';
   openModal('#mHwDone');
   // [0818 도장 1차수] 보낼 내용을 한 뭉치로 — 실패하면 이 뭉치를 그대로 폰에 적어둔다
+  // [176차수] r(처음부터 다시 푼 횟수)은 이 폰의 완료 창에만 쓴다 — 서버로는 보내지 않기로 했다(원장 결정 11-12).
   const rec = { date: hw.date, book: hw.book, lecs: hw.lecs, n: hw.total, w: hwWrong, r: hwRedo,
     deadline: hw.deadline || '', doneAt: new Date().toISOString() };
   const base = `총 ${hw.total}단어 · 틀린 횟수 ${hwWrong}번` + (hwRedo ? ` · 처음부터 다시 ${hwRedo}번.` : '.');
@@ -3667,7 +3674,7 @@ function tryOpenLastBook(){
   OPEN_LAST_PENDING = false;
   if (BOOK) return;                                   // 이미 책이 열려 있으면 건드리지 않음
   let id = '';
-  try{ id = localStorage.getItem('maplevoca_lastbook') || ''; }catch(e){}
+  id = lastBookGet();
   if (!id) return;
   const b = BOOKS.find(x => x.id === id);
   if (!b) return;
@@ -3937,7 +3944,7 @@ $('#brandBtn').onclick = goShelf;
 function prefetchList(){
   const shelf = shelfBooks().filter(bookReady);
   const stu = STU && !STU.master;
-  const last = (() => { try{ return localStorage.getItem('maplevoca_lastbook') || ''; }catch(e){ return ''; } })();
+  const last = lastBookGet();
   const pick = [];
   const add = id => { const b = shelf.find(x => x.id === id); if (b && !pick.includes(b)) pick.push(b); };
   add(last);                                        // 어느 화면이든 마지막으로 본 책이 1순위

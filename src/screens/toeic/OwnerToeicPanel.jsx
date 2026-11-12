@@ -40,6 +40,7 @@ export function OwnerToeicPanel({ toeic, pickId, onPicked }) {
   useEffect(() => { setScoreText(rec.score != null ? String(rec.score) : ""); }, [sel, rec.score]);
 
   const open = (id) => {
+    if (id === sel) return;   // [177차수] 이미 열려 있는 회차를 또 누르면 아무것도 안 한다 — 전에는 길이가 0으로 지워져 재생 막대가 고장 났다
     if (sel && cur && cur.part === "lc" && audioRef.current) { sendPos(true); try { audioRef.current.pause(); } catch (e) {} }
     setSel(id); setPos(0); setDur(0); setPaused(true); resumedRef.current = "";
     save(id, { open: true });
@@ -52,6 +53,9 @@ export function OwnerToeicPanel({ toeic, pickId, onPicked }) {
   const sendPos = (force) => {
     const a = audioRef.current;
     if (!a || !sel || !cur || cur.part !== "lc") return;
+    // [177차수] 음원 정보를 아직 못 읽었으면(지난번 듣던 곳으로 옮기기 전) 위치를 저장하지 않는다.
+    //   전에는 회차를 빠르게 넘기면 0초가 저장돼 "지난번 20:00까지 들었어요"가 사라졌다.
+    if (resumedRef.current !== sel) return;
     const now = Date.now();
     if (!force && now - lastSentRef.current < 15000) return;   // 15초에 한 번만 저장
     lastSentRef.current = now;

@@ -186,7 +186,9 @@ export function createToeicSync({ storage, locks, key, url, fetcher = fetch, uui
         const state = read();
         // [162] 음원 위치(15초마다)는 같은 회차의 바로 앞 위치 기록을 덮어쓴다. 보내는 중일 수 있는 맨 앞 기록은 건드리지 않는다.
         const last = state.ops[state.ops.length - 1];
-        const coalesce = isPosition(payload) && last && isPosition(last.payload) && last.payload.id === payload.id && (state.ops.length > 1 || !saving);
+        // [177차수] 맨 앞 기록에는 절대 합치지 않는다. 전에는 "이 창이 보내는 중이 아니면" 합쳤는데, 다른 창(탭)이 그 기록을 보내는 중일 수 있어
+        //   새 위치가 덮어써진 채 사라졌다(듣던 곳이 뒤로 돌아감). 대신 대기 기록이 한 개 더 생길 수 있다.
+        const coalesce = isPosition(payload) && last && isPosition(last.payload) && last.payload.id === payload.id && state.ops.length > 1;
         if (coalesce) { write({ ...state, ops: [...state.ops.slice(0, -1), { seq: last.seq, payload }] }); return; }
         if (state.ops.length >= TOEIC_QUEUE_LIMIT) throw new Error('저장 대기 기록이 많아요. 먼저 다시 저장을 눌러 주세요. 이번 입력은 저장하지 못했어요.');
         // Persist before showing the optimistic result. Credentials never enter the outbox.
@@ -200,17 +202,29 @@ export function createToeicSync({ storage, locks, key, url, fetcher = fetch, uui
   // [162] 서버가 거절한 맨 앞 기록만 버린다(번호가 맞을 때만). 버린 기록의 내용을 돌려줘 호출한 쪽이 답을 기기에 남길 수 있게 한다.
   const discardHead = async () => {
     if (flushing) await flushing.catch(() => {});
-    let removed = null;
+    // [177차수] 버리기 전에 서버 기록을 한 번 다시 본다. 서버가 실은 저장해 놓고 오류로 답한 경우(중간에서 끊김 등)에는
+    //   그 번호가 이미 쓰였으므로, 뒤 기록을 그 번호로 다시 매기면 뒤 기록이 "이미 받은 것"으로 처리돼 조용히 사라졌다.
+    //   다시 봐서 맨 앞 기록이 이미 저장돼 있으면 버릴 것이 없다(대기에서만 빠진다). 서버를 못 보면 예전처럼 진행한다.
+    const stuckSeq = stuck ? stuck.seq : null;
+    try {
+      const data = await request('GET');
+      await locked(() => { const state = read(); acceptBase(state, data.toeic); write(state); });
+    } catch { /* 서버를 못 봤다 — 아래에서 예전 방식대로 */ }
+    let removed = null, alreadySaved = false;
     try {
       await locked(() => {
         const state = read();
         const head = state.ops[0];
+        if (stuckSeq != null && (!head || head.seq > stuckSeq)) { alreadySaved = true; return; }   // 서버에 이미 들어가 있었다
         if (!head || !stuck || head.seq !== stuck.seq) return;
-        removed = head.payload;
+        // 같은 회차의 답을 담은 더 나중 기록이 대기에 남아 있는지 — 있으면 버린 답을 화면에 되살리면 안 된다(더 새 답을 가린다).
+        const superseded = state.ops.slice(1).some(op => op.payload && op.payload.id === head.payload.id && (op.payload.submitAnswers || op.payload.answerDraft));
+        removed = { ...head.payload, _superseded: superseded };
         // 서버는 기기별 번호가 1씩 이어져야 받는다. 거절된 기록은 서버에 영수증이 없으므로 뒤 기록을 그 번호부터 다시 매긴다.
         write(renumber({ ...state, ops: state.ops.slice(1) }, head.seq));
       });
     } catch (e) { fail(e); return null; }
+    if (alreadySaved) { stuck = null; blocked = false; error = ''; emit(); if (canSync) void flush(); return null; }
     if (!removed) return null;
     stuck = null; blocked = false; error = '';
     emit();
