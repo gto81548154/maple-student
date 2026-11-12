@@ -43,7 +43,7 @@ export function computeMoreView(D) {
       { key: "cal", icon: "📅", title: "수업 일정", sub: calSub },
       // 오답 복습은 예전 "오답" 탭과 같은 조건(틀린 단어가 있을 때만)으로 나온다
       ...(hasVocabWrong ? [{ key: "vocabWrong", icon: "📝", title: "오답 복습",
-          sub: vocabWarn.overdue > 0 ? `단어 시험 틀린 단어 ${vocabWarn.overdue}개 · 기한 지남` : vocabWarn.dueThisWeek > 0 ? `틀린 단어 ${vocabWarn.dueThisWeek}개 · ${vocabWarn.sundayLabel}까지 (D-${vocabWarn.dday})` : `남은 단어 ${wrongCount}개`,
+          sub: vocabWarn.overdue > 0 ? `단어 시험 틀린 단어 ${vocabWarn.overdue}개 · 기한 지남` : vocabWarn.dueThisWeek > 0 ? `틀린 단어 ${vocabWarn.dueThisWeek}개 · ${vocabWarn.sundayLabel}까지 (${vocabWarn.ddayLabel || `D-${vocabWarn.dday}`})` : `남은 단어 ${wrongCount}개`,
           subTone: vocabWarn.overdue > 0 ? "warn" : undefined }] : []),
       // [145차수 → 152차수] "녹음 제출"은 "🎤 파닉스" 안(맨 아래 자유 녹음 칸)으로 합쳤다. 설명 = 안 끝난 파닉스 숙제 수(있으면 빨강)
       { key: "phonics", icon: "🎤", title: "파닉스", sub: phonicsSub, subTone: phonicsPending.length ? "warn" : undefined },

@@ -13,13 +13,34 @@ const isBadSchoolTokenForDday = (v = "") => {
   // 시험명에 들어가는 일반 단어가 학교명처럼 잡히는 경우 방지
   return /(모의고|기말고|중간고|정기고|고사)$/.test(t);
 };
+// [174차수] 학교 이름 뽑기 — 전에는 글을 다 붙인 뒤 "처음 나오는 중·고"에서 끊어서, "광주중앙고"가 "광주중"이 됐다
+//   (그래서 ○○중앙고 학생에게 ○○중 시험 D-day·시험 범위가 보였다). 이제 띄어쓰기로 나눈 낱말마다 본다.
+//   낱말 안에서 "중·고"로 끝나는 앞부분들 가운데
+//     ① 그 뒤가 비었거나 숫자·괄호·시험 말(중간·기말·모의…)로 이어지는 가장 짧은 것,
+//     ② 그런 것이 없으면 가장 긴 것 을 학교 이름으로 본다.
+//   예) 광주중앙고1 → 광주중앙고 · 윤슬중2학년 → 윤슬중 · 윤슬중기말고사 → 윤슬중 · 하남고중간고사 → 하남고 · 고덕중 → 고덕중
+const SCHOOL_TAIL_OK_RE = /^(?:$|[0-9(\[]|중간|기말|모의|정기|학기|학년|시험|내신|지필|수행)/;
+const schoolTokenOfWord = (word = "") => {
+  const cands = [];
+  for (let i = 1; i < word.length; i += 1) {
+    const ch = word[i];
+    if (ch !== "중" && ch !== "고") continue;
+    const head = word.slice(0, i + 1);
+    if (!/^[가-힣A-Za-z0-9]+$/.test(head) || /^[0-9]/.test(head) || isBadSchoolTokenForDday(head)) continue;
+    cands.push({ head, tail: word.slice(i + 1) });
+  }
+  if (!cands.length) return "";
+  const good = cands.find(c => SCHOOL_TAIL_OK_RE.test(c.tail));
+  return (good || cands[cands.length - 1]).head;
+};
 const extractSchoolTokenForDday = (v = "") => {
-  const text = compactSchoolTextForDday(v);
-  const matches = [...text.matchAll(/([가-힣A-Za-z0-9]+?(?:중|고))/g)]
-    .map(m => m[1])
-    .map(t => t.replace(/[123](?:학년|학기|학)?$/g, ""))
-    .filter(t => !isBadSchoolTokenForDday(t));
-  return matches[0] || "";
+  const text = String(v || "")
+    .replace(/\s*중학교/g, "중").replace(/\s*고등학교/g, "고").replace(/\s*고교/g, "고");
+  for (const word of text.split(/[\s\-_/,·ㆍ]+/)) {
+    const token = schoolTokenOfWord(word.trim());
+    if (token) return token;
+  }
+  return "";
 };
 // student.name은 검사 대상에서 제외한다.
 // (예: "이중수"의 '중', "고석원"의 '고'가 학교 종류로 오인식되는 문제 방지)
@@ -37,6 +58,10 @@ export const getStudentLevelForDday = (student = {}) => {
   if (/고\s*[123]/.test(gradeText)) return "high";
 
   // 3) school 텍스트의 단일 글자 fallback
+  // [174차수] 학교 이름의 "끝 글자"로 본다 — 전에는 이름 안에 "고"가 있기만 하면 고등학교로 봐서 "고덕중"·"고양중"이 고등학생이 됐다.
+  const token = extractSchoolTokenForDday(schoolText);
+  if (/중$/.test(token)) return "middle";
+  if (/고$/.test(token)) return "high";
   if (/중/.test(schoolText) && !/고/.test(schoolText)) return "middle";
   if (/고/.test(schoolText)) return "high";
 

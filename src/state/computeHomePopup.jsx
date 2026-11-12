@@ -32,7 +32,7 @@ export function computeHomePopup(D) {
       body: `틀린 단어 ${vocabWarn.overdue}개 · ${vocabWarn.overdueSundayLabel || "지난주"}까지였어요.\n지금 복습해서 통과하면 돼요.`, cta: "지금 복습하기", tab: "vocabWrong" });
   } else if (vocabWarn && vocabWarn.dueThisWeek > 0) {
     cards.push({ key: "vocab-due", tone: "navy", icon: "📝", title: `틀린 단어 ${vocabWarn.dueThisWeek}개, 이번 주까지!`,
-      body: `${vocabWarn.sundayLabel}까지 통과해야 해요 (D-${vocabWarn.dday}).${wrongCount > vocabWarn.dueThisWeek ? `\n전체 남은 단어는 ${wrongCount}개예요.` : ""}`, cta: "복습하러 가기", tab: "vocabWrong" });
+      body: `${vocabWarn.sundayLabel}까지 통과해야 해요 (${vocabWarn.ddayLabel || `D-${vocabWarn.dday}`}).${wrongCount > vocabWarn.dueThisWeek ? `\n전체 남은 단어는 ${wrongCount}개예요.` : ""}`, cta: "복습하러 가기", tab: "vocabWrong" });
   }
   // ③ 설문
   const svs = Array.isArray(unansweredSurveys) ? unansweredSurveys : [];

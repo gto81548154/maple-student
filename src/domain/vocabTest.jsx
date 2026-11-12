@@ -41,7 +41,11 @@ export const computeVocabReviewWarning = (vocabWrongWords = {}) => {
 
   const sunday = new Date(thisWeekEnd);
   sunday.setDate(sunday.getDate() - 1); // 이번 주 일요일
-  const dday = Math.max(0, Math.ceil((thisWeekEnd - now) / 86400000));
+  // [174차수] "일요일까지"의 D-day는 일요일까지 남은 날 수다. 전에는 다음 월요일 0시까지를 세서 하루 많게 나왔다(목요일에 D-3이어야 하는데 D-4).
+  const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const sunday0 = new Date(sunday.getFullYear(), sunday.getMonth(), sunday.getDate());
+  const dday = Math.max(0, Math.round((sunday0 - today0) / 86400000));
+  const ddayLabel = dday === 0 ? "D-Day" : `D-${dday}`;   // 시험 D-day와 같은 표기
   let overdueSundayLabel = "";
   if (oldestOverdueDeadline) {
     const odSun = new Date(oldestOverdueDeadline);
@@ -56,6 +60,7 @@ export const computeVocabReviewWarning = (vocabWrongWords = {}) => {
     sundayLabel: `${sunday.getMonth() + 1}/${sunday.getDate()}(일)`,
     overdueSundayLabel,
     dday,
+    ddayLabel,
   };
 };
 // ─── 오답 단어 TEST 결과 저장 API ───

@@ -264,7 +264,7 @@ export function renderHomeTab(C) {
                         {vocabWarn.overdue > 0
                           ? (vocabWarn.overdueSundayLabel ? `${vocabWarn.overdueSundayLabel}까지였어요` : "기한이 지났어요")
                           : vocabWarn.dueThisWeek > 0
-                            ? `${vocabWarn.sundayLabel}까지 (D-${vocabWarn.dday})`
+                            ? `${vocabWarn.sundayLabel}까지 (${vocabWarn.ddayLabel || `D-${vocabWarn.dday}`})`
                             : `틀린 단어 ${wrongCount}개`}
                       </span>
                     </span>

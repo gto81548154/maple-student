@@ -36,7 +36,15 @@ const semesterOptions = () => {
   if (m >= 7) list.push({ v: `${y}-2`, label: `${y}년 2학기` });
   return list;
 };
-const defaultSemester = () => { const o = semesterOptions(); return o[o.length - 1].v; };
+// [174차수] 처음 골라져 있는 학기 = "지금 신청할 시험이 있는 학기". 전에는 늘 목록의 마지막이라
+//   7월(1학기 기말 신청 때)에 2학기가, 1~2월(작년 2학기 기말 신청 때)에 올해 1학기가 골라져 있었다.
+//   1~2월 → 작년 2학기 · 3~8월 → 올해 1학기 · 9~12월 → 올해 2학기
+const defaultSemester = () => {
+  const t = new Date(); const y = t.getFullYear(); const m = t.getMonth() + 1;
+  const want = m <= 2 ? `${y - 1}-2` : m <= 8 ? `${y}-1` : `${y}-2`;
+  const o = semesterOptions();
+  return (o.find(x => x.v === want) || o[o.length - 1]).v;
+};
 const semesterLabel = (v) => { const [y, s] = String(v || "").split("-"); return y && s ? `${y}년 ${s}학기` : String(v || ""); };
 const examLabel = (e) => (e === "mid" ? "중간" : e === "final" ? "기말" : e === "both" ? "중간·기말" : "");
 // 사진 → 1600px 이하 JPEG → base64(앞부분 뗌). 캔버스가 안 되면 원본이 2MB 이하일 때만 그대로.

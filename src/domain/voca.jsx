@@ -31,8 +31,18 @@ export const VOCA_UNIT_WORDS = { wm_sn: "DAY", wm_basic: "DAY", wm_hi: "DAY", ve
 //                ② "3회독"·"10개"처럼 단원이 아닌 숫자는 먼저 지우고 읽는다
 const VOCA_NOISE_NUMBER = /\d+\s*(회독|회씩|회|개씩|개|문제|문항|일차|일|쪽|페이지|주차|분|차|번씩)/g;
 const VOCA_RANGE_MARK = /(\d+)\s*[~∼〜～\-–—]\s*(\d+)/g;
+// [174차수] 날짜·쪽수는 단원이 아니다 — "단어-워마 수능 25 26 (11/14까지)"가 DAY 11·14·25·26으로 읽히던 것을 막는다(강의 찾기 쪽 규칙과 같은 모양).
+const VOCA_NOISE_DATE_PAGE = [
+  /\d{1,2}\s*\/\s*\d{1,2}(?=\s*(?:까지|\([월화수목금토일]\)|일))/g,       // 11/14까지 · 11/14(토) — 그냥 "25/26"은 단원 두 개일 수 있어 그대로 둔다
+  /\d{1,2}\s*월\s*\d{1,2}\s*일?(?:\s*까지)?/g,                            // 11월 14일 · 11월 14일까지
+  /\d{1,2}\s*일\s*까지/g,                                                   // 14일까지
+  /[pP]\s*\.?\s*\d+(?:\s*[~∼〜～\-–—]\s*\d+)?/g,                           // p.30 · p30 · p.24~33
+  /\d+(?:\s*[~∼〜～\-–—]\s*\d+)?\s*[pP](?![A-Za-z])/g,                       // 30p · 24~33p
+];
 function parseVocaLecs(text) {
-  const cleaned = String(text || "").replace(VOCA_NOISE_NUMBER, " ");
+  let cleaned = String(text || "");
+  VOCA_NOISE_DATE_PAGE.forEach(re => { cleaned = cleaned.replace(re, " "); });
+  cleaned = cleaned.replace(VOCA_NOISE_NUMBER, " ");
   const out = [];
   // 범위를 먼저 펼친다. 범위로 보기 어려우면 그대로 두고 아래에서 낱개로 읽는다.
   const rest = cleaned.replace(VOCA_RANGE_MARK, (whole, a, b) => {
