@@ -41,7 +41,9 @@ export function StudentSurveyCard({ survey, myResponse, student, onSubmitted }) 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [picked, setPicked] = useState(savedChoices);
-  useEffect(() => { setPicked(savedKey ? savedKey.split(",").map(Number) : []); setMsg(""); }, [survey.id, savedKey]);
+  useEffect(() => { setPicked(savedKey ? savedKey.split(",").map(Number) : []); }, [survey.id, savedKey]);
+  // [176차수] 안내 글은 "다른 설문으로 바뀔 때"만 지운다. 전에는 내 응답이 저장되는 순간에도 지워서 "제출되었습니다…" 글이 한 번도 안 보였다.
+  useEffect(() => { setMsg(""); }, [survey.id]);
 
   const post = async (choicesArr) => {
     // [마스터] 원장이 학생 화면에서 눌러도 그 학생 응답으로 제출되면 안 된다.

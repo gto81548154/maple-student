@@ -45,6 +45,9 @@ const writeStudentKeys = (keys) => {
 const restoreStudentLink = () => {
   try {
     const sp = new URLSearchParams(window.location.search);
+    // [176차수] "선생님 링크가 끊겼어요" 안내 화면에서는 아무 링크도 되살리지 않는다. 전에는 이 폰에 예전 학생 링크가 남아 있으면
+    //   안내 화면 뒤에서 그 학생으로 앱이 켜져(자료 받기·"앱 접속" 표시) 돌고 있었다.
+    if (sp.has("teacher_dead")) return;
     // [마스터] 마스터 모드에서는 학생 링크를 저장하지 않는다.
     // 저장하면 다음 실행 때 아래 복원 로직이 그 학생 화면을 띄워 마스터 진입로가 막힌다.
     if (sp.has("master")) {

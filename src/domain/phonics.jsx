@@ -77,8 +77,10 @@ export const fmtPhonicsDueShort = (due) => {
 export const applyPhonicsSent = (list, taskId, wordNo, rec, taskPatch) => (list || []).map((t) => {
   if (String(t.id) !== String(taskId)) return t;
   const words = t.words.map((w) => (w.no === wordNo ? { ...w, rec } : w));
-  const doneRaw = Number(taskPatch && taskPatch.done);
-  const totalRaw = Number(taskPatch && taskPatch.total);
+  // [176차수] 서버 답에 숫자가 없으면(null·빈칸) "모름"으로 본다 — Number(null)은 0이라, 전에는 보낸 직후 "0/5"로 내려갈 수 있었다.
+  const numOrNaN = (v) => (v == null || v === "" ? NaN : Number(v));
+  const doneRaw = numOrNaN(taskPatch && taskPatch.done);
+  const totalRaw = numOrNaN(taskPatch && taskPatch.total);
   const total = Number.isFinite(totalRaw) && totalRaw > 0 ? totalRaw : t.total;
   const done = Number.isFinite(doneRaw) ? doneRaw : words.filter((w) => w.rec).length;
   return { ...t, words, done: Math.max(0, Math.min(total, done)), total };

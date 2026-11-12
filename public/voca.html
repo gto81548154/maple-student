@@ -3109,7 +3109,8 @@ async function sendHwRecord(rec){
       body: JSON.stringify({ date: rec.date, book: rec.book, lecs: rec.lecs, n: rec.n, w: rec.w,
         deadline: rec.deadline || undefined, doneAt: rec.doneAt || undefined }) });
     const j = await r.json().catch(() => null);
-    if (!r.ok || !j || !j.success) return { fail: true };
+    // [176차수] rejected = 서버가 "이 기록은 못 받는다"고 분명히 답함(400대). 인터넷 문제(fail만)와 구분해서, 다시 보내기 때 이 한 건이 뒤의 것들을 막지 않게 한다.
+    if (!r.ok || !j || !j.success) return { fail: true, rejected: r.status >= 400 && r.status < 500 && r.status !== 408 && r.status !== 429 };
     return { late: !!j.late };
   }catch(e){ return { fail: true }; }
 }
@@ -3128,6 +3129,11 @@ async function hwPendFlush(){
   try{
     for (const d of dates){
       const res = await sendHwRecord(m[d]);
+      if (res.rejected){                              // [176차수] 서버가 거절한 것은 건너뛰고 다음 것을 보낸다. 14일 지난 메모는 여기서 버린다.
+        const t = Date.parse(d);
+        if (Number.isFinite(t) && t < Date.now() - 14 * 86400000) hwPendDrop(d);
+        continue;
+      }
       if (res.fail || res.offline) break;             // 아직 안 되면 다음 기회에 (메모는 그대로)
       hwPendDrop(d);
     }
@@ -3814,7 +3820,8 @@ $('#btnExp').onclick = () => {
 $('#btnImp').onclick = () => {
   try {
     const obj = JSON.parse($('#ioBox').value);
-    if (typeof obj.round !== 'number' || typeof obj.words !== 'object') throw 0;
+    // [176차수] 내보내기가 만드는 지금 형식({ books })도 받는다. 전에는 옛 형식(책 한 권)만 받아서, 방금 내보낸 백업을 다시 넣으면 늘 "형식이 올바르지 않아요"였다.
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) throw 0;
     if (!adoptRemote(obj)) throw 0;
     rerender(); toast('가져오기 완료');
   } catch(e){ toast('형식이 올바르지 않아요'); }

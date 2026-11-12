@@ -91,6 +91,9 @@ function TaskDetail({ studentId, task, todayStr, onBack, onTasksChange, onReload
     if (!canSend) { setNotice("마감이 지나서 이제 보낼 수 없어요"); return; }
     if (IS_STAFF_VIEW) { setNotice("보기 전용 화면에서는 녹음할 수 없어요"); return; }
     setFlashNo(null);
+    // [176차수] 다른 단어로 넘어갈 때는 앞 단어의 녹음(아직 안 보낸 것)을 먼저 버린다. 전에는 마이크가 거절되면
+    //   앞 단어의 녹음이 이 단어 줄에 [보내기]로 남아, 다른 단어의 소리가 이 단어 것으로 보내질 수 있었다.
+    if (activeNo !== w.no) R.reset();
     setActiveNo(w.no);
     const ok = await R.start(() => stopPlay());
     if (!ok && aliveRef.current) { /* 권한 거절 등 — 안내만 남기고 줄은 그대로 */ }

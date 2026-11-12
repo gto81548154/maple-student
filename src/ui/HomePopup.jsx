@@ -8,6 +8,8 @@ import { MAX_W, TAP, UI } from "../theme/tokens.jsx";
 export function HomePopup({ cards, onClose, onHideToday, onHideForever, onGo }) {
   const [idx, setIdx] = useState(0);
   const n = cards.length;
+  // [176차수] 카드가 줄어들면(마지막 장에서 [앞으로 안 보기]) 지금 번호를 남은 장 수에 맞춘다. 전에는 "3 / 2"로 나오고 점 표시가 다 꺼졌다.
+  useEffect(() => { if (idx > n - 1) setIdx(Math.max(0, n - 1)); }, [n]);
   const card = cards[Math.min(idx, n - 1)];
   useEffect(() => { const onKey = (e) => { if (e.key === "Escape") onClose(); }; window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey); }, []);
   if (!card) return null;
