@@ -27,6 +27,21 @@ const getSavedTeacherLink = () => {
 export const saveTeacherLink = (tid, tk) => { try { localStorage.setItem(TEACHER_LINK_KEY, JSON.stringify({ tid: String(tid), tk: String(tk) })); } catch (e) {} };
 const clearTeacherLink = () => { try { localStorage.removeItem(TEACHER_LINK_KEY); } catch (e) {} };
 export const LINK_STORE_KEY = "mapl_student_link_v1";
+// [167차수] 학생별 열쇠 기억장 — { [학생id]: t }. 한 폰(PC)에서 여러 학생 링크를 열어도 각자 열쇠가 남는다. 최대 30명.
+const STUDENT_KEYS_STORE = "mapl_student_keys_v1";
+const readStudentKeys = () => {
+  try {
+    const v = JSON.parse(localStorage.getItem(STUDENT_KEYS_STORE) || "null");
+    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+  } catch (e) { return {}; }
+};
+const writeStudentKeys = (keys) => {
+  try {
+    const ids = Object.keys(keys);
+    if (ids.length > 30) ids.slice(0, ids.length - 30).forEach((k) => { delete keys[k]; });
+    localStorage.setItem(STUDENT_KEYS_STORE, JSON.stringify(keys));
+  } catch (e) { /* 저장 공간 문제는 무시 — 기억만 못 할 뿐 */ }
+};
 const restoreStudentLink = () => {
   try {
     const sp = new URLSearchParams(window.location.search);
@@ -37,7 +52,35 @@ const restoreStudentLink = () => {
     //   id가 함께 있어도 학생 링크로 저장하면 안 된다(다음에 열 때 학생 화면이 떠 교사 진입로가 막힌다).
     if (sp.get("tid") && sp.get("tk")) { saveTeacherLink(sp.get("tid"), sp.get("tk")); return; }
     if (sp.get("id")) {
-      localStorage.setItem(LINK_STORE_KEY, JSON.stringify({ id: sp.get("id"), t: sp.get("t") || "" }));
+      // [167차수] 열쇠(t) 빠진 옛 링크(?id=만 있는 주소)로 들어와도, 이 폰이 그 학생의 진짜 링크로 한 번이라도
+      //   들어온 적이 있으면 그때 기억해 둔 열쇠를 주소에 다시 채워 준다(원장 결정 11-12 "방법 2").
+      //   · 처음 보는 폰은 기억해 둔 열쇠가 없으니 지금처럼 서버가 막는다 — 안전은 그대로.
+      //   · 예전에는 열쇠 없는 링크로 들어오면 저장해 둔 열쇠까지 빈칸으로 덮어썼다 → 이제 덮어쓰지 않는다.
+      //   · 열쇠가 재발급돼 기억한 열쇠가 죽었으면 서버가 거절한다(예전과 같다). 새 링크로 들어오면 새 열쇠로 바뀐다.
+      const linkId = String(sp.get("id"));
+      let linkT = sp.get("t") || "";
+      const keys = readStudentKeys();
+      if (linkT) {
+        keys[linkId] = linkT;
+        writeStudentKeys(keys);
+      } else {
+        let remembered = keys[linkId] || "";
+        if (!remembered) {
+          // 167차수 이전에 저장된 "마지막 링크"에 같은 학생의 열쇠가 남아 있으면 그것을 쓴다.
+          try {
+            const prev = JSON.parse(localStorage.getItem(LINK_STORE_KEY) || "null");
+            if (prev && String(prev.id) === linkId && prev.t) remembered = String(prev.t);
+          } catch (e) { /* ignore */ }
+        }
+        if (remembered) {
+          linkT = remembered;
+          keys[linkId] = remembered;
+          writeStudentKeys(keys);
+          sp.set("t", remembered);
+          window.history.replaceState(null, "", window.location.pathname + "?" + sp.toString() + (window.location.hash || ""));
+        }
+      }
+      localStorage.setItem(LINK_STORE_KEY, JSON.stringify({ id: linkId, t: linkT }));
       return;
     }
     // [마스터] 파라미터 없이 열렸고 폰에 마스터 열쇠가 있으면 마스터 홈으로 복원한다(이름+뒷4자리 재입력 없음).
