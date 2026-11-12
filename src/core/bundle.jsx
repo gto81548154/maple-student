@@ -244,6 +244,8 @@ const loadStudentBundleFromWorker = async (studentId, { forceFresh = false } = {
     popups: Array.isArray(payload.popups) ? payload.popups : [],
     // [149차수] 정규 커리큘럼 지도(1~7단계, 줄·책) — 워커 14단계가 주면. 옛 워커면 null.
     curriculum: isPlainObject(payload.curriculum) ? payload.curriculum : null,
+    // [170차수] 단어 리그(제목·기간·상품·1~3등·내 등수) — 워커가 주면. 리그가 없거나 옛 워커면 null.
+    league: isPlainObject(payload.league) ? payload.league : null,
   };
 };
 export const loadStudentBundle = async (studentId, opts = {}) => {

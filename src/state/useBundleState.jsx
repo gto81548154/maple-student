@@ -32,11 +32,12 @@ export function useBundleState() {
   const [surveyResponses, setSurveyResponses] = useState({}); // [설문] 본인 응답(svyr3)
   const [popups, setPopups] = useState([]);
   const [curriculum, setCurriculum] = useState(null); // [149차수] 정규 커리큘럼 지도(curriculum) — 읽기 전용 // [147차수] 원장이 올린 앱 켤 때 카드(popups) — 읽기 전용
+  const [league, setLeague] = useState(null); // [170차수] 단어 리그(league) — 읽기 전용. 없으면 null
   const [refreshing, setRefreshing] = useState(false); // 수동 새로고침 상태
   const [syncSource, setSyncSource] = useState(""); // worker
   const [lastLoadedAt, setLastLoadedAt] = useState(null); // 마지막 동기화 시각
   const [videoStatsUnavailable, setVideoStatsUnavailable] = useState(false);
   const displayedBundleRef = useRef(null); // 저장 공간이 막혀도 현재 정상 화면을 유지한다.
   const [offlineNotice, setOfflineNotice] = useState(""); // Worker 실패 시 로컬 백업 표시 안내
-  return { bundleVocaHw, setBundleVocaHw, attLog, attStatus, checklistData, customHolidays, displayedBundleRef, error, examRanges, exams, lastLoadedAt, loadErrorCode, loading, loadingSlow, makeups, masterWithdrawn, curriculum, offlineNotice, popups, progressTree, records, refreshing, setAttLog, setAttStatus, setChecklistData, setCustomHolidays, setError, setExamRanges, setExams, setLastLoadedAt, setLoadErrorCode, setLoading, setMakeups, setMasterWithdrawn, setCurriculum, setOfflineNotice, setPopups, setProgressTree, setRecords, setRefreshing, setStudent, setSurveyResponses, setSurveys, setSyncSource, setTodos, setVideoStatsUnavailable, setVideos, setVocabWrongWords, setWithdrawnName, student, surveyResponses, surveys, syncSource, todos, videoStatsUnavailable, videos, vocabWrongWords, withdrawnName };
+  return { league, setLeague, bundleVocaHw, setBundleVocaHw, attLog, attStatus, checklistData, customHolidays, displayedBundleRef, error, examRanges, exams, lastLoadedAt, loadErrorCode, loading, loadingSlow, makeups, masterWithdrawn, curriculum, offlineNotice, popups, progressTree, records, refreshing, setAttLog, setAttStatus, setChecklistData, setCustomHolidays, setError, setExamRanges, setExams, setLastLoadedAt, setLoadErrorCode, setLoading, setMakeups, setMasterWithdrawn, setCurriculum, setOfflineNotice, setPopups, setProgressTree, setRecords, setRefreshing, setStudent, setSurveyResponses, setSurveys, setSyncSource, setTodos, setVideoStatsUnavailable, setVideos, setVocabWrongWords, setWithdrawnName, student, surveyResponses, surveys, syncSource, todos, videoStatsUnavailable, videos, vocabWrongWords, withdrawnName };
 }

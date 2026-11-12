@@ -59,7 +59,7 @@ export default function App() {
   //       아예 버튼을 안 띄우고 안내 문구로 바꾼다.
   const attToken = params.get("t") || "";
   useAppBoot();
-  const { bundleVocaHw, setBundleVocaHw, attLog, attStatus, checklistData, customHolidays, displayedBundleRef, error, examRanges, exams, lastLoadedAt, loadErrorCode, loading, loadingSlow, makeups, masterWithdrawn, offlineNotice, progressTree, records, refreshing, setAttLog, setAttStatus, setChecklistData, setCustomHolidays, setError, setExamRanges, setExams, setLastLoadedAt, setLoadErrorCode, setLoading, setMakeups, setMasterWithdrawn, setOfflineNotice, setProgressTree, setRecords, setRefreshing, setStudent, setSurveyResponses, setSurveys, setSyncSource, setTodos, setVideoStatsUnavailable, setVideos, setVocabWrongWords, setWithdrawnName, student, surveyResponses, surveys, syncSource, todos, videoStatsUnavailable, videos, vocabWrongWords, withdrawnName, popups, setPopups, curriculum, setCurriculum } = useBundleState();
+  const { league, setLeague, bundleVocaHw, setBundleVocaHw, attLog, attStatus, checklistData, customHolidays, displayedBundleRef, error, examRanges, exams, lastLoadedAt, loadErrorCode, loading, loadingSlow, makeups, masterWithdrawn, offlineNotice, progressTree, records, refreshing, setAttLog, setAttStatus, setChecklistData, setCustomHolidays, setError, setExamRanges, setExams, setLastLoadedAt, setLoadErrorCode, setLoading, setMakeups, setMasterWithdrawn, setOfflineNotice, setProgressTree, setRecords, setRefreshing, setStudent, setSurveyResponses, setSurveys, setSyncSource, setTodos, setVideoStatsUnavailable, setVideos, setVocabWrongWords, setWithdrawnName, student, surveyResponses, surveys, syncSource, todos, videoStatsUnavailable, videos, vocabWrongWords, withdrawnName, popups, setPopups, curriculum, setCurriculum } = useBundleState();
   // [0812 대시보드] 첫 화면 = 홈 카드판. [133차수] 주소(#탭)에 화면이 적혀 있으면 그 화면(새로고침해도 보던 탭 그대로). 단어 탭이 꺼져 있으면 홈으로.
   //   학생 id 가 없는 화면(선생님 홈·마스터 홈·링크 찾기)은 여기 주소를 쓰지 않는다(선생님 홈은 제 주소를 따로 씀 — 134차수).
   const routeOn = !!studentId;
@@ -180,7 +180,7 @@ export default function App() {
     }
   }, [viewingVideo]);
   const loadDataRef = useRef(null);
-  const { loadData } = useBundleLoader({ setBundleVocaHw, displayedBundleRef, setAttLog, setAttStatus, setChecklistData, setCustomHolidays, setError, setExamRanges, setExams, setLastLoadedAt, setLoadErrorCode, setLoading, setMakeups, setMasterWithdrawn, setCurriculum, setOfflineNotice, setPopups, setProgressTree, setRecords, setRefreshing, setStudent, setSurveyResponses, setSurveys, setSyncSource, setTodos, setVideoStatsUnavailable, setVideoWatch, setVideos, setVocabWrongWords, setWithdrawnName, studentId, viewingVideoRef, withdrawnRef });
+  const { loadData } = useBundleLoader({ setLeague, setBundleVocaHw, displayedBundleRef, setAttLog, setAttStatus, setChecklistData, setCustomHolidays, setError, setExamRanges, setExams, setLastLoadedAt, setLoadErrorCode, setLoading, setMakeups, setMasterWithdrawn, setCurriculum, setOfflineNotice, setPopups, setProgressTree, setRecords, setRefreshing, setStudent, setSurveyResponses, setSurveys, setSyncSource, setTodos, setVideoStatsUnavailable, setVideoWatch, setVideos, setVocabWrongWords, setWithdrawnName, studentId, viewingVideoRef, withdrawnRef });
   loadDataRef.current = loadData;
   const { toggleVideo } = useVideoSession({ activeSecRef, awayCountRef, awaySecRef, awayStartRef, currentSessionIdRef, flushingRef, lastActiveAtRef, lastSavedAwayCountRef, lastSavedAwaySecRef, lastSavedFocusSecRef, lastSavedPlaySecRef, longestAwayRef, setLastVideoSaveStatus, setPendingVideoCount, setVideoWatch, setViewStartTime, setViewingVideo, studentId, videoSaveChunkSeqRef, videoSaveInFlightRef, viewStartTime, viewingVideo, withdrawnRef, ytDurationSecRef, ytFocusSecRef, ytPlaySecRef, ytPlayerStateRef , onVocabResultsSent: () => loadDataRef.current && loadDataRef.current({ manual: true }) });   // [135차수 j] manual 이어야 자동 받기가 도는 중에도 뒤이어 한 번 더 받는다
 
@@ -288,7 +288,7 @@ export default function App() {
           onHideForever={(card) => { dismissNoticeForever(card.noticeKey); const rest = popupCards.filter((c) => c.key !== card.key); if (rest.length) setPopupCards(rest); else closePopup(); }} />
       )}
       {labOpen && (
-        <LabPopup pinnedMessages={pinnedMessages} exam={labExam} rangeText={labRange?.text || ""} doneTasks={doneTasks} totalTasks={totalTasks} activeDate={activeDate} classLine={calSub}
+        <LabPopup pinnedMessages={pinnedMessages} exam={labExam} rangeText={labRange?.text || ""} doneTasks={doneTasks} totalTasks={totalTasks} activeDate={activeDate} classLine={calSub} league={league}
           onClose={() => setLabOpen(false)} onGo={(k) => { setLabOpen(false); if (STUDENT_ROUTE_IDS.includes(k)) goTab(k); }} />
       )}
       <KakaoOpenBanner />

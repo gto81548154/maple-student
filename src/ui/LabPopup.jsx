@@ -27,7 +27,113 @@ function dateChip(dateKey, mint) {
   );
 }
 
-export function LabPopup({ pinnedMessages = [], exam = null, rangeText = "", doneTasks = 0, totalTasks = 0, activeDate = "", classLine = "", onClose, onGo }) {
+// ─── [170차수] 단어 리그 탭 — 워커가 묶음에 넣어 주는 league를 그대로 그린다(약속: 인계 글 "단어 리그 자료 약속 (2)") ───
+//   league가 없거나 모양이 이상하면 null → "준비하고 있어요" 안내 그대로. 점수 세는 법은 워커 몫이라 score·unit을 보여 주기만 한다.
+//   다른 학생 이름은 워커가 가려서 준 것("김○준")만 받는다. 선생님·원장 보기에서는 me가 null이라 내 순위 칸이 안 나온다.
+const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
+const str = (v) => (typeof v === "string" ? v.trim() : "");
+export function normalizeLeague(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const title = str(raw.title);
+  const status = ["upcoming", "running", "ended"].includes(raw.status) ? raw.status : "";
+  if (!title || !status) return null;
+  const prizes = (Array.isArray(raw.prizes) ? raw.prizes : []).map((p) => ({ rank: str(p?.rank), label: str(p?.label) })).filter((p) => p.rank && p.label);
+  const top = (Array.isArray(raw.top) ? raw.top : []).map((t) => ({ rank: num(t?.rank), name: str(t?.name), score: num(t?.score) }))
+    .filter((t) => t.rank != null && t.rank >= 1 && t.rank <= 3 && t.name && t.score != null).sort((a, b) => a.rank - b.rank).slice(0, 3);
+  const m = raw.me && typeof raw.me === "object" ? raw.me : null;
+  const nx = m && m.next && typeof m.next === "object" && num(m.next.rank) != null && num(m.next.gap) != null ? { rank: m.next.rank, gap: m.next.gap } : null;
+  const me = m ? { rank: num(m.rank), score: num(m.score) ?? 0, next: nx } : null;
+  const f = raw.finisher && typeof raw.finisher === "object" && num(raw.finisher.days) > 0 ? raw.finisher : null;
+  const finisher = f ? { days: f.days, label: str(f.label), myDays: num(f.myDays) } : null;
+  return { title, status, startDate: str(raw.startDate), endDate: str(raw.endDate), unit: str(raw.unit) || "점", prizes, top, me, total: num(raw.total), finisher, updatedAt: str(raw.updatedAt) };
+}
+const LEAGUE_BADGE = { upcoming: "곧 시작해요", running: "진행 중", ended: "끝났어요 · 최종 순위" };
+const PODIUM_H = { 1: 74, 2: 54, 3: 40 };
+function fmtUpdated(iso) {
+  const d = iso ? new Date(iso) : null;
+  if (!d || isNaN(d.getTime())) return "";
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")} 기준`;
+}
+function LeagueBody({ lg }) {
+  const ended = lg.status === "ended", upcoming = lg.status === "upcoming";
+  const period = [fmtDateShort(lg.startDate), fmtDateShort(lg.endDate)].filter(Boolean).join(" ~ ");
+  const byRank = (r) => lg.top.find((t) => t.rank === r);
+  const me = lg.me;
+  const fin = lg.finisher;
+  const finDone = fin && fin.myDays != null && fin.myDays >= fin.days;
+  return (
+    <>
+      <div style={{ borderRadius: 18, padding: "16px 18px", background: `linear-gradient(160deg, ${P.blueSoft}, #D3EDE2)`, color: P.ink, marginBottom: 10 }}>
+        <span data-testid="lab-league-badge" style={{ display: "inline-block", background: "#fff", color: P.blueText, fontSize: 12, fontWeight: 800, padding: "4px 10px", borderRadius: 99 }}>{LEAGUE_BADGE[lg.status]}</span>
+        <div style={{ fontSize: 21, fontWeight: 800, lineHeight: 1.35, margin: "8px 0 4px", wordBreak: "keep-all" }}>{lg.title}</div>
+        {period && <div style={{ fontSize: 13.5 }}>{period}</div>}
+      </div>
+      {lg.prizes.length > 0 && (
+        <div style={box}>
+          <div style={boxHead}>상품</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {lg.prizes.map((p, i) => (
+              <span key={i} style={{ background: "#fff", border: `1px solid ${P.line}`, borderRadius: 10, padding: "6px 10px", fontSize: 13.5, color: P.text }}>
+                <b style={{ color: P.blueText }}>{p.rank}</b> {p.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {upcoming ? (
+        <div style={emptyBox}>{fmtDateShort(lg.startDate) ? `${fmtDateShort(lg.startDate)}에 시작해요` : "곧 시작해요"}<br /><span style={{ fontSize: 12.5 }}>시작하면 여기에 순위가 보여요</span></div>
+      ) : lg.top.length === 0 ? (
+        <div style={emptyBox}>아직 순위가 없어요<br /><span style={{ fontSize: 12.5 }}>단어 숙제를 통과하면 순위에 올라가요</span></div>
+      ) : (
+        <div data-testid="lab-league-podium" style={{ ...box, display: "flex", alignItems: "flex-end", gap: 8, paddingTop: 14 }}>
+          {[2, 1, 3].map((r) => { const t = byRank(r); return (
+            <div key={r} style={{ flex: 1, minWidth: 0, textAlign: "center", visibility: t ? "visible" : "hidden" }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: P.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t ? t.name : "-"}</div>
+              <div style={{ fontSize: 12.5, color: P.sub, marginBottom: 5 }}>{t ? `${t.score}${lg.unit}` : ""}</div>
+              <div style={{ height: PODIUM_H[r], borderRadius: "10px 10px 4px 4px", background: r === 1 ? P.blue : r === 2 ? P.blueSoft : P.mint, color: r === 3 ? P.mintText : P.ink, fontWeight: 900, fontSize: r === 1 ? 22 : 17, display: "flex", alignItems: "center", justifyContent: "center" }}>{r}등</div>
+            </div>
+          ); })}
+        </div>
+      )}
+      {me && !upcoming && (
+        <div data-testid="lab-league-me" style={{ ...box, background: "#fff", border: `1.5px solid ${P.blue}` }}>
+          <div style={boxHead}>{ended ? "내 최종 순위" : "내 순위"}{lg.total ? ` · ${lg.total}명 중` : ""}</div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            <span style={{ fontSize: 26, fontWeight: 900, color: P.blueText }}>{me.rank != null ? `${me.rank}등` : "순위 없음"}</span>
+            <span style={{ fontSize: 14.5, fontWeight: 700, color: P.text }}>{me.score}{lg.unit}</span>
+          </div>
+          {!ended && (
+            <div style={{ fontSize: 13.5, color: P.sub, marginTop: 4 }}>
+              {me.rank == null ? "단어 숙제를 통과하면 순위에 올라가요"
+                : me.next ? `${me.next.rank}등까지 ${me.next.gap}${lg.unit} 남았어요`
+                : me.rank === 1 ? "지금 1등이에요" : ""}
+            </div>
+          )}
+        </div>
+      )}
+      {fin && !upcoming && (
+        <div data-testid="lab-league-finisher" style={box}>
+          <div style={boxHead}>완주상{fin.label ? ` · ${fin.label}` : ""}</div>
+          {fin.myDays != null ? (
+            <>
+              <div style={{ height: 12, borderRadius: 99, background: "#fff", border: `1px solid ${P.line}`, overflow: "hidden" }}>
+                <div style={{ width: `${Math.max(0, Math.min(100, (fin.myDays / fin.days) * 100))}%`, height: "100%", background: "#8FD3B6", borderRadius: 99 }} />
+              </div>
+              <div style={{ fontSize: 13.5, color: finDone ? P.mintText : P.text, fontWeight: 700, marginTop: 6 }}>
+                {finDone ? `${fin.days}일을 다 채웠어요` : `${fin.days}일 중 ${fin.myDays}일 했어요${ended ? "" : ` · ${fin.days - fin.myDays}일 남음`}`}
+              </div>
+            </>
+          ) : <div style={{ fontSize: 13.5, color: P.text, fontWeight: 700 }}>{fin.days}일을 채우면 받아요</div>}
+        </div>
+      )}
+      {fin && upcoming && <div style={box}><div style={boxHead}>완주상{fin.label ? ` · ${fin.label}` : ""}</div><div style={{ fontSize: 13.5, color: P.text, fontWeight: 700 }}>{fin.days}일을 채우면 받아요</div></div>}
+      {fmtUpdated(lg.updatedAt) && !upcoming && <div style={{ fontSize: 11.5, color: P.sub, textAlign: "right", margin: "-4px 2px 8px" }}>{fmtUpdated(lg.updatedAt)}</div>}
+    </>
+  );
+}
+
+export function LabPopup({ pinnedMessages = [], exam = null, rangeText = "", doneTasks = 0, totalTasks = 0, activeDate = "", classLine = "", league = null, onClose, onGo }) {
+  const lg = normalizeLeague(league);
   const [tab, setTab] = useState("notice");
   useEffect(() => { const onKey = (e) => { if (e.key === "Escape") onClose(); }; window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey); }, []);
   const notices = (Array.isArray(pinnedMessages) ? pinnedMessages : []).filter(([, rec]) => rec && rec.text);
@@ -74,7 +180,13 @@ export function LabPopup({ pinnedMessages = [], exam = null, rangeText = "", don
     </>
   );
 
-  const leagueTab = (
+  const leagueTab = lg ? (
+    <>
+      <LeagueBody lg={lg} />
+      <div style={{ flex: 1 }} />
+      <button type="button" data-testid="lab-go-voca" onClick={() => onGo("voca")} style={mainBtn}>단어 공부 하러 가기 →</button>
+    </>
+  ) : (
     <>
       <div style={{ borderRadius: 18, padding: "20px 18px", background: `linear-gradient(160deg, ${P.blueSoft}, #D3EDE2)`, color: P.ink, marginBottom: 10 }}>
         <span style={{ display: "inline-block", background: "#fff", color: P.blueText, fontSize: 12, fontWeight: 800, padding: "4px 10px", borderRadius: 99 }}>준비 중</span>
