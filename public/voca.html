@@ -1981,13 +1981,47 @@ function stems(s){
     if (n.endsWith(e) && n.length - e.length >= 2) out.add(n.slice(0, -e.length));
   return out;
 }
+/* [173차수] 정답 글에 괄호·대괄호가 있을 때, 그 부분을 풀어 쓴 답도 정답으로 본다.
+ *   "(영화를) 상영하다" → "영화를 상영하다"도 정답   (전에는 괄호 안을 지운 "상영하다"만 정답)
+ *   "허락[허가]하다"    → "허가하다"도 정답          (대괄호 = 바로 앞 낱말을 바꿔 끼운 말)
+ *   "~에 대한"          → "대한"도 정답              (맨 앞 "~에" 같은 자리 표시는 안 써도 된다) */
+function keyForms(m){
+  const out = new Set([m]);
+  const s = String(m || '');
+  if (/[()]/.test(s)) out.add(s.replace(/[()]/g, ' '));
+  let cur = [s];
+  for (let n = 0; n < 3; n++){
+    const next = [];
+    for (const t of cur){
+      const x = /^(.*?)([^\s\[\]()]+)\[([^\[\]]+)\](.*)$/.exec(t);
+      if (x){ next.push(x[1] + x[2] + x[4], x[1] + x[3] + x[4]); }
+    }
+    if (!next.length) break;
+    next.forEach(t => out.add(t));
+    cur = next;
+  }
+  const lead = /^\s*~\s*(?:을|를|에게|에서|에|의|으로|로|와|과|이|가)\s+(\S.*)$/.exec(s);
+  if (lead) out.add(lead[1]);
+  return [...out];
+}
 function matchSense(input, sense){
   const iv = stems(input);
   for (const m of sense.m){
-    const mv = stems(m);
-    for (const a of iv) if (a && mv.has(a)) return true;
+    for (const f of keyForms(m)){
+      const mv = stems(f);
+      for (const a of iv) if (a && mv.has(a)) return true;
+    }
   }
   return false;
+}
+/* [173차수] 이 뜻(si)을 지금 회독에서 정답으로 쳐도 되는가 — grade()와 같은 규칙.
+ *   뜻이 하나뿐이거나 1·2회독이면 언제나 됨. 3회독부터는 앞 회독에서 쓴 뜻은 안 되지만, 모든 뜻을 다 썼으면 다시 됨. */
+function senseUsable(word, si){
+  const p = W(word.id);
+  if (word.senses.length <= 1 || !spendRule()) return true;
+  const spent = s => { const ur = p.u[s.sid]; return ur != null && ur < S.round; };
+  if (word.senses.every(spent)) return true;
+  return !spent(word.senses[si]);
 }
 /* 반환: {ok, senseIdx, prevRound} — prevRound: 이전 회독에서 소진된 뜻을 쓴 경우
  * [숙제 4차수 08-18 원장 확정] 허들 완화 — 1·2회독은 같은 뜻을 또 적어도 정답.
@@ -2340,7 +2374,9 @@ function startSession(list, opts){
     Q = Q.filter(w => !(S.words[w.id] && S.words[w.id].x));
     if (!Q.length){ toast('이 범위의 단어가 전부 제외돼 있어요 — 홈의 제외 모음에서 되돌릴 수 있어요'); return; }
   }
-  if (pick20){                                     // [08-06] 아직 안 나온 것에서만 뽑는다
+  // [173차수] "오답만 다시 도전"과 오답 모아 보기에서는 "이미 본 단어 빼기"를 하지 않는다 — 전에는 방금 틀린 단어가 전부 "이미 봄"이라 시작이 안 됐다.
+  const skipSeen = pick20 && !(opts && opts.retry) && mode !== 'wrong';
+  if (skipSeen){                                   // [08-06] 아직 안 나온 것에서만 뽑는다
     const un = Q.filter(w => (S.words[w.id] || {}).g !== S.round);
     if (!un.length){
       const range = Q.slice();
@@ -2563,7 +2599,7 @@ $('#btnAi').onclick = async () => {
       let accepted = false;
       if (res.ok && Number.isInteger(res.si) && w.senses[res.si]){
         const p = W(w.id), sid = w.senses[res.si].sid;
-        if (p.u[sid] == null){                        // 아직 어느 회독에도 안 쓴 뜻일 때만 인정
+        if (senseUsable(w, res.si)){                  // [173차수] 보통 채점과 같은 규칙으로 인정 — 전에는 "한 번도 안 쓴 뜻"만 인정해서, 2회독부터는 AI가 맞다 해도 늘 "오답 유지"였다
           p.u[sid] = S.round; p.c++; p.w = Math.max(0, p.w - 1); p.r[S.round] = 1;
           sesOk++; accepted = true;
           sesWrong = sesWrong.filter(x => x.id !== w.id);
@@ -2582,7 +2618,7 @@ $('#btnAi').onclick = async () => {
     $('#aiQuota').textContent = '연결에 실패했어요 — 잠시 후 다시 시도해 주세요';
   }
 };
-$('#btnRetry').onclick = () => startSession(sesWrong, { kind: SES.kind });
+$('#btnRetry').onclick = () => startSession(sesWrong, { kind: SES.kind, retry: true });
 $('#btnHome').onclick = () => { renderHome(); show('home'); };
 
 /* ───────── 학습 방식 선택 (카드 / 블링크 / 객관식 / 시험) ───────── */

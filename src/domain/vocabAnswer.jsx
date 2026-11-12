@@ -24,6 +24,9 @@ function expandVocabParenForms(s) {
   (s.match(/\(([^()]*)\)/g) || []).forEach(g => {
     const inner = g.slice(1, -1);
     if (inner.includes("/")) inner.split("/").forEach(p => out.add(p));
+    // [173차수] "(물건을) 사다"·"(~을) 제공하다"의 괄호는 도움말이지 뜻이 아니다 — "물건"·"을"만 써도 정답이 되던 것을 막는다.
+    //   "~"로 시작하거나, 3글자 이상이면서 을·를·에게·에서·으로 로 끝나면 따로 정답에 넣지 않는다("마을"·"가을" 같은 두 글자 낱말은 그대로 둔다).
+    else if (/^~/.test(inner) || (inner.length >= 3 && /(을|를|에게|에서|으로)$/.test(inner))) { /* 도움말 — 건너뜀 */ }
     else if (/^\S{2,}$/.test(inner) && !/등|따위/.test(inner)) out.add(inner);
   });
   return [...out];
@@ -99,16 +102,20 @@ export function buildVocabAnswerDisplay(correctAnswers = []) {
 //   3) 그래도 다르면, 둘 중 하나가 다른 하나의 앞부분이고 남은 부분이 어미 목록에 있으면 정답
 //   돌려주는 값: { ok, exact, match } — match 는 맞은 정답 글자(2·3번으로 맞았을 때 "비슷한 표현"으로 보여 준다)
 //   마플보카(voca.html)의 뜻 쓰기 채점에는 아직 붙이지 않았다(이번엔 오답 복습만).
-const VOCAB_ENDINGS = ["의", "적인", "적", "한", "하는", "하다", "되다", "되는", "된", "스러운", "스럽다", "로운", "롭다", "이다", "다", "인", "는", "을", "를"]
+// [173차수] 너무 넓게 맞던 것을 좁혔다(원장 결정 11-12 "좁게").
+//   · 어미를 뗀 뒤 남는 글자가 2글자 이상일 때만 뗀다 — 전에는 "성인"·"성적"이 둘 다 "성"이 돼서 같은 답으로 쳤다(주의↔주인, 원한↔원인, 살인↔살다도 같음).
+//   · "인"은 어미 목록에서 뺐다("한국인"과 "한국의"는 다른 말). "비정상적인"은 "적인"으로 그대로 맞는다.
+const VOCAB_ENDINGS = ["의", "적인", "적", "한", "하는", "하다", "되다", "되는", "된", "스러운", "스럽다", "로운", "롭다", "이다", "다", "는", "을", "를"]
   .sort((a, b) => b.length - a.length);   // 긴 어미부터 본다("스러운"을 "운"보다 먼저)
+const VOCAB_MIN_STEM = 2;
 const vocabCompact = (s) => String(s || "").normalize("NFC").toLowerCase()
   .replace(/\([^()]*\)/g, "").replace(/\[[^\]]*\]/g, "")
   .replace(/[\s~\-\u2013\u2014·ㆍ.,;:'"\u2018\u2019\u201c\u201d()\[\]]/g, "");
 const vocabStripEnding = (s) => {
-  for (const e of VOCAB_ENDINGS) if (s.length > e.length && s.endsWith(e)) return s.slice(0, -e.length);
+  for (const e of VOCAB_ENDINGS) if (s.length - e.length >= VOCAB_MIN_STEM && s.endsWith(e)) return s.slice(0, -e.length);
   return s;
 };
-const vocabPrefixPlusEnding = (long, short) => long.length > short.length && long.startsWith(short) && VOCAB_ENDINGS.includes(long.slice(short.length));
+const vocabPrefixPlusEnding = (long, short) => short.length >= VOCAB_MIN_STEM && long.length > short.length && long.startsWith(short) && VOCAB_ENDINGS.includes(long.slice(short.length));
 export function isVocabAnswerClose(input, accept) {
   const a = vocabCompact(input);
   const list = (Array.isArray(accept) ? accept : [accept]).map((c) => ({ raw: c, k: vocabCompact(c) })).filter((c) => c.k);
