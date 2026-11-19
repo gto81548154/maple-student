@@ -55,6 +55,7 @@ export function TeacherHome({ auth }) {
   const [calSel, setCalSel] = useState(getTodayStr());
   // [11차수] 단어장 탭 안 전환 — "내 단어장"(외우기) / "단어 선별"(숙제로 낼 어려운 단어 고르기)
   const [vocaMode, setVocaMode] = useState("study");
+  const [stuQ, setStuQ] = useState("");   // [184차수] 학생 탭 이름 검색(원장)
   // [115차수 토익] 토익 — 기록 훅은 늘 부르고(훅 순서 고정), 받아오는 건 토익을 쓸 수 있는 사람일 때만
   // [179차수 원장 결정 11-19] 선생님도 토익을 쓴다(자기계발용, 기록은 사람마다 따로). 서버가 home.toeic 을 내려줄 때만 선생님에게 연다 —
   //   옛 서버(선생님 토익을 403으로 막는 판)에 붙으면 예전처럼 원장만 보인다. 그래서 앱·서버 어느 쪽을 먼저 올려도 깨지지 않는다.
@@ -126,7 +127,7 @@ export function TeacherHome({ auth }) {
       setSchedEdit(target === "sched" && st.sd ? { date: st.sd, openId: "" } : null);
     },
   });
-  const C = { areas, setHome, checkIn, checkinBusy, checkinMsg, canToeic, briefDay, busyBox, calSel, calYm, card, cardBox, cardMain, cardSub, dateStr, home, isWorkday, loading, openBook, openStudent, openVideo, playing, reloadHome, roll, roster, saveStaffSchedule, schedBusy, schedEdit, schedMsg, schedPressRef, session, setBriefDay, setCalSel, setCalYm, setDateStr, setOpenBook, setSchedEdit, setTab, setToeicMode, setToeicPick, setVocaHwTask, setVocaMode, setVocaTask, startTeacherHwTest, teacher, today, todoRow, toeic, toeicMode, toeicPick, vocaHwTask, vocaMode, vocaPickSrc, vocaSrc, vocaTask, setNsOpen };
+  const C = { areas, setStuQ, stuQ, setHome, checkIn, checkinBusy, checkinMsg, canToeic, briefDay, busyBox, calSel, calYm, card, cardBox, cardMain, cardSub, dateStr, home, isWorkday, loading, openBook, openStudent, openVideo, playing, reloadHome, roll, roster, saveStaffSchedule, schedBusy, schedEdit, schedMsg, schedPressRef, session, setBriefDay, setCalSel, setCalYm, setDateStr, setOpenBook, setSchedEdit, setTab, setToeicMode, setToeicPick, setVocaHwTask, setVocaMode, setVocaTask, startTeacherHwTest, teacher, today, todoRow, toeic, toeicMode, toeicPick, vocaHwTask, vocaMode, vocaPickSrc, vocaSrc, vocaTask, setNsOpen };
   return (
     <div style={{ minHeight: "100vh", background: UI.bg, fontFamily: F, color: UI.text }}>
       {/* [178차수] 머리글·탭 줄을 학생 화면과 같은 모양으로 — 작은 머리글(MP + 이름) + 화면 아래 붙박이 탭(StudentTabBar). 탭 구성과 안의 내용은 그대로. */}

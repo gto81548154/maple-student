@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { IS_MASTER_MODE, IS_STAFF_VIEW, IS_TEACHER_MODE, MASTER_MK, TEACHER_AUTH } from "./core/auth.jsx";
+import { IS_MASTER_MODE, IS_STAFF_VIEW, IS_TEACHER_MODE, MASTER_LEGACY, MASTER_MK, STAFF_AUTH, TEACHER_AUTH } from "./core/auth.jsx";
 import { STUDENT_SYNC_API_URL, VOCA_TAB_ENABLED } from "./core/config.jsx";
 import { goBackRoute, readHistIdx, readInitialRoute } from "./core/route.jsx";
 import { useBackNav } from "./state/useBackNav.jsx";
@@ -207,8 +207,9 @@ export default function App() {
   }, []);
 
   // [마스터] 열쇠는 있고 학생 id는 없음 → 원장 전용 홈. 학생 데이터 로딩은 이미 건너뛴 상태.
+  //   [184차수] 이제 원장 링크와 같은 원장 화면(TeacherHome)을 띄운다. 서버가 이 길을 막으면(옛 워커) 예전 마스터 홈으로 돌아간다.
   if (IS_MASTER_MODE && !studentId) {
-    return <MasterHome mk={MASTER_MK} />;
+    return (MASTER_LEGACY || !STAFF_AUTH) ? <MasterHome mk={MASTER_MK} /> : <TeacherHome auth={STAFF_AUTH} />;
   }
 
   // [교사] 죽은 링크 안내 (teacherLinkDead가 이 주소로 보낸다)
