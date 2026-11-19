@@ -49,6 +49,8 @@ export function computeMoreView(D) {
       { key: "phonics", icon: "🎤", title: "파닉스", sub: phonicsSub, subTone: phonicsPending.length ? "warn" : undefined },
       // [0812 대시보드] 모의고사는 중학생에게도 보여준다(원장 결정). 회차가 없으면 빈 안내만 뜬다.
       { key: "mock", icon: "✏️", title: "모의고사", sub: "응시·점수 기록" },
+      // [185차수] 토익 — 원장이 켜 준 학생에게만(D.toeicOn). 원장·선생님이 학생 화면을 열어 본 때에는 안 나온다.
+      ...(D.toeicOn ? [{ key: "toeic", icon: "🎧", title: "토익", sub: "LC·RC 회차 · 파트5 5문제" }] : []),
       // [149차수] "학습 진도" → "마플 로드맵"(1~7단계 지도 + 교재별 진행 상황). 커리큘럼이나 진도 맵 중 하나라도 있으면 보인다
       ...(((progressTree?.lanes || []).length || (curriculum?.lanes || []).length) ? [{ key: "progress", icon: "🗺️", title: "마플 로드맵", sub: D.roadmapSub || "내가 어디까지 왔는지" }] : []),
     ] },

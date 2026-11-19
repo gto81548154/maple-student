@@ -1,4 +1,4 @@
-import { teacherUrl } from "../core/auth.jsx";
+import { toeicFile } from "../core/toeicAccess.jsx";
 
 // ─── [교사 열람 모드 2026-08-27] 선생님 전용 홈 ─────────────────────────
 // 탭 4개 = 내 할일 · 학생 · 강의 · 단어장
@@ -24,7 +24,7 @@ export const parseToeicId = (id) => {
 };
 export const toeicFileUrl = (v, part, nn, kind) => {
   const tail = kind === "mp3" ? `test${nn}.mp3` : `test${nn}-${kind}.pdf`;   // kind: mp3 | q(문제지) | a(해설)
-  return teacherUrl(`/files/toeic/ets1000/v${v}/${part}/${tail}`);
+  return toeicFile(`toeic/ets1000/v${v}/${part}/${tail}`);   // [185차수] 선생님·원장은 교사 열쇠, 토익을 켠 학생은 학생 열쇠로
 };
 // 다음에 풀 LC 회차 — 마지막으로 연 LC가 안 끝났으면 그것, 아니면 순서대로 첫 미완료
 export const toeicNextLc = (tests) => {

@@ -1,6 +1,6 @@
 import { TAP, UI } from "../../theme/tokens.jsx";
 import { useEffect, useRef, useState } from "react";
-import { teacherUrl } from "../../core/auth.jsx";
+import { toeicFile } from "../../core/toeicAccess.jsx";
 import { TOEIC_P5_TYPES, pickToeicP5, toeicP5Stats, toeicP5TypeStats } from "../../domain/toeic.jsx";
 
 // ═══ [116차수] 파트5 5문제씩 ═══
@@ -25,7 +25,7 @@ export function OwnerToeicP5({ toeic }) {
     let dead = false;
     (async () => {
       try {
-        const r = await fetch(teacherUrl("/files/toeic/p5.json"));
+        const r = await fetch(toeicFile("toeic/p5.json"));
         if (!r.ok) throw new Error(String(r.status));
         const d = await r.json();
         if (!Array.isArray(d)) throw new Error("모양");
