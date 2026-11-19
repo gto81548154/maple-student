@@ -10,7 +10,8 @@ import { teacherUrl } from "../core/auth.jsx";
 // ═══════════════════════════════════════════════════════════════════
 // [115차수 09-26 토익] 원장 링크 전용 "토익" 탭 — 원장 개인 공부(ETS 기출 1000제 1~4권)
 //   파일은 R2 toeic/ 칸(워커가 원장 링크 열쇠로만 연다), 기록은 워커 /teacher/toeic(toeic3)에 저장.
-//   선생님 화면에는 탭도, 홈 카드도 안 나온다(home.isOwner일 때만).
+//   [179차수 11-19] 선생님도 쓴다(자기계발용). 서버가 home.toeic 을 내려줄 때만 선생님 화면에 탭·홈 카드가 나온다.
+//   기록은 사람마다 따로(원장 toeic3, 선생님 toeic3:{계정id}) — 주소는 같은 /teacher/toeic 이고 서버가 열쇠로 칸을 고른다.
 // ═══════════════════════════════════════════════════════════════════
 import { TOEIC_BOOKS } from "./toeicP5.mjs";
 export { TOEIC_BOOKS, TOEIC_P5_TYPES, pickToeicP5, toeicP5Stats, toeicP5TypeStats } from "./toeicP5.mjs";

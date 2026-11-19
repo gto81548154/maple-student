@@ -7,7 +7,7 @@ import { fmtLecRange } from "../../domain/voca.jsx";
 
 // [122차수] 선생님 홈 탭 그리기(출근·오늘 할 일·단어 숙제·바로가기). TeacherHome.jsx에서 그대로 옮김.
 export function renderTeacherHomeTab(C) {
-  const { cardBox, cardMain, cardSub, home, isWorkday, roster, session, setBriefDay, setDateStr, setTab, setToeicMode, setToeicPick, setVocaMode, setVocaTask, startTeacherHwTest, teacher, today, todoRow, toeic, setNsOpen } = C;
+  const { canToeic, cardBox, cardMain, cardSub, home, isWorkday, roster, session, setBriefDay, setDateStr, setTab, setToeicMode, setToeicPick, setVocaMode, setVocaTask, startTeacherHwTest, teacher, today, todoRow, toeic, setNsOpen } = C;
           // [135차수 f] 휴원일(공휴일 + 학원 휴원)은 출근일로 세지 않는다 — 오늘이 휴원이면 "휴원"으로, 다음 출근도 휴원일을 건너뛴다
           const allHol = { ...HOLIDAYS, ...((roster && roster.holidays) || {}) };
           const todayHolRaw = allHol[today];
@@ -144,8 +144,8 @@ export function renderTeacherHomeTab(C) {
                 <div style={{ ...cardMain, fontSize: 13.5, fontWeight: 700 }}>앱용 단어 파일을 올리면 학생 앱에 바로 보입니다 ›</div>
               </button>
 
-              {/* 6. 토익 LC — [115차수] 원장만. 다음에 풀 회차를 누르면 토익 탭에서 바로 열린다. [127차수] 번호 5 → 6 */}
-              {home?.isOwner && (() => {
+              {/* 6. 토익 LC — [115차수] 원장만 → [179차수] 서버가 열어 주면 선생님도. 다음에 풀 회차를 누르면 토익 탭에서 바로 열린다. [127차수] 번호 5 → 6 */}
+              {canToeic && (() => {
                 const nextId = toeicNextLc(toeic.tests);
                 const p = parseToeicId(nextId) || { v: 3, nn: "01" };
                 const r = toeic.tests[nextId] || {};
@@ -163,7 +163,7 @@ export function renderTeacherHomeTab(C) {
               })()}
 
               {/* 7. 파트5 5문제 — [116차수] 원장만. 짬짬이 5문제. [127차수] 번호 6 → 7 */}
-              {home?.isOwner && (() => {
+              {canToeic && (() => {
                 const st = toeicP5Stats(toeic.p5);
                 return (
                   <button onClick={() => { setToeicMode("p5"); setTab("toeic"); }} style={cardBox}>

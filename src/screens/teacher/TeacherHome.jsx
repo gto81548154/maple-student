@@ -55,7 +55,9 @@ export function TeacherHome({ auth }) {
   const [calSel, setCalSel] = useState(getTodayStr());
   // [11차수] 단어장 탭 안 전환 — "내 단어장"(외우기) / "단어 선별"(숙제로 낼 어려운 단어 고르기)
   const [vocaMode, setVocaMode] = useState("study");
-  // [115차수 토익] 원장 전용 토익 — 기록 훅은 늘 부르고(훅 순서 고정), 받아오는 건 원장일 때만
+  // [115차수 토익] 토익 — 기록 훅은 늘 부르고(훅 순서 고정), 받아오는 건 토익을 쓸 수 있는 사람일 때만
+  // [179차수 원장 결정 11-19] 선생님도 토익을 쓴다(자기계발용, 기록은 사람마다 따로). 서버가 home.toeic 을 내려줄 때만 선생님에게 연다 —
+  //   옛 서버(선생님 토익을 403으로 막는 판)에 붙으면 예전처럼 원장만 보인다. 그래서 앱·서버 어느 쪽을 먼저 올려도 깨지지 않는다.
   const [toeicPick, setToeicPick] = useState("");
   const [toeicMode, setToeicMode] = useState("tests");   // [116차수] "tests" 회차 · "p5" 파트5 5문제
   const [isOwnerView, setIsOwnerView] = useState(false);
@@ -69,7 +71,8 @@ export function TeacherHome({ auth }) {
   const { loadAll, refreshing, reloadHome } = useTeacherData({ setDateStr, setErr, setHome, setLoading, setRoster });
 
   const F = "'Pretendard Variable', -apple-system, sans-serif";
-  useEffect(() => { setIsOwnerView(!!(home && home.isOwner)); }, [home]);
+  const canToeic = !!(home && (home.isOwner || home.toeic === true));
+  useEffect(() => { setIsOwnerView(canToeic); }, [canToeic]);
   const teacher = home?.teacher || {};
   const today = home?.today || getTodayStr();
   const session = home?.stafftodo?.sessions?.[today] || null;
@@ -110,8 +113,8 @@ export function TeacherHome({ auth }) {
     const b = areas.flatMap((a) => a.books || []).find((x) => String(x.bookId) === String(initialRoute.st.b));
     if (b && tab === "videos" && !openBook) setOpenBook(b); else if (((window.history.state || {}).pg) === "book") replaceRoute("videos");
   }, [areas]);
-  // 토익 탭은 원장만 — 조교가 #toeic 주소로 들어오면 홈으로(주소를 먼저 고쳐 써야 한 칸이 더 안 쌓인다)
-  useEffect(() => { if (home && !home.isOwner && tab === "toeic") { replaceRoute("home"); setTab("home"); } }, [home]);
+  // 토익을 못 쓰는 사람이 #toeic 주소로 들어오면 홈으로(주소를 먼저 고쳐 써야 한 칸이 더 안 쌓인다)
+  useEffect(() => { if (home && !canToeic && tab === "toeic") { replaceRoute("home"); setTab("home"); } }, [home]);
   useScreenRoute({
     ids: TEACHER_ROUTE_IDS, parent: TEACHER_ROUTE_PARENT, screenId, extra: routeExtra,
     apply: (target, st) => {
@@ -123,7 +126,7 @@ export function TeacherHome({ auth }) {
       setSchedEdit(target === "sched" && st.sd ? { date: st.sd, openId: "" } : null);
     },
   });
-  const C = { areas, briefDay, busyBox, calSel, calYm, card, cardBox, cardMain, cardSub, dateStr, home, isWorkday, loading, openBook, openStudent, openVideo, playing, reloadHome, roll, roster, saveStaffSchedule, schedBusy, schedEdit, schedMsg, schedPressRef, session, setBriefDay, setCalSel, setCalYm, setDateStr, setOpenBook, setSchedEdit, setTab, setToeicMode, setToeicPick, setVocaHwTask, setVocaMode, setVocaTask, startTeacherHwTest, teacher, today, todoRow, toeic, toeicMode, toeicPick, vocaHwTask, vocaMode, vocaPickSrc, vocaSrc, vocaTask, setNsOpen };
+  const C = { areas, canToeic, briefDay, busyBox, calSel, calYm, card, cardBox, cardMain, cardSub, dateStr, home, isWorkday, loading, openBook, openStudent, openVideo, playing, reloadHome, roll, roster, saveStaffSchedule, schedBusy, schedEdit, schedMsg, schedPressRef, session, setBriefDay, setCalSel, setCalYm, setDateStr, setOpenBook, setSchedEdit, setTab, setToeicMode, setToeicPick, setVocaHwTask, setVocaMode, setVocaTask, startTeacherHwTest, teacher, today, todoRow, toeic, toeicMode, toeicPick, vocaHwTask, vocaMode, vocaPickSrc, vocaSrc, vocaTask, setNsOpen };
   return (
     <div style={{ minHeight: "100vh", background: UI.bg, fontFamily: F, color: UI.text }}>
       {/* [178차수] 머리글·탭 줄을 학생 화면과 같은 모양으로 — 작은 머리글(MP + 이름) + 화면 아래 붙박이 탭(StudentTabBar). 탭 구성과 안의 내용은 그대로. */}
@@ -152,7 +155,7 @@ export function TeacherHome({ auth }) {
           { key: "voca", label: "단어장" },
           { key: "videos", label: "강의" },
           { key: "students", label: "학생" },
-          ...(home?.isOwner ? [{ key: "toeic", label: "토익" }] : []),   // [115차수] 원장만
+          ...(canToeic ? [{ key: "toeic", label: "토익" }] : []),   // [115차수] 원장만 → [179차수] 서버가 열어 주면 선생님도
         ]}
         activeKey={tab}
         onPick={(k) => { setTab(k); setBriefDay(""); setNsOpen(false); }} />
@@ -195,8 +198,8 @@ export function TeacherHome({ auth }) {
           renderTeacherVocaTab(C)
         )}
 
-        {/* ── [115차수] 토익 (원장 전용) ── */}
-        {tab === "toeic" && home?.isOwner && (
+        {/* ── [115차수] 토익 — [179차수] 원장 + 서버가 열어 준 선생님 ── */}
+        {tab === "toeic" && canToeic && (
           renderTeacherToeicTab(C)
         )}
       </div>
