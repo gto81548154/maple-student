@@ -140,16 +140,31 @@ export const IS_TEACHER_MODE = !!TEACHER_AUTH;
 // [교사] 학생 화면을 "직원(원장·선생님)이 열어보는 중"인지 — 기록을 남기면 안 되는 자리에 함께 쓴다.
 //   (출석 QR 숨김·푸시 끔·PWA 시작주소 안 건드림·학생 시청 통계 오염 방지·PASS 축하 안 띄움)
 export const IS_STAFF_VIEW = IS_MASTER_MODE || IS_TEACHER_MODE;
+// [184차수 원장 결정 11-19] 마스터 홈과 원장 링크를 합친다 — 마스터 열쇠로 들어와도 원장 화면(TeacherHome)이 뜬다.
+//   워커(11-19판 4)가 "tid=admin + 마스터 열쇠"를 원장으로 받아 준다. 그래서 원장 화면이 쓰는 문(/teacher/*)에 그 조합으로 나간다.
+//   · IS_TEACHER_MODE 는 그대로 "주소에 tid·tk가 있을 때"만 참이다 — 마스터로 학생 화면을 열 때의 규칙(마스터 띠·기록 안 남김)은 안 바뀐다.
+//   · 마스터 열쇠는 여전히 주소창에 안 나온다(요청 주소에만 실린다).
+//   · 옛 워커는 이 조합을 403으로 막는다 → 아래 teacherLinkDead 가 예전 마스터 홈으로 되돌린다(MASTER_LEGACY).
+export const STAFF_AUTH = TEACHER_AUTH || (IS_MASTER_MODE ? { tid: "admin", tk: MASTER_MK, master: true } : null);
+const MASTER_LEGACY_KEY = "mapl_master_legacy";
+export const MASTER_LEGACY = (() => { try { return IS_MASTER_MODE && sessionStorage.getItem(MASTER_LEGACY_KEY) === "1"; } catch (e) { return false; } })();
 // [교사] 교사 문 주소 만들기 — 항상 tid·tk를 달고 나간다.
 export const teacherUrl = (path, extra = {}) => {
   const u = new URL(String(WORKER_ORIGIN || "") + path, window.location.origin);
-  u.searchParams.set("tid", TEACHER_AUTH ? TEACHER_AUTH.tid : "");
-  u.searchParams.set("tk", TEACHER_AUTH ? TEACHER_AUTH.tk : "");
+  u.searchParams.set("tid", STAFF_AUTH ? STAFF_AUTH.tid : "");
+  u.searchParams.set("tk", STAFF_AUTH ? STAFF_AUTH.tk : "");
   Object.entries(extra).forEach(([k, v]) => u.searchParams.set(k, String(v)));
   return u.toString();
 };
 // [교사] 링크가 죽었을 때(재발급·계정 삭제) 폰의 열쇠를 지우고 안내 화면으로 돌린다.
 export const teacherLinkDead = () => {
+  // [184차수] 마스터로 들어온 원장 화면에서 거절당한 경우 — 선생님 열쇠와는 상관없다. 이 창에서는 예전 마스터 홈을 쓴다
+  //   (옛 워커이거나 마스터 열쇠가 바뀐 경우. 열쇠가 바뀐 것이면 예전 마스터 홈이 본인 확인 화면으로 돌려보낸다).
+  if (IS_MASTER_MODE && !TEACHER_AUTH) {
+    try { sessionStorage.setItem(MASTER_LEGACY_KEY, "1"); } catch (e) {}
+    try { window.location.href = window.location.pathname + "?master=1"; } catch (e) {}
+    return;
+  }
   clearTeacherLink();
   try { window.location.href = window.location.pathname + "?teacher_dead=1"; } catch (e) {}
 };

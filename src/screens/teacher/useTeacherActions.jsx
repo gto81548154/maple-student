@@ -137,13 +137,31 @@ export function useTeacherActions(D) {
     } finally { setCheckinBusy(false); }
   };
   // [10차수 원장 지시] 학생 화면은 새 창에서 연다 — 선생님 홈을 그대로 두고 학생만 확인하고 닫는다.
+  // [184차수] 마스터로 들어온 원장 — 학생 화면은 예전 마스터 홈과 같은 길(?master=1&id=&t=학생 열쇠)로 연다.
+  //   마스터 열쇠를 주소에 싣지 않기 위해서다. 학생 열쇠는 워커의 마스터 목록에서 받아 둔다(없으면 열쇠 없이 연다).
+  const [masterTokens, setMasterTokens] = useState(null);
+  useEffect(() => {
+    if (!auth.master || !WORKER_ORIGIN) return undefined;
+    let dead = false;
+    fetch(`${WORKER_ORIGIN}/student/master-list?mk=${encodeURIComponent(auth.tk)}`, { cache: "no-store" })
+      .then(r => r.json()).then(d => {
+        if (dead || !d || !Array.isArray(d.students)) return;
+        const m = {}; for (const x of d.students) if (x && x.id != null && x.t) m[String(x.id)] = String(x.t);
+        setMasterTokens(m);
+      }).catch(() => {});
+    return () => { dead = true; };
+  }, [auth.master, auth.tk]);
   const openStudent = (s) => {
     const sp = new URLSearchParams();
-    sp.set("tid", auth.tid); sp.set("tk", auth.tk);
-    sp.set("id", String(s.id));
+    if (auth.master) { sp.set("id", String(s.id)); const t = masterTokens && masterTokens[String(s.id)]; if (t) sp.set("t", t); sp.set("master", "1"); }
+    else { sp.set("tid", auth.tid); sp.set("tk", auth.tk); sp.set("id", String(s.id)); }
     const url = window.location.pathname + "?" + sp.toString();
-    const w = window.open(url, "_blank", "noopener");
-    if (!w) window.location.href = url;   // 팝업이 막힌 폰에서는 예전처럼 이 창에서 연다
+    // [184차수] 새 창이 열렸는지 제대로 알아본다. 전에는 "noopener"를 붙여 열었는데, 그러면 새 창이 열려도 브라우저가 "못 열었다"(null)고 답해서
+    //   새 창도 뜨고 이 창도 학생 화면으로 넘어갔다(선생님 홈이 사라짐). 이제 새 창이 열리면 이 창은 그대로 두고, 정말 막혔을 때만 이 창에서 연다.
+    let w = null;
+    try { w = window.open(url, "_blank"); } catch (e) { w = null; }
+    if (w) { try { w.opener = null; } catch (e) {} }
+    else window.location.href = url;   // 팝업이 막힌 폰에서는 예전처럼 이 창에서 연다
   };
   // 마플보카 — 본인 진도.
   // [10차수 원장 지시] 선생님에게는 mk=1을 붙이지 않는다 → 원장 전용 책(보카바이블)이 안 뜬다.
