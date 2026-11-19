@@ -15,7 +15,8 @@ export const isPwaStandalone = () => {
 //   → 원장이 [재발급]을 눌러 열쇠가 바뀌어도 깔아 둔 아이콘이 안 죽고,
 //     앱을 열면 위 restoreStudentLink가 폰에 저장해 둔 열쇠로 선생님 홈을 되살린다.
 // [180차수 원장 요청 11-19] 아이콘 그림은 학생앱과 같은 것(남색)을 쓴다 — 브라우저 탭 아이콘·아이폰 홈 화면 아이콘.
-//   깔리는 앱 이름("마플쌤")과 "학생앱과 다른 앱으로 깔린다"는 그대로다. 안드로이드·PC 설치 아이콘은 워커의 teacher-manifest 가 정한다.
+//   [181차수 원장 결정] 설치본도 학생앱과 합친다 — 워커의 학생용 manifest(마플영어·남색 아이콘)를 그대로 쓴다. 시작 주소만 선생님 것(쿼리 없음).
+//   이미 "마플쌤"으로 깔아 둔 아이콘은 그대로 남는다(지우고 다시 깔면 마플영어로 깔린다).
 const setupTeacherPwa = () => {
   try {
     if (!PWA_ICON_BASE) return;
@@ -27,7 +28,7 @@ const setupTeacherPwa = () => {
       const l = document.createElement("link");
       l.rel = "manifest";
       l.crossOrigin = "anonymous";
-      l.href = `${PWA_ICON_BASE}/teacher-manifest.json?u=${encodeURIComponent(startUrl)}&scope=${encodeURIComponent(startUrl)}`;
+      l.href = `${PWA_ICON_BASE}/student-manifest.json?u=${encodeURIComponent(startUrl)}&scope=${encodeURIComponent(startUrl)}`;   // [181차수] 설치 이름·아이콘도 학생앱과 같게(마플영어)
       return l;
     });
     ensure('link[rel="apple-touch-icon"]', () => { const l = document.createElement("link"); l.rel = "apple-touch-icon"; l.sizes = "180x180"; l.href = `${PWA_ICON_BASE}/apple-touch-icon-180.png`; return l; });
@@ -36,7 +37,7 @@ const setupTeacherPwa = () => {
     fav.href = `${PWA_ICON_BASE}/icon-192.png`;
     ensure('meta[name="theme-color"]', () => { const m = document.createElement("meta"); m.name = "theme-color"; m.content = "#16213e"; return m; });
     ensure('meta[name="apple-mobile-web-app-capable"]', () => { const m = document.createElement("meta"); m.name = "apple-mobile-web-app-capable"; m.content = "yes"; return m; });
-    ensure('meta[name="apple-mobile-web-app-title"]', () => { const m = document.createElement("meta"); m.name = "apple-mobile-web-app-title"; m.content = "마플쌤"; return m; });
+    ensure('meta[name="apple-mobile-web-app-title"]', () => { const m = document.createElement("meta"); m.name = "apple-mobile-web-app-title"; m.content = "마플영어"; return m; });
   } catch (e) { console.warn("선생님 PWA 셋업 실패:", e?.message || e); }
 };
 // manifest(학생별 start_url 포함)와 아이콘 메타를 런타임 주입한다.

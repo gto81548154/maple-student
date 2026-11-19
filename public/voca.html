@@ -2276,10 +2276,10 @@ function renderHome(){
  * 방식 카드를 눌러도 시작하지 않는다(고르기만). 시작은 맨 아래 단추 한 번 — 그때의 필터·체크 범위(rangeList)로 시작한다.
  * 객관식은 원본 규칙 그대로 1회독에서만(S.round === 1). 숙제 TEST(객관식 클리어)는 다른 길(startHwSession)이라 이 잠금과 무관. */
 const IS_STU = document.documentElement.classList.contains('stu') && !PICKMODE;   // [180차수] 선별 탭은 모양만 stu, 새 홈 동작은 안 쓴다
-/* [180차수 원장 요청 11-19] 선생님·원장 단어장: 단원을 누르면 바로 그 단원으로 들어간다("어떻게 공부할까요?" 창).
+/* [180차수 원장 요청 11-19 · 181차수부터 학생도] 단어장: 단원을 누르면 바로 그 단원으로 들어간다("어떻게 공부할까요?" 창).
  *   여러 단원을 묶어 공부하려면 [선택]을 눌러 체크 방식으로 바꾼다(전체 선택 · 선택 해제 · 닫기).
- *   학생 화면은 그대로다(누르면 체크, 아래 시작 단추). 숙제 카드로 들어와 범위가 미리 체크돼 있으면 선택 방식으로 열린다. */
-const LEC_TAP_ENTER = IS_STU && !!STU && (IS_TEACHER_VOCA || !!STU.master);
+ *   숙제 카드로 들어와 범위가 미리 체크돼 있으면 선택 방식으로 열린다(전처럼 아래 방식 카드 + 시작 단추). */
+const LEC_TAP_ENTER = IS_STU;   // [181차수 원장 결정 11-19] 학생에게도 같은 방식(처음엔 선생님·원장만이었다)
 let lecSelectMode = false;
 const KIND_NAME = { card:'카드', blink:'블링크', mc:'객관식', test:'시험' };
 let kindSel = 'test';
