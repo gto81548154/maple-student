@@ -1,11 +1,11 @@
 import { TAP, UI } from "../../theme/tokens.jsx";
 import { HOLIDAYS } from "../../data/holidays.jsx";
-import { TEACHER_DK_KO, computeTeacherDayRoster, teacherWorkOn } from "../../domain/teacher.jsx";
+import { TEACHER_DK_KO, teacherWorkOn } from "../../domain/teacher.jsx";
 import { fmtDateKR, fmtTime, fmtYMD } from "../../domain/time.jsx";
 
 // [122차수] 선생님 캘린더 탭 그리기. TeacherHome.jsx에서 그대로 옮김.
 export function renderTeacherCalTab(C) {
-  const { calSel, calYm, card, home, openStudent, roster, schedPressRef, setCalSel, setCalYm, setSchedEdit, teacher, today } = C;
+  const { calSel, calYm, home, roster, schedPressRef, setCalSel, setCalYm, setSchedEdit, teacher, today } = C;
           const first = new Date(calYm.y, calYm.m, 1);
           const firstDow = first.getDay();
           const daysInMonth = new Date(calYm.y, calYm.m + 1, 0).getDate();
@@ -20,7 +20,13 @@ export function renderTeacherCalTab(C) {
           const navBtn = { width: TAP, height: TAP, borderRadius: 11, border: "1px solid #e5e0d8", background: "#faf9f7", cursor: "pointer", fontSize: 13, fontWeight: 800, color: UI.sub };
           const selWorkRaw = teacherWorkOn(teacher, calSel);
           const selWork = (allHol[calSel] && !(selWorkRaw && selWorkRaw.kind === "추가")) ? null : selWorkRaw;   // [135차수 f] 휴원일은 근무일이 아님(추가 근무는 예외)
-          const selRoll = computeTeacherDayRoster(roster?.students || [], roster?.makeups || [], calSel);
+          // [180차수] 보고 있는 달의 근무일 — 달력 칸과 같은 규칙(휴원일은 빼고, 추가 근무는 넣는다)
+          const monthWork = [];
+          for (let d = 1; d <= daysInMonth; d++) {
+            const dObj = new Date(calYm.y, calYm.m, d), ds = fmtYMD(dObj);
+            const w = teacherWorkOn(teacher, ds);
+            if (w && !(allHol[ds] && w.kind !== "추가")) monthWork.push({ ds, d: dObj, w });
+          }
           const selHol = allHol[calSel];
           return (
             <div>
@@ -89,22 +95,27 @@ export function renderTeacherCalTab(C) {
                 <div style={{ fontSize: 13.5, fontWeight: 700, color: selWork ? UI.blue : UI.dim, marginBottom: 10 }}>
                   {selWork ? `${selWork.kind === "추가" ? "추가 근무" : "근무"} · ${selWork.time ? `${fmtTime(selWork.time)} 출근` : "시간 미정"}` : "근무일이 아닙니다"}
                 </div>
-                {selRoll.length === 0 ? (
-                  <div style={{ fontSize: 13, color: UI.dim }}>이 날 수업하는 학생이 없습니다.</div>
-                ) : (
-                  <>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: UI.sub, marginBottom: 7 }}>수업 학생</div>
-                    {selRoll.map(({ student: s, time, kind }) => (
-                      <button key={s.id} onClick={() => openStudent(s)} style={{ minHeight: TAP, ...card, marginBottom: 6, padding: "10px 12px" }}>
-                        <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, color: UI.text }}>
-                          {s.name}
-                          {kind !== "정규" && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: "#b45309", background: "#fef3e7", padding: "2px 6px", borderRadius: 999 }}>{kind}</span>}
-                        </span>
-                        {time && <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: UI.blue, background: UI.blueBg, padding: "3px 8px", borderRadius: 8 }}>{time}</span>}
-                      </button>
-                    ))}
-                  </>
-                )}
+                {/* [180차수 원장 요청 11-19] 수업 학생 명단은 뺐다(학생은 [학생] 탭에서 본다). 대신 보고 있는 달의 근무일을 모아 보여준다. */}
+                <div style={{ borderTop: `1px solid ${UI.line}`, paddingTop: 11 }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: UI.sub }}>{calYm.m + 1}월 근무</span>
+                    <span style={{ fontSize: 13.5, fontWeight: 800, color: UI.text }}>{monthWork.length}일</span>
+                  </div>
+                  {monthWork.length === 0 ? (
+                    <div style={{ fontSize: 13, color: UI.dim }}>이 달에는 근무일이 없습니다.</div>
+                  ) : (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {monthWork.map(({ ds, d, w }) => (
+                        <button key={ds} type="button" onClick={() => setCalSel(ds)}
+                          style={{ minHeight: TAP, padding: "6px 10px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", textAlign: "left",
+                            border: `1px solid ${ds === calSel ? UI.blue : w.kind === "추가" ? "#F2C14E" : UI.line}`, background: ds < today ? UI.bg : "#fff" }}>
+                          <span style={{ display: "block", fontSize: 12.5, fontWeight: 800, color: ds < today ? UI.sub : UI.text }}>{d.getDate()}일 ({TEACHER_DK_KO[d.getDay()]})</span>
+                          <span style={{ display: "block", fontSize: 11, fontWeight: 700, color: UI.blue, marginTop: 2 }}>{w.time ? fmtTime(w.time) : "시간 미정"}{w.kind === "추가" ? " · 추가" : ""}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           );
