@@ -96,6 +96,13 @@ html.stu .lecrow.on .cb::after{content:"✓"; color:#fff; font-size:15px; font-w
 html.stu .lecrow.disabled{opacity:.45; cursor:default}
 html.stu .lecrow.disabled .cb{visibility:hidden}
 html.stu .lecrow.hide{display:none}
+/* [180차수] 선생님·원장 — 바로 들어가기일 때는 체크 칸 대신 › 표시, 위에 선택 단추 줄 */
+html.stu .lecrow .go{display:none; flex:none; margin-left:8px; color:#B4BCC9; font-size:20px; font-weight:700; line-height:1}
+html.stu .lecgrid.tapenter .lecrow .cb{display:none}
+html.stu .lecgrid.tapenter .lecrow:not(.disabled) .go{display:block}
+html.stu #lecTools{gap:6px; justify-content:flex-end; margin:0 0 8px}
+html.stu #lecTools button{min-height:44px; padding:0 14px; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--ink); font-family:inherit; font-size:13px; font-weight:700; cursor:pointer}
+html.stu #lecTools #lecSelOn{color:var(--crimson)}
 html.stu .lecmore{display:block; width:100%; border:1px solid var(--line); border-top:none; border-radius:0 0 14px 14px; background:var(--card); color:var(--crimson); font-size:14px; font-weight:700; min-height:46px; margin-top:-14px; padding-top:14px}
 html.stu .lecgrid.hasmore{border-radius:14px 14px 0 0}
 /* 학습 방식 2×2 */
@@ -569,8 +576,9 @@ textarea.io{width:100%; height:110px; border:1px solid var(--line); border-radiu
 .lec{position:relative}
 </style>
 <script>
-/* [107차수 09-08] 학생앱 안(iframe)에서 열렸고 선별 탭(?pick=1)이 아니면 새 디자인(stu). 단독 실행·선별 탭은 예전 모습 그대로. */
-try{ if (window.parent !== window && new URLSearchParams(location.search).get('pick') !== '1') document.documentElement.classList.add('stu'); }catch(e){}
+/* [107차수 09-08] 학생앱 안(iframe)에서 열렸으면 새 디자인(stu). 단독 실행은 예전 모습 그대로.
+ * [180차수 11-19] 선별 탭(?pick=1)도 같은 색·모양으로 맞춘다(원장 요청 — 내 단어장과 색이 달랐음). 동작은 그대로: 새 홈(범위·방식 카드)은 선별 탭에서 안 쓴다(IS_STU 참조). */
+try{ if (window.parent !== window) document.documentElement.classList.add('stu'); }catch(e){}
 </script>
 </head>
 <body>
@@ -643,6 +651,13 @@ try{ if (window.parent !== window && new URLSearchParams(location.search).get('p
     <button class="allbtn" id="btnAll" disabled>선택 범위에서 학습 시작</button>
     <div class="rangeinfo" id="rangePick">아래 단원 목록에서 체크하세요</div>
     <div class="sechead" id="lecHead">단원 목록 — 체크하면 범위에 담겨요</div>
+    <!-- [180차수] 선생님·원장: 누르면 바로 들어가기 ↔ [선택]으로 여러 개 고르기 -->
+    <div id="lecTools" style="display:none">
+      <button type="button" id="lecSelOn">선택</button>
+      <button type="button" id="lecSelAll">전체 선택</button>
+      <button type="button" id="lecSelNone">선택 해제</button>
+      <button type="button" id="lecSelOff">닫기</button>
+    </div>
     <div class="lecgrid" id="lecGrid"></div>
     <button class="lecmore" id="lecMore" type="button" style="display:none">전체 보기</button>
     <!-- [107차수] 학습 방식 2×2 + 시작 단추 — 학생앱 안(stu)에서만 보인다. 단독 실행은 예전 "어떻게 공부할까요?" 창(#mMode) 그대로 -->
@@ -1522,7 +1537,7 @@ async function nsChange(patch){
     return;
   }
   nsSaveView();
-  applyLayerData(); selLecs.clear(); mode = 'all';
+  applyLayerData(); selLecs.clear(); mode = 'all'; lecSelectMode = false;   // [180차수] 책을 새로 열면 다시 '누르면 바로 들어가기'부터
   renderHome(); embScrollTop();
 }
 function paintNsBar(){
@@ -2194,7 +2209,15 @@ function renderHome(){
     $('#statPct').textContent = DATA.length ? (correct / DATA.length * 100).toFixed(0) + '%' : '';
     $('#crownHome').textContent = S.crowns > 0 ? `♛ 왕관 ${S.crowns}개` : '';
     const uwName = BOOK ? (BOOK.ns ? '과' : (BOOK.unit === '강' ? '강' : BOOK.unit)) : '단원';
-    $('#lecHead').textContent = (BOOK && BOOK.nsx) ? '공부할 묶음을 선택하세요 — 누르면 범위에 담겨요' : `공부할 ${uwName}를 선택하세요 — 누르면 범위에 담겨요`;
+    if (LEC_TAP_ENTER && selLecs.size) lecSelectMode = true;      // 범위가 이미 담겨 있으면(숙제 카드 등) 체크가 보여야 한다
+    const tapEnter = LEC_TAP_ENTER && !lecSelectMode;
+    $('#lecHead').textContent = tapEnter ? `공부할 ${(BOOK && BOOK.nsx) ? '묶음' : uwName}를 누르세요 — 바로 들어가요`
+      : (BOOK && BOOK.nsx) ? '공부할 묶음을 선택하세요 — 누르면 범위에 담겨요' : `공부할 ${uwName}를 선택하세요 — 누르면 범위에 담겨요`;
+    $('#lecTools').style.display = LEC_TAP_ENTER ? 'flex' : 'none';
+    $('#lecSelOn').style.display = tapEnter ? '' : 'none';
+    ['#lecSelAll', '#lecSelNone', '#lecSelOff'].forEach(id => { $(id).style.display = tapEnter ? 'none' : ''; });
+    g.classList.toggle('tapenter', tapEnter);
+    $('#kindSec').style.display = tapEnter ? 'none' : '';          // 방식·시작 단추는 선택 방식일 때만(바로 들어갈 때는 창에서 방식을 고른다)
     const LIMIT = 10;                                   // 처음엔 10칸 + [전체 보기] (원장 결정 09-08). 체크한 칸은 항상 보인다
     let hidden = 0;
     lecKeys.forEach((lec, i) => {
@@ -2210,11 +2233,13 @@ function renderHome(){
       const hide = !lecListExpanded && i >= LIMIT && !on;
       if (hide) hidden++;
       b.className = 'lecrow' + (on ? ' on' : '') + (sel ? '' : ' disabled') + (hide ? ' hide' : '');
-      b.setAttribute('role', 'checkbox'); b.setAttribute('aria-checked', on ? 'true' : 'false'); b.tabIndex = sel ? 0 : -1;
-      b.innerHTML = `<span class="t">${nsEsc(lecLabel(lec))}</span><span class="st ${stCls}">${stTxt}</span><span class="n">${sel}개 대상</span><span class="cb" aria-hidden="true"></span>`;
+      if (tapEnter) b.setAttribute('role', 'button'); else { b.setAttribute('role', 'checkbox'); b.setAttribute('aria-checked', on ? 'true' : 'false'); }
+      b.tabIndex = sel ? 0 : -1;
+      b.innerHTML = `<span class="t">${nsEsc(lecLabel(lec))}</span><span class="st ${stCls}">${stTxt}</span><span class="n">${sel}개 대상</span><span class="cb" aria-hidden="true"></span><span class="go" aria-hidden="true">›</span>`;
       if (sel){
-        b.onclick = () => toggleLec(lec);
-        b.onkeydown = (e) => { if (e.key === ' ' || e.key === 'Enter'){ e.preventDefault(); toggleLec(lec); } };
+        const act = tapEnter ? () => openModePicker(filterWords(list), lecFull(lec)) : () => toggleLec(lec);
+        b.onclick = act;
+        b.onkeydown = (e) => { if (e.key === ' ' || e.key === 'Enter'){ e.preventDefault(); act(); } };
       }
       g.appendChild(b);
     });
@@ -2250,7 +2275,12 @@ function renderHome(){
 /* ───────── [107차수] 학생앱 안 새 홈 — 학습 방식 카드·시작 단추 ─────────
  * 방식 카드를 눌러도 시작하지 않는다(고르기만). 시작은 맨 아래 단추 한 번 — 그때의 필터·체크 범위(rangeList)로 시작한다.
  * 객관식은 원본 규칙 그대로 1회독에서만(S.round === 1). 숙제 TEST(객관식 클리어)는 다른 길(startHwSession)이라 이 잠금과 무관. */
-const IS_STU = document.documentElement.classList.contains('stu');
+const IS_STU = document.documentElement.classList.contains('stu') && !PICKMODE;   // [180차수] 선별 탭은 모양만 stu, 새 홈 동작은 안 쓴다
+/* [180차수 원장 요청 11-19 · 181차수부터 학생도] 단어장: 단원을 누르면 바로 그 단원으로 들어간다("어떻게 공부할까요?" 창).
+ *   여러 단원을 묶어 공부하려면 [선택]을 눌러 체크 방식으로 바꾼다(전체 선택 · 선택 해제 · 닫기).
+ *   숙제 카드로 들어와 범위가 미리 체크돼 있으면 선택 방식으로 열린다(전처럼 아래 방식 카드 + 시작 단추). */
+const LEC_TAP_ENTER = IS_STU;   // [181차수 원장 결정 11-19] 학생에게도 같은 방식(처음엔 선생님·원장만이었다)
+let lecSelectMode = false;
 const KIND_NAME = { card:'카드', blink:'블링크', mc:'객관식', test:'시험' };
 let kindSel = 'test';
 try{ const k = localStorage.getItem('maplevoca_lastkind'); if (KIND_NAME[k]) kindSel = k; }catch(e){}
@@ -2309,6 +2339,14 @@ $('#btnStart').onclick = () => {
   startSession(l, { kind: kindSel });
 };
 $('#lecMore').onclick = () => { lecListExpanded = !lecListExpanded; renderHome(); };
+/* [180차수] 선택 방식 단추 — 전체 선택은 지금 필터(전체·미학습·오답·별표)에 대상 단어가 있는 단원만 담는다 */
+$('#lecSelOn').onclick = () => { lecSelectMode = true; renderHome(); };
+$('#lecSelOff').onclick = () => { lecSelectMode = false; selLecs.clear(); renderHome(); };
+$('#lecSelNone').onclick = () => { selLecs.clear(); renderHome(); };
+$('#lecSelAll').onclick = () => {
+  Object.keys(byLec).map(Number).forEach(l => { if (filterWords(byLec[l]).length) selLecs.add(l); });
+  lecListExpanded = true; renderHome();
+};
 /* [128차수] 내신 줄 — 시험 고르기 · 종류별/주차별 · 종류(주차) 단추 */
 $('#nsExam').onchange = (e) => nsChange({ exam: e.target.value, pick: null });
 document.querySelectorAll('#nsBy button').forEach(b => { b.onclick = () => { if (NSV && NSV.by !== b.dataset.by) nsChange({ by: b.dataset.by, pick: null }); }; });
@@ -2320,7 +2358,7 @@ $('#nsChips').onclick = (e) => {
 $('#btnChangeBook').onclick = () => goShelf();
 if (IS_STU){
   $('#bookCard').style.display = '';
-  $('#kindSec').style.display = '';
+  $('#kindSec').style.display = LEC_TAP_ENTER ? 'none' : '';
   document.querySelector('.statlabel').style.display = '';
   $('#statPct').style.display = '';
 }

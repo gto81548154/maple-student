@@ -5,6 +5,7 @@ import { fmtDateKR, fmtDateShort, fmtTime, shiftYmd } from "../../domain/time.js
 import { fmtClock, parseToeicId, toeicDoneCount, toeicNextLc, toeicP5Stats } from "../../domain/toeic.jsx";
 import { fmtLecRange } from "../../domain/voca.jsx";
 
+import { renderCheckinBox } from "./TeacherCheckin.jsx";
 // [122차수] 선생님 홈 탭 그리기(출근·오늘 할 일·단어 숙제·바로가기). TeacherHome.jsx에서 그대로 옮김.
 export function renderTeacherHomeTab(C) {
   const { canToeic, cardBox, cardMain, cardSub, home, isWorkday, roster, session, setBriefDay, setDateStr, setTab, setToeicMode, setToeicPick, setVocaMode, setVocaTask, startTeacherHwTest, teacher, today, todoRow, toeic, setNsOpen } = C;
@@ -30,6 +31,8 @@ export function renderTeacherHomeTab(C) {
           const doneCount = todos.filter(x => x.done).length;
           return (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {/* [181차수] 오늘 출근 기록 — [출근] 단추. 서버가 열어 준 선생님에게만 보인다(원장 화면에는 없음) */}
+              {renderCheckinBox(C)}
               {/* 출근 안내 띠 — 학생 홈의 등원 안내와 같은 자리·같은 모양 */}
               {work ? (
                 <div style={{ background: UI.blueBg, border: "1px solid #c5dcf6", borderRadius: 14, padding: "12px 15px" }}>

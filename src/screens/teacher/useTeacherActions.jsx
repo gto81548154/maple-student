@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { teacherLinkDead, teacherUrl } from "../../core/auth.jsx";
 import { VOCA_APP_URL, WORKER_ORIGIN } from "../../core/config.jsx";
 import { academyHour24 } from "../../domain/attendance.jsx";
@@ -119,6 +119,22 @@ export function useTeacherActions(D) {
     })();
     return () => { dead = true; };
   }, [home, today, teacher, auth.tk, reloadHome]);
+  // [181차수] 출근 기록 — [출근] 단추(undo=false) · [취소](undo=true). 서버가 오늘 날짜·시각을 적고 내 기록 전체를 돌려준다.
+  const [checkinBusy, setCheckinBusy] = useState(false);
+  const [checkinMsg, setCheckinMsg] = useState("");
+  const checkIn = async (undo) => {
+    if (checkinBusy) return;
+    setCheckinBusy(true); setCheckinMsg("");
+    try {
+      const r = await fetch(teacherUrl("/teacher/checkin"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(undo ? { undo: true } : {}) });
+      if (r.status === 403) { teacherLinkDead(); return; }
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j || !j.success) throw new Error((j && j.error) || "");
+      setHome(prev => prev ? { ...prev, checkins: j.checkins || {} } : prev);
+    } catch (e) {
+      setCheckinMsg(e && e.message && !(e instanceof TypeError) ? `기록하지 못했어요: ${e.message}` : "기록하지 못했어요. 인터넷 연결을 확인하고 다시 눌러 주세요.");
+    } finally { setCheckinBusy(false); }
+  };
   // [10차수 원장 지시] 학생 화면은 새 창에서 연다 — 선생님 홈을 그대로 두고 학생만 확인하고 닫는다.
   const openStudent = (s) => {
     const sp = new URLSearchParams();
@@ -158,5 +174,5 @@ export function useTeacherActions(D) {
     }
     return `${vocaSrc}&${extra.toString()}`;
   })();
-  return { openStudent, saveStaffSchedule, startTeacherHwTest, toggleTodo, vocaPickSrc, vocaSrc };
+  return { checkIn, checkinBusy, checkinMsg, openStudent, saveStaffSchedule, startTeacherHwTest, toggleTodo, vocaPickSrc, vocaSrc };
 }

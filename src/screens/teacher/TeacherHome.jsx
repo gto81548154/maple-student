@@ -82,7 +82,7 @@ export function TeacherHome({ auth }) {
     [roster, dateStr]
   );
   const isWorkday = !!(home && home.stafftodo && home.stafftodo.sessions && home.stafftodo.sessions[today]);
-  const { openStudent, saveStaffSchedule, startTeacherHwTest, toggleTodo, vocaPickSrc, vocaSrc } = useTeacherActions({ auth, busyItem, home, reloadHome, schedBusy, session, setBusyItem, setErr, setHome, setSchedBusy, setSchedMsg, setVocaHwTask, teacher, today });
+  const { checkIn, checkinBusy, checkinMsg, openStudent, saveStaffSchedule, startTeacherHwTest, toggleTodo, vocaPickSrc, vocaSrc } = useTeacherActions({ auth, busyItem, home, reloadHome, schedBusy, session, setBusyItem, setErr, setHome, setSchedBusy, setSchedMsg, setVocaHwTask, teacher, today });
 
   const card = { width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 10, padding: "13px 14px", marginBottom: 8, borderRadius: 12, border: `1px solid ${UI.line}`, background: "#fff", cursor: "pointer", fontFamily: "inherit" };
   const busyBox = <div style={{ padding: 40, textAlign: "center", color: UI.dim, fontSize: 14 }}>불러오는 중...</div>;
@@ -126,7 +126,7 @@ export function TeacherHome({ auth }) {
       setSchedEdit(target === "sched" && st.sd ? { date: st.sd, openId: "" } : null);
     },
   });
-  const C = { areas, canToeic, briefDay, busyBox, calSel, calYm, card, cardBox, cardMain, cardSub, dateStr, home, isWorkday, loading, openBook, openStudent, openVideo, playing, reloadHome, roll, roster, saveStaffSchedule, schedBusy, schedEdit, schedMsg, schedPressRef, session, setBriefDay, setCalSel, setCalYm, setDateStr, setOpenBook, setSchedEdit, setTab, setToeicMode, setToeicPick, setVocaHwTask, setVocaMode, setVocaTask, startTeacherHwTest, teacher, today, todoRow, toeic, toeicMode, toeicPick, vocaHwTask, vocaMode, vocaPickSrc, vocaSrc, vocaTask, setNsOpen };
+  const C = { areas, checkIn, checkinBusy, checkinMsg, canToeic, briefDay, busyBox, calSel, calYm, card, cardBox, cardMain, cardSub, dateStr, home, isWorkday, loading, openBook, openStudent, openVideo, playing, reloadHome, roll, roster, saveStaffSchedule, schedBusy, schedEdit, schedMsg, schedPressRef, session, setBriefDay, setCalSel, setCalYm, setDateStr, setOpenBook, setSchedEdit, setTab, setToeicMode, setToeicPick, setVocaHwTask, setVocaMode, setVocaTask, startTeacherHwTest, teacher, today, todoRow, toeic, toeicMode, toeicPick, vocaHwTask, vocaMode, vocaPickSrc, vocaSrc, vocaTask, setNsOpen };
   return (
     <div style={{ minHeight: "100vh", background: UI.bg, fontFamily: F, color: UI.text }}>
       {/* [178차수] 머리글·탭 줄을 학생 화면과 같은 모양으로 — 작은 머리글(MP + 이름) + 화면 아래 붙박이 탭(StudentTabBar). 탭 구성과 안의 내용은 그대로. */}
