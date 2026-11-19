@@ -168,6 +168,44 @@ html.bh{
   /* [143차수] 객관식 채점 색 — 어두운 바탕에서도 글자가 보이게 */
   --mc-wrong:#FF8A7A; --mc-wrong-soft:#3D1F15; --mc-right:#8DB6FF; --mc-right-soft:#16243D; --mc-prev:#F2C14E; --mc-prev-soft:#3A3012; --mc-prev-ink:#F2C14E;
 }
+/* [182차수 원장 요청 11-19] 블랙홀 — 우주 느낌 살짝: 별(가만히 있는 층 + 깜빡이는 층) · 옅은 성운 · 천천히 도는 은하 빛 · 들어올 때 짧은 전환.
+ *   글자·카드는 그대로 두고 바탕에만 그린다(카드 사이 틈과 여백에서 보인다). 움직임 줄이기를 켠 기기에서는 가만히 있는다. */
+html.bh body{
+  position:relative; z-index:0; background-color:#0D0C14; overflow-x:clip;
+  background-image:
+    radial-gradient(1.2px 1.2px at 22px 34px, rgba(255,255,255,.80) 50%, transparent 52%),
+    radial-gradient(1px 1px at 96px 148px, rgba(255,255,255,.55) 50%, transparent 52%),
+    radial-gradient(1.4px 1.4px at 171px 62px, rgba(190,205,255,.75) 50%, transparent 52%),
+    radial-gradient(1px 1px at 212px 201px, rgba(255,255,255,.45) 50%, transparent 52%),
+    radial-gradient(1px 1px at 58px 226px, rgba(255,214,190,.60) 50%, transparent 52%),
+    radial-gradient(ellipse 80% 380px at 85% 70px, rgba(124,96,255,.34), transparent 70%),
+    radial-gradient(ellipse 70% 340px at 5% 520px, rgba(255,122,92,.16), transparent 70%);
+  background-size:190px 190px, 230px 230px, 260px 260px, 210px 210px, 170px 170px, 100% 100%, 100% 100%;
+  background-repeat:repeat, repeat, repeat, repeat, repeat, no-repeat, no-repeat;
+}
+html.bh body::before{                                   /* 깜빡이는 별 층 */
+  content:""; position:absolute; inset:0; z-index:-1; pointer-events:none;
+  background-image:
+    radial-gradient(1.6px 1.6px at 40px 120px, rgba(255,255,255,.95) 50%, transparent 52%),
+    radial-gradient(1.2px 1.2px at 150px 30px, rgba(200,215,255,.90) 50%, transparent 52%),
+    radial-gradient(1.4px 1.4px at 250px 190px, rgba(255,255,255,.85) 50%, transparent 52%),
+    radial-gradient(1.2px 1.2px at 310px 90px, rgba(255,225,205,.85) 50%, transparent 52%);
+  background-size:270px 240px; animation:bhTwinkle 3.6s ease-in-out infinite alternate;
+}
+html.bh body::after{                                    /* 천천히 도는 은하 빛 — 오른쪽 위 */
+  content:""; position:absolute; top:24px; right:56px; width:240px; height:240px; z-index:-1; pointer-events:none; border-radius:50%;   /* 흐림(22px)이 화면 밖으로 번져 가로 스크롤이 생기지 않게 안쪽에 둔다 */
+  background:conic-gradient(from 0deg, transparent 0 8%, rgba(150,125,255,.22) 18%, transparent 34%, rgba(255,150,120,.14) 52%, transparent 68%, rgba(120,170,255,.16) 84%, transparent 96%);
+  filter:blur(22px); opacity:.9; animation:bhSpin 80s linear infinite;
+}
+@keyframes bhTwinkle{ from{opacity:.25} to{opacity:1} }
+@keyframes bhSpin{ to{transform:rotate(360deg)} }
+html.bhin body{animation:bhIn .7s ease-out}             /* [블랙홀] 단추로 들어오는 순간 */
+@keyframes bhIn{ 0%{opacity:.2; filter:brightness(2.2) saturate(1.6)} 60%{opacity:1; filter:brightness(1.25)} 100%{opacity:1; filter:none} }
+@media (prefers-reduced-motion: reduce){ html.bh body::before, html.bh body::after, html.bhin body{animation:none} }
+html.bh header{background:rgba(13,12,20,.55)}
+/* 큰 카드·단원 줄은 살짝 비쳐서 뒤의 별·성운이 은은하게 보인다(글자 읽기에는 지장 없는 정도) */
+html.bh.stu #homeCard, html.bh.stu .lecrow, html.bh.stu .lecmore, html.bh.stu .mode:not(.on){background:rgba(30,28,36,.66)}
+html.bh.stu #homeCard .stat{background:transparent}   /* 카드 안의 진도 칸이 따로 네모로 떠 보이지 않게 */
 html.bh .toggle::after{background:#E8EDF3}
 html.bh .mcbadge,html.bh .book .bhid{color:var(--gold)}
 html.bh .aicard .vd.ok{color:var(--teal)}
@@ -2368,6 +2406,11 @@ $('#btnAll').onclick = () => { const l = rangeList(); if (l.length) openModePick
 $('#btnBH').onclick = () => {
   if (!BOOK || !hasBH()) return;
   setLayer(LAYER === 'bh' ? 'main' : 'bh');
+  if (LAYER === 'bh'){                                  // [182차수] 들어오는 순간의 짧은 전환(0.7초)
+    const de = document.documentElement;
+    de.classList.remove('bhin'); void de.offsetWidth; de.classList.add('bhin');
+    setTimeout(() => de.classList.remove('bhin'), 800);
+  }
   renderHome(); show('home');
   toast(LAYER === 'bh' ? '블랙홀 모드 — 파생어까지 전부 나와요' : '일반 모드로 돌아왔어요');
 };

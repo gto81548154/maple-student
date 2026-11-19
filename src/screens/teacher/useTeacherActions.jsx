@@ -122,11 +122,12 @@ export function useTeacherActions(D) {
   // [181차수] 출근 기록 — [출근] 단추(undo=false) · [취소](undo=true). 서버가 오늘 날짜·시각을 적고 내 기록 전체를 돌려준다.
   const [checkinBusy, setCheckinBusy] = useState(false);
   const [checkinMsg, setCheckinMsg] = useState("");
-  const checkIn = async (undo) => {
+  //   [182차수] kind = "in" 출근 · "out" 퇴근 · "undo" 오늘 기록 지우기 · "undoOut" 퇴근만 지우기
+  const checkIn = async (kind) => {
     if (checkinBusy) return;
     setCheckinBusy(true); setCheckinMsg("");
     try {
-      const r = await fetch(teacherUrl("/teacher/checkin"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(undo ? { undo: true } : {}) });
+      const r = await fetch(teacherUrl("/teacher/checkin"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(kind === "out" ? { out: true } : kind === "undo" ? { undo: true } : kind === "undoOut" ? { undoOut: true } : {}) });
       if (r.status === 403) { teacherLinkDead(); return; }
       const j = await r.json().catch(() => null);
       if (!r.ok || !j || !j.success) throw new Error((j && j.error) || "");
