@@ -1,4 +1,4 @@
-import { TAP } from "../../theme/tokens.jsx";
+import { TAP, UI } from "../../theme/tokens.jsx";
 import { useEffect, useRef, useState } from "react";
 import { teacherUrl } from "../../core/auth.jsx";
 import { TOEIC_P5_TYPES, pickToeicP5, toeicP5Stats, toeicP5TypeStats } from "../../domain/toeic.jsx";
@@ -44,11 +44,11 @@ export function OwnerToeicP5({ toeic }) {
   const selected = toeicP5Stats(p5, all, type);
   const typeStats = toeicP5TypeStats(all, p5);
   const reviewCount = Math.min(5, selected.wrongNow);
-  const cardBox = { background: "#fff", border: "1px solid #e8eaef", borderRadius: 14, padding: "13px 14px" };
+  const cardBox = { background: "#fff", border: `1px solid ${UI.line}`, borderRadius: 14, padding: "13px 14px" };
   const btn = (bg, fg, bd) => ({ display: "block", width: "100%", minHeight: TAP, padding: "12px 0", borderRadius: 10, fontSize: 14.5, fontWeight: 900, cursor: "pointer", fontFamily: "inherit", border: `1px solid ${bd || bg}`, background: bg, color: fg });
 
   if (loadErr) return <div style={{ ...cardBox, color: "#6b3fa0", fontSize: 13, fontWeight: 700 }}>{loadErr}</div>;
-  if (!all) return <div style={{ padding: 40, textAlign: "center", color: "#999", fontSize: 14 }}>파트5 문제 불러오는 중...</div>;
+  if (!all) return <div style={{ padding: 40, textAlign: "center", color: UI.dim, fontSize: 14 }}>파트5 문제 불러오는 중...</div>;
 
   if (loaded === false) return <div style={cardBox}>학습 기록을 불러오는 중이에요...</div>;
 
@@ -58,13 +58,13 @@ export function OwnerToeicP5({ toeic }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={cardBox}>
           <div style={{ fontSize: 13, fontWeight: 800, color: '#1f7a4d' }}>파트5 · RC 읽기</div>
-          <div style={{ fontSize: 17, fontWeight: 900, color: '#1a1a2e', marginTop: 6 }}>푼 문제 {stats.done} / {all.length}</div>
+          <div style={{ fontSize: 17, fontWeight: 900, color: UI.text, marginTop: 6 }}>푼 문제 {stats.done} / {all.length}</div>
           <div style={{ fontSize: 13, color: '#4a5060', fontWeight: 700, marginTop: 7 }}>누적 정답률 {stats.accuracy == null ? '—' : stats.accuracy + '%'} · 복습할 오답 {stats.wrongNow}개</div>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }} aria-label="문제 유형 선택">
           {TOEIC_P5_TYPES.map(t => (
             <button key={t} onClick={() => setType(t)} aria-pressed={type === t} style={{ minHeight: TAP, padding: '7px 11px', borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800,
-              border: '1px solid ' + (type === t ? '#1f7a4d' : '#dfe3ef'), background: type === t ? '#1f7a4d' : '#fff', color: type === t ? '#fff' : '#7b8494' }}>{t}</button>
+              border: '1px solid ' + (type === t ? '#1f7a4d' : UI.line), background: type === t ? '#1f7a4d' : '#fff', color: type === t ? '#fff' : UI.sub }}>{t}</button>
           ))}
         </div>
         <div style={{ ...cardBox, background: '#f8fafc' }}>
@@ -73,16 +73,16 @@ export function OwnerToeicP5({ toeic }) {
           <button disabled={!reviewCount} onClick={() => start('wrong')} style={{ ...btn('#fff', '#6b3fa0', '#6b3fa0'), marginTop: 8, opacity: reviewCount ? 1 : 0.5, cursor: reviewCount ? 'pointer' : 'default' }}>
             {reviewCount ? '오답만 ' + reviewCount + '문제 복습' : '복습할 오답이 없어요'}
           </button>
-          <div style={{ fontSize: 12, color: '#647084', lineHeight: 1.6, marginTop: 8 }}>오답 복습은 마지막에 틀린 문제만 나와요. 다시 맞히면 복습 목록에서 빠져요.</div>
+          <div style={{ fontSize: 12, color: UI.sub, lineHeight: 1.6, marginTop: 8 }}>오답 복습은 마지막에 틀린 문제만 나와요. 다시 맞히면 복습 목록에서 빠져요.</div>
         </div>
         <section aria-label="유형별 정답률" style={cardBox}>
-          <div style={{ fontSize: 14, fontWeight: 900, color: '#1a1a2e' }}>유형별 정답률</div>
-          <div style={{ fontSize: 12, color: '#647084', lineHeight: 1.6, marginTop: 5 }}>정답 횟수 ÷ 전체 풀이 횟수예요. 복습도 포함해요.<br />유형을 누르면 그 유형을 골라 풀 수 있어요.</div>
+          <div style={{ fontSize: 14, fontWeight: 900, color: UI.text }}>유형별 정답률</div>
+          <div style={{ fontSize: 12, color: UI.sub, lineHeight: 1.6, marginTop: 5 }}>정답 횟수 ÷ 전체 풀이 횟수예요. 복습도 포함해요.<br />유형을 누르면 그 유형을 골라 풀 수 있어요.</div>
           {typeStats.map(s => (
-            <button key={s.type} onClick={() => setType(s.type)} aria-pressed={type === s.type} aria-label={s.type + ' 정답률 ' + (s.accuracy == null ? '기록 없음' : s.accuracy + '%')} style={{ width: '100%', minHeight: TAP, textAlign: 'left', padding: '12px 0', fontFamily: 'inherit', cursor: 'pointer', border: 0, borderBottom: '1px solid #e8eaef', background: 'transparent', color: '#1a1a2e' }}>
+            <button key={s.type} onClick={() => setType(s.type)} aria-pressed={type === s.type} aria-label={s.type + ' 정답률 ' + (s.accuracy == null ? '기록 없음' : s.accuracy + '%')} style={{ width: '100%', minHeight: TAP, textAlign: 'left', padding: '12px 0', fontFamily: 'inherit', cursor: 'pointer', border: 0, borderBottom: `1px solid ${UI.line}`, background: 'transparent', color: UI.text }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 13, fontWeight: 800 }}><span>{s.type}{type === s.type ? ' ✓' : ''}</span><span>{s.accuracy == null ? '기록 없음' : s.accuracy + '%'}</span></div>
-              <div style={{ height: 5, background: '#e8eaef', borderRadius: 4, marginTop: 8 }}><div style={{ width: (s.accuracy || 0) + '%', height: '100%', background: '#1f7a4d', borderRadius: 4 }} /></div>
-              <div style={{ fontSize: 11.5, color: '#647084', marginTop: 6 }}>정답 {s.correct} / 풀이 {s.attempts}회 · 남은 오답 {s.wrongNow}개</div>
+              <div style={{ height: 5, background: UI.line, borderRadius: 4, marginTop: 8 }}><div style={{ width: (s.accuracy || 0) + '%', height: '100%', background: '#1f7a4d', borderRadius: 4 }} /></div>
+              <div style={{ fontSize: 11.5, color: UI.sub, marginTop: 6 }}>정답 {s.correct} / 풀이 {s.attempts}회 · 남은 오답 {s.wrongNow}개</div>
             </button>
           ))}
         </section>
@@ -104,8 +104,8 @@ export function OwnerToeicP5({ toeic }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ ...cardBox, textAlign: "center" }}>
           <div style={{ fontSize: 13, fontWeight: 800, color: "#1f7a4d" }}>{mode === "wrong" ? "오답 복습을 마쳤어요" : "끝났어요"}</div>
-          <div style={{ fontSize: 26, fontWeight: 900, color: "#1a1a2e", marginTop: 6 }}>{okN} / {set.length}</div>
-          <div style={{ fontSize: 12, color: "#9aa0ab", fontWeight: 700, marginTop: 4 }}>{type} · 남은 오답 {selected.wrongNow}개</div>
+          <div style={{ fontSize: 26, fontWeight: 900, color: UI.text, marginTop: 6 }}>{okN} / {set.length}</div>
+          <div style={{ fontSize: 12, color: UI.dim, fontWeight: 700, marginTop: 4 }}>{type} · 남은 오답 {selected.wrongNow}개</div>
         </div>
         {reviewCount > 0 && <button onClick={() => start('wrong')} style={btn('#6b3fa0', '#fff')}>오답만 {reviewCount}문제 복습</button>}
         {mode === 'wrong' && !reviewCount && <div role="status" style={{ ...cardBox, color: '#1f7a4d', fontSize: 13, fontWeight: 800 }}>이 유형의 오답을 모두 복습했어요!</div>}
@@ -133,13 +133,13 @@ export function OwnerToeicP5({ toeic }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <span style={{ fontSize: 12.5, fontWeight: 800, color: "#1f7a4d" }}>{mode === "wrong" ? "오답 복습 · " : ""}{idx + 1} / {set.length}</span>
-        <span style={{ fontSize: 11.5, color: "#9aa0ab", fontWeight: 700 }}>{q.v}권 TEST {String(q.t).padStart(2, "0")} · {q.n}번 · {q.type}</span>
+        <span style={{ fontSize: 11.5, color: UI.dim, fontWeight: 700 }}>{q.v}권 TEST {String(q.t).padStart(2, "0")} · {q.n}번 · {q.type}</span>
         {p5[q.id] && p5[q.id].last === "X" && !answered && <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 800, color: "#6b3fa0" }}>지난번에 틀린 문제</span>}
       </div>
-      <div style={{ ...cardBox, fontSize: 16, lineHeight: 1.6, fontWeight: 600, color: "#1a1a2e" }}>
+      <div style={{ ...cardBox, fontSize: 16, lineHeight: 1.6, fontWeight: 600, color: UI.text }}>
         {parts.map((p, i) => (
           <span key={i}>{p}{i < parts.length - 1 && (
-            <span style={{ display: "inline-block", minWidth: 70, borderBottom: "2px solid #1a1a2e", textAlign: "center", fontWeight: 900, color: answered ? "#1f7a4d" : "transparent" }}>
+            <span style={{ display: "inline-block", minWidth: 70, borderBottom: `2px solid ${UI.text}`, textAlign: "center", fontWeight: 900, color: answered ? "#1f7a4d" : "transparent" }}>
               {answered ? q.c["ABCD".indexOf(q.a)] : "_"}
             </span>)}</span>
         ))}
@@ -152,26 +152,26 @@ export function OwnerToeicP5({ toeic }) {
           <button key={L} disabled={answered || answering} onClick={() => pick(L)} style={{minHeight: TAP, 
             display: "flex", gap: 10, alignItems: "center", textAlign: "left", width: "100%", padding: "12px 14px", borderRadius: 12, fontFamily: "inherit",
             fontSize: 15, fontWeight: 700, cursor: answered ? "default" : "pointer",
-            border: `1.5px solid ${isAns ? "#1f7a4d" : isMine ? "#6b3fa0" : "#dfe3ef"}`,
-            background: isAns ? "#e3f3ea" : isMine ? "#f3eefa" : "#fff", color: "#1a1a2e",
+            border: `1.5px solid ${isAns ? "#1f7a4d" : isMine ? "#6b3fa0" : UI.line}`,
+            background: isAns ? "#e3f3ea" : isMine ? "#f3eefa" : "#fff", color: UI.text,
           }}>
-            <span style={{ fontWeight: 900, color: isAns ? "#1f7a4d" : isMine ? "#6b3fa0" : "#9aa0ab" }}>({L})</span>
+            <span style={{ fontWeight: 900, color: isAns ? "#1f7a4d" : isMine ? "#6b3fa0" : UI.dim }}>({L})</span>
             <span style={{ flex: 1 }}>{c}</span>
             {isAns && <span style={{ fontSize: 12, fontWeight: 900, color: "#1f7a4d" }}>정답</span>}
             {isMine && <span style={{ fontSize: 12, fontWeight: 900, color: "#6b3fa0" }}>내 답</span>}
           </button>
         );
       })}
-      {answering && <div role="status" style={{ fontSize: 12, color: "#647084" }}>답을 기록하고 있어요...</div>}
+      {answering && <div role="status" style={{ fontSize: 12, color: UI.sub }}>답을 기록하고 있어요...</div>}
       {answerErr && <div role="alert" style={{ fontSize: 13, color: "#6b3fa0" }}>{answerErr}</div>}
       {answered && (
         <div style={{ ...cardBox, background: picked === q.a ? "#f2fbf7" : "#f8f5fc", border: `1px solid ${picked === q.a ? "#cfe9df" : "#e3d8f1"}` }}>
           <div style={{ fontSize: 13, fontWeight: 900, color: picked === q.a ? "#1f7a4d" : "#6b3fa0" }}>{picked === q.a ? "맞았어요" : `틀렸어요 · 정답 (${q.a})`}</div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "#2a2a28", marginTop: 6, lineHeight: 1.55 }}>{q.why}</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: UI.text, marginTop: 6, lineHeight: 1.55 }}>{q.why}</div>
         </div>
       )}
       {answered && <button onClick={() => { if (!pickBusy.current) return; pickBusy.current = false; setIdx(idx + 1); setPicked(""); }} style={btn("#1f7a4d", "#fff")}>{idx + 1 < set.length ? "다음 문제 ›" : "결과 보기 ›"}</button>}
-      <button disabled={answering} onClick={() => setSet(null)} style={btn("#fff", "#647084", "#dfe3ef")}>목록으로</button>
+      <button disabled={answering} onClick={() => setSet(null)} style={btn("#fff", UI.sub, UI.line)}>목록으로</button>
     </div>
   );
 }

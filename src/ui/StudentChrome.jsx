@@ -2,7 +2,7 @@ import { IS_STAFF_VIEW } from "../core/auth.jsx";
 import { MAX_W, TAB_BAR_H, TAP, UI } from "../theme/tokens.jsx";
 
 // ═══ [103차수 09-08 디자인 개편 · 140차수 토스 스타일 1단계 · 141차수 탭 줄 아래로] 학생 화면 공통 틀 — 머리글 · 아래 탭 5개 · 더보기 ═══
-// 계획서(01_IMPLEMENTATION_PLAN.md) 4·5·10절. 선생님 홈(TeacherHome)·마스터 홈(MasterHome)은 이 틀을 쓰지 않는다.
+// 계획서(01_IMPLEMENTATION_PLAN.md) 4·5·10절. 마스터 홈(MasterHome)은 이 틀을 쓰지 않는다. [178차수] 선생님 홈(TeacherHome)은 아래 탭 줄(StudentTabBar)을 같이 쓰고 머리글은 같은 모양으로 따로 그린다.
 // 머리글(시안 D 모양): 왼쪽 = MP 로고 + 이름 + 학교학년 / 오른쪽 한 줄 = 흰색 둥근 [↻ 새로고침] 버튼 + 남색 둥근 [출석 QR] 버튼. 폭 390px에서도 꺾이지 않게 배치.
 // [148차수] updateReady 가 켜지면 새로고침 단추가 빨간 점 달린 "업데이트!"로 바뀌고, 누르면 onUpdate(새 판 적용).
 export function StudentHeader({ innerRef, student, attToken, onQr, refreshing, onRefresh, updateReady, onUpdate }) {

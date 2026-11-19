@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { TAP } from "../../theme/tokens.jsx";
+import { TAP, UI } from "../../theme/tokens.jsx";
 import { toeicDraftKey, TOEIC_DRAFT_EVENT } from "./useOwnerToeic.jsx";
 import { toeicChoices, toeicQuestionNumbers } from "../../domain/toeicAnswerKeys.mjs";
 import { validateToeicAnswers } from "../../domain/toeicGrading.mjs";
@@ -101,10 +101,10 @@ export function ToeicAnswerSheet({ id, toeic }) {
     } catch { setMessage("기기 저장 설정을 확인해 주세요. 이 기기의 답을 유지했어요."); }
     finally { lock.current = false; setBusy(false); }
   };
-  const btn = on => ({ minHeight: TAP, padding: "8px 10px", borderRadius: 9, fontFamily: "inherit", fontSize: 13, fontWeight: 800, cursor: "pointer", border: "1px solid " + (on ? "#6b3fa0" : "#dfe3ef"), background: on ? "#6b3fa0" : "#fff", color: on ? "#fff" : "#344054" });
-  return <section aria-label="토익 답 입력" style={{ marginTop: 18, borderTop: "1px solid #e8eaef", paddingTop: 14 }}>
+  const btn = on => ({ minHeight: TAP, padding: "8px 10px", borderRadius: 9, fontFamily: "inherit", fontSize: 13, fontWeight: 800, cursor: "pointer", border: "1px solid " + (on ? "#6b3fa0" : UI.line), background: on ? "#6b3fa0" : "#fff", color: on ? "#fff" : "#344054" });
+  return <section aria-label="토익 답 입력" style={{ marginTop: 18, borderTop: `1px solid ${UI.line}`, paddingTop: 14 }}>
     <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontWeight: 800 }}><span>답 입력</span><span>{count} / 100개 입력</span></div>
-    <p style={{ fontSize: 12, color: "#667085", lineHeight: 1.6 }}>답은 이 기기에 먼저 보관돼요. 다른 기기에서도 이어 풀려면 답 저장을 눌러 주세요.</p>
+    <p style={{ fontSize: 12, color: UI.sub, lineHeight: 1.6 }}>답은 이 기기에 먼저 보관돼요. 다른 기기에서도 이어 풀려면 답 저장을 눌러 주세요.</p>
     {local.answers && <p style={{ fontSize: 12, color: "#6b3fa0" }}>이 기기에만 보관한 변경이 있어요.</p>}
     {local.error && <p role="alert">{local.error}</p>}
     <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 5 }}>

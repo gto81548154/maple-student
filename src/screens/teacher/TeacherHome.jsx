@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { computeTeacherDayRoster } from "../../domain/teacher.jsx";
 import { fmtDateKR, getTodayStr } from "../../domain/time.jsx";
 import { useOwnerToeic } from "../toeic/useOwnerToeic.jsx";
-import { MAX_W, TAP } from "../../theme/tokens.jsx";
+import { BADGE_STYLES, MAX_W, TAB_BAR_H, TAP, UI } from "../../theme/tokens.jsx";
+import { StudentTabBar } from "../../ui/StudentChrome.jsx";
 import { useTeacherVideoWatch } from "./useTeacherVideoWatch.jsx";
 import { useTeacherData } from "./useTeacherData.jsx";
 import { useTeacherActions } from "./useTeacherActions.jsx";
@@ -54,7 +55,9 @@ export function TeacherHome({ auth }) {
   const [calSel, setCalSel] = useState(getTodayStr());
   // [11차수] 단어장 탭 안 전환 — "내 단어장"(외우기) / "단어 선별"(숙제로 낼 어려운 단어 고르기)
   const [vocaMode, setVocaMode] = useState("study");
-  // [115차수 토익] 원장 전용 토익 — 기록 훅은 늘 부르고(훅 순서 고정), 받아오는 건 원장일 때만
+  // [115차수 토익] 토익 — 기록 훅은 늘 부르고(훅 순서 고정), 받아오는 건 토익을 쓸 수 있는 사람일 때만
+  // [179차수 원장 결정 11-19] 선생님도 토익을 쓴다(자기계발용, 기록은 사람마다 따로). 서버가 home.toeic 을 내려줄 때만 선생님에게 연다 —
+  //   옛 서버(선생님 토익을 403으로 막는 판)에 붙으면 예전처럼 원장만 보인다. 그래서 앱·서버 어느 쪽을 먼저 올려도 깨지지 않는다.
   const [toeicPick, setToeicPick] = useState("");
   const [toeicMode, setToeicMode] = useState("tests");   // [116차수] "tests" 회차 · "p5" 파트5 5문제
   const [isOwnerView, setIsOwnerView] = useState(false);
@@ -68,7 +71,8 @@ export function TeacherHome({ auth }) {
   const { loadAll, refreshing, reloadHome } = useTeacherData({ setDateStr, setErr, setHome, setLoading, setRoster });
 
   const F = "'Pretendard Variable', -apple-system, sans-serif";
-  useEffect(() => { setIsOwnerView(!!(home && home.isOwner)); }, [home]);
+  const canToeic = !!(home && (home.isOwner || home.toeic === true));
+  useEffect(() => { setIsOwnerView(canToeic); }, [canToeic]);
   const teacher = home?.teacher || {};
   const today = home?.today || getTodayStr();
   const session = home?.stafftodo?.sessions?.[today] || null;
@@ -80,20 +84,20 @@ export function TeacherHome({ auth }) {
   const isWorkday = !!(home && home.stafftodo && home.stafftodo.sessions && home.stafftodo.sessions[today]);
   const { openStudent, saveStaffSchedule, startTeacherHwTest, toggleTodo, vocaPickSrc, vocaSrc } = useTeacherActions({ auth, busyItem, home, reloadHome, schedBusy, session, setBusyItem, setErr, setHome, setSchedBusy, setSchedMsg, setVocaHwTask, teacher, today });
 
-  const card = { width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 10, padding: "13px 14px", marginBottom: 8, borderRadius: 12, border: "1px solid #eceef4", background: "#fff", cursor: "pointer", fontFamily: "inherit" };
-  const busyBox = <div style={{ padding: 40, textAlign: "center", color: "#999", fontSize: 14 }}>불러오는 중...</div>;
+  const card = { width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 10, padding: "13px 14px", marginBottom: 8, borderRadius: 12, border: `1px solid ${UI.line}`, background: "#fff", cursor: "pointer", fontFamily: "inherit" };
+  const busyBox = <div style={{ padding: 40, textAlign: "center", color: UI.dim, fontSize: 14 }}>불러오는 중...</div>;
   // [10차수] 홈 카드 — 학생앱 홈과 같은 모양·같은 글자 크기로 맞춘다.
-  const cardBox = { background: "#fff", border: "1px solid #e8eaef", borderRadius: 14, padding: "13px 14px", cursor: "pointer", textAlign: "left", fontFamily: "inherit", display: "block", width: "100%" };
-  const cardMain = { fontSize: 14.5, fontWeight: 800, color: "#1a1a2e", marginTop: 6, lineHeight: 1.35 };
-  const cardSub = { fontSize: 11.5, color: "#9aa0ab", marginTop: 4, fontWeight: 600 };
+  const cardBox = { background: "#fff", border: `1px solid ${UI.line}`, borderRadius: 14, padding: "13px 14px", cursor: "pointer", textAlign: "left", fontFamily: "inherit", display: "block", width: "100%" };
+  const cardMain = { fontSize: 14.5, fontWeight: 800, color: UI.text, marginTop: 6, lineHeight: 1.35 };
+  const cardSub = { fontSize: 11.5, color: UI.dim, marginTop: 4, fontWeight: 600 };
 
   const todoRow = (sectionKey, item) => (
     <button key={item.id} onClick={() => toggleTodo(sectionKey, item)} disabled={!!busyItem}
       style={{ minHeight: TAP, width: "100%", textAlign: "left", display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 13px", marginBottom: 7, borderRadius: 11,
-        border: `1px solid ${item.done ? "#cfe9df" : "#eceef4"}`, background: item.done ? "#f2fbf7" : "#fff",
+        border: `1px solid ${item.done ? "#cfe9df" : UI.line}`, background: item.done ? "#f2fbf7" : "#fff",
         cursor: busyItem ? "wait" : "pointer", fontFamily: "inherit", opacity: busyItem === item.id ? 0.55 : 1 }}>
       <span style={{ flexShrink: 0, width: 21, height: 21, borderRadius: 6, marginTop: 1, border: `1.5px solid ${item.done ? "#00b894" : "#cfd4de"}`, background: item.done ? "#00b894" : "#fff", color: "#fff", fontSize: 13, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center" }}>{item.done ? "✓" : ""}</span>
-      <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, lineHeight: 1.5, color: item.done ? "#8b9aa5" : "#2A2A28", textDecoration: item.done ? "line-through" : "none" }}>{item.text}</span>
+      <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, lineHeight: 1.5, color: item.done ? "#8b9aa5" : UI.text, textDecoration: item.done ? "line-through" : "none" }}>{item.text}</span>
     </button>
   );
 
@@ -109,8 +113,8 @@ export function TeacherHome({ auth }) {
     const b = areas.flatMap((a) => a.books || []).find((x) => String(x.bookId) === String(initialRoute.st.b));
     if (b && tab === "videos" && !openBook) setOpenBook(b); else if (((window.history.state || {}).pg) === "book") replaceRoute("videos");
   }, [areas]);
-  // 토익 탭은 원장만 — 조교가 #toeic 주소로 들어오면 홈으로(주소를 먼저 고쳐 써야 한 칸이 더 안 쌓인다)
-  useEffect(() => { if (home && !home.isOwner && tab === "toeic") { replaceRoute("home"); setTab("home"); } }, [home]);
+  // 토익을 못 쓰는 사람이 #toeic 주소로 들어오면 홈으로(주소를 먼저 고쳐 써야 한 칸이 더 안 쌓인다)
+  useEffect(() => { if (home && !canToeic && tab === "toeic") { replaceRoute("home"); setTab("home"); } }, [home]);
   useScreenRoute({
     ids: TEACHER_ROUTE_IDS, parent: TEACHER_ROUTE_PARENT, screenId, extra: routeExtra,
     apply: (target, st) => {
@@ -122,52 +126,42 @@ export function TeacherHome({ auth }) {
       setSchedEdit(target === "sched" && st.sd ? { date: st.sd, openId: "" } : null);
     },
   });
-  const C = { areas, briefDay, busyBox, calSel, calYm, card, cardBox, cardMain, cardSub, dateStr, home, isWorkday, loading, openBook, openStudent, openVideo, playing, reloadHome, roll, roster, saveStaffSchedule, schedBusy, schedEdit, schedMsg, schedPressRef, session, setBriefDay, setCalSel, setCalYm, setDateStr, setOpenBook, setSchedEdit, setTab, setToeicMode, setToeicPick, setVocaHwTask, setVocaMode, setVocaTask, startTeacherHwTest, teacher, today, todoRow, toeic, toeicMode, toeicPick, vocaHwTask, vocaMode, vocaPickSrc, vocaSrc, vocaTask, setNsOpen };
+  const C = { areas, canToeic, briefDay, busyBox, calSel, calYm, card, cardBox, cardMain, cardSub, dateStr, home, isWorkday, loading, openBook, openStudent, openVideo, playing, reloadHome, roll, roster, saveStaffSchedule, schedBusy, schedEdit, schedMsg, schedPressRef, session, setBriefDay, setCalSel, setCalYm, setDateStr, setOpenBook, setSchedEdit, setTab, setToeicMode, setToeicPick, setVocaHwTask, setVocaMode, setVocaTask, startTeacherHwTest, teacher, today, todoRow, toeic, toeicMode, toeicPick, vocaHwTask, vocaMode, vocaPickSrc, vocaSrc, vocaTask, setNsOpen };
   return (
-    <div style={{ minHeight: "100vh", background: "#f6f7fb", fontFamily: F }}>
-      <div style={{ background: "linear-gradient(135deg, #182848 0%, #1C66A5 100%)", padding: "18px 24px 20px", color: "#fff" }}>
-        <div style={{ maxWidth: MAX_W, margin: "0 auto" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 17, fontWeight: 800 }}>{home?.isOwner ? "원장" : (teacher.name ? `${teacher.name} 선생님` : "선생님")}</span>
-            {teacher.role && <span style={{ fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 999, background: "rgba(255,255,255,0.18)" }}>{teacher.role}</span>}
-            <span style={{ marginLeft: "auto", fontSize: 11.5, color: "rgba(255,255,255,0.55)" }}>{home?.isOwner ? "원장 전용" : "선생님 전용"}</span>
-            {/* [96차수 09-05] 다시 받아오기 단추 — 학생 화면의 ↻와 같은 모양 */}
-            <button onClick={() => { loadAll({ manual: true }); setNsRefresh((k) => k + 1); }} disabled={refreshing} title="다시 받아오기" aria-label="다시 받아오기"
-              style={{ flexShrink: 0, width: TAP, height: TAP, borderRadius: 12, border: "1px solid rgba(255,255,255,0.25)", background: refreshing ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.14)", color: "#fff", fontSize: 15, fontWeight: 700, cursor: refreshing ? "default" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", opacity: refreshing ? 0.65 : 1 }}>
-              {refreshing ? "…" : "↻"}
-            </button>
+    <div style={{ minHeight: "100vh", background: UI.bg, fontFamily: F, color: UI.text }}>
+      {/* [178차수] 머리글·탭 줄을 학생 화면과 같은 모양으로 — 작은 머리글(MP + 이름) + 화면 아래 붙박이 탭(StudentTabBar). 탭 구성과 안의 내용은 그대로. */}
+      <div style={{ background: UI.bg, padding: "12px 16px 10px", color: UI.text }}>
+        <div style={{ maxWidth: MAX_W, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 6, overflow: "hidden" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 20, borderRadius: 5, background: UI.navy, color: "#fff", fontSize: 12, fontWeight: 900, letterSpacing: -0.5, flexShrink: 0 }}>MP</span>
+            <span style={{ fontSize: 15, fontWeight: 800, color: UI.navy, letterSpacing: -0.3, whiteSpace: "nowrap", flexShrink: 0 }}>{home?.isOwner ? "원장" : (teacher.name ? `${teacher.name} 선생님` : "선생님")}</span>
+            {teacher.role && <span style={{ fontSize: 11, fontWeight: 800, padding: "2px 7px", borderRadius: 999, background: (BADGE_STYLES[teacher.role] || {}).bg || UI.blueBg, color: (BADGE_STYLES[teacher.role] || {}).fg || UI.blue, whiteSpace: "nowrap", flexShrink: 0 }}>{teacher.role}</span>}
+            {/* [12차수 원장 지시] 사람 수는 화면에 띄우지 않는다 · [16차수 원장 지시] 개수도 안 띄운다 — 날짜만 */}
+            <span style={{ fontSize: 12, fontWeight: 600, color: UI.sub, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{fmtDateKR(today)}</span>
           </div>
-          {/* [12차수 원장 지시] 사람 수는 화면에 띄우지 않는다 */}
-          {/* [16차수 원장 지시] 개수도 안 띄운다 — "강의 204개" 같은 숫자를 선생님 화면에서 전부 뺐다 */}
-          <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.7)", marginTop: 6 }}>
-            {fmtDateKR(today)}
-          </div>
+          {/* [96차수 09-05] 다시 받아오기 단추 — 학생 화면의 새로고침과 같은 모양 */}
+          <button type="button" onClick={() => { loadAll({ manual: true }); setNsRefresh((k) => k + 1); }} disabled={refreshing} aria-label="새로고침"
+            style={{ flexShrink: 0, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4, padding: "0 10px", minHeight: TAP, borderRadius: 12, border: `1px solid ${UI.line}`, background: "#fff", color: UI.sub, cursor: refreshing ? "default" : "pointer", fontSize: 12, fontWeight: 700, opacity: refreshing ? 0.65 : 1, fontFamily: "inherit" }}>
+            <span aria-hidden="true" style={{ fontSize: 14, fontWeight: 800, color: UI.text, lineHeight: 1 }}>{refreshing ? "…" : "↻"}</span>
+            <span>새로고침</span>
+          </button>
         </div>
       </div>
 
-      <div style={{ background: "#fff", borderBottom: "1px solid #eee", position: "sticky", top: 0, zIndex: 10 }}>
-        <style>{`.mplTabScroll::-webkit-scrollbar{display:none}`}</style>
-        <div className="mplTabScroll" style={{ maxWidth: MAX_W, margin: "0 auto", display: "flex", overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
-          {[
-            { key: "home", label: "홈" },
-            { key: "cal", label: "캘린더" },
-            { key: "voca", label: "단어장" },
-            { key: "videos", label: "강의" },
-            { key: "students", label: "학생" },
-            ...(home?.isOwner ? [{ key: "toeic", label: "토익" }] : []),   // [115차수] 원장만
-          ].map((t) => (
-            <button key={t.key} onClick={() => { setTab(t.key); setBriefDay(""); setNsOpen(false); }} style={{minHeight: TAP, 
-              flex: "1 0 auto", whiteSpace: "nowrap", padding: "14px 12px", border: "none", cursor: "pointer", background: "transparent",
-              fontSize: 14, fontWeight: tab === t.key ? 700 : 500,
-              color: tab === t.key ? "#182848" : "#9aa0ab",
-              borderBottom: tab === t.key ? "2.5px solid #182848" : "2.5px solid transparent",
-              fontFamily: "inherit",
-            }}>{t.label}</button>
-          ))}
-        </div>
-      </div>
+      <StudentTabBar
+        tabs={[
+          { key: "home", label: "홈" },
+          { key: "cal", label: "캘린더" },
+          { key: "voca", label: "단어장" },
+          { key: "videos", label: "강의" },
+          { key: "students", label: "학생" },
+          ...(canToeic ? [{ key: "toeic", label: "토익" }] : []),   // [115차수] 원장만 → [179차수] 서버가 열어 주면 선생님도
+        ]}
+        activeKey={tab}
+        onPick={(k) => { setTab(k); setBriefDay(""); setNsOpen(false); }} />
 
-      <div style={{ maxWidth: MAX_W, margin: "0 auto", padding: 16 }}>
+      {/* 본문 아래 여백 = 아래 탭 줄 높이 + 아이폰 홈바 여백 — 맨 아래 내용이 탭 줄에 가리지 않게(학생 화면과 같은 방식) */}
+      <div style={{ maxWidth: MAX_W, margin: "0 auto", padding: 16, paddingBottom: `calc(${40 + TAB_BAR_H}px + env(safe-area-inset-bottom))` }}>
         {err && <div style={{ marginBottom: 12, padding: "9px 12px", borderRadius: 10, background: "#fff7ed", border: "1px solid #fed7aa", color: "#c2410c", fontSize: 12, fontWeight: 700 }}>⚠️ {err}</div>}
 
         {/* ── 홈 (대시보드) ── */}
@@ -204,8 +198,8 @@ export function TeacherHome({ auth }) {
           renderTeacherVocaTab(C)
         )}
 
-        {/* ── [115차수] 토익 (원장 전용) ── */}
-        {tab === "toeic" && home?.isOwner && (
+        {/* ── [115차수] 토익 — [179차수] 원장 + 서버가 열어 준 선생님 ── */}
+        {tab === "toeic" && canToeic && (
           renderTeacherToeicTab(C)
         )}
       </div>
