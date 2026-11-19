@@ -1,4 +1,4 @@
-import { TAP } from "../../theme/tokens.jsx";
+import { TAP, UI } from "../../theme/tokens.jsx";
 import { HOLIDAYS } from "../../data/holidays.jsx";
 import { TEACHER_DK_KO, computeTeacherDayRoster, teacherWorkOn } from "../../domain/teacher.jsx";
 import { fmtDateKR, fmtTime, fmtYMD } from "../../domain/time.jsx";
@@ -17,22 +17,22 @@ export function renderTeacherCalTab(C) {
           const move = (diff) => setCalYm(p => { const d = new Date(p.y, p.m + diff, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
           const allHol = { ...HOLIDAYS, ...((roster && roster.holidays) || {}) };
           const holName = (v) => (typeof v === "string" ? v : (v && v.name) || "휴원");
-          const navBtn = { width: TAP, height: TAP, borderRadius: 11, border: "1px solid #e5e0d8", background: "#faf9f7", cursor: "pointer", fontSize: 13, fontWeight: 800, color: "#555" };
+          const navBtn = { width: TAP, height: TAP, borderRadius: 11, border: "1px solid #e5e0d8", background: "#faf9f7", cursor: "pointer", fontSize: 13, fontWeight: 800, color: UI.sub };
           const selWorkRaw = teacherWorkOn(teacher, calSel);
           const selWork = (allHol[calSel] && !(selWorkRaw && selWorkRaw.kind === "추가")) ? null : selWorkRaw;   // [135차수 f] 휴원일은 근무일이 아님(추가 근무는 예외)
           const selRoll = computeTeacherDayRoster(roster?.students || [], roster?.makeups || [], calSel);
           const selHol = allHol[calSel];
           return (
             <div>
-              <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #eee", padding: "14px 12px", boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
+              <div style={{ background: "#fff", borderRadius: 14, border: `1px solid ${UI.line}`, padding: "14px 12px", boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, padding: "0 4px" }}>
                   <button onClick={() => move(-1)} style={navBtn}>◀</button>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: "#2A2A28" }}>{calYm.y}년 {calYm.m + 1}월</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: UI.text }}>{calYm.y}년 {calYm.m + 1}월</div>
                   <button onClick={() => move(1)} style={navBtn}>▶</button>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", marginBottom: 4 }}>
                   {TEACHER_DK_KO.map((w, i) => (
-                    <div key={w} style={{ textAlign: "center", fontSize: 11.5, fontWeight: 700, color: i === 0 ? "#D2402E" : i === 6 ? "#2A6FDB" : "#999", padding: "4px 0" }}>{w}</div>
+                    <div key={w} style={{ textAlign: "center", fontSize: 11.5, fontWeight: 700, color: i === 0 ? "#D2402E" : i === 6 ? UI.blue : UI.dim, padding: "4px 0" }}>{w}</div>
                   ))}
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3 }}>
@@ -55,52 +55,52 @@ export function renderTeacherCalTab(C) {
                         style={{
                         minHeight: 52, padding: "5px 2px 4px", borderRadius: 9, cursor: "pointer",
                         opacity: out ? 0.5 : 1,
-                        border: isSel ? "1.8px solid #2A6FDB" : isToday ? "1.5px solid #b9cff2" : w && w.kind === "추가" ? "1.5px solid #F2C14E" : "1px solid transparent",
-                        background: hol ? "#FDF0EE" : w ? "#F0F6FF" : "#fff",
+                        border: isSel ? `1.8px solid ${UI.blue}` : isToday ? "1.5px solid #b9cff2" : w && w.kind === "추가" ? "1.5px solid #F2C14E" : "1px solid transparent",
+                        background: hol ? "#FDF0EE" : w ? UI.blueBg : "#fff",
                         display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
                       }}>
-                        <span style={{ fontSize: 12.5, fontWeight: isToday ? 800 : 600, color: out ? "#b6bac4" : hol ? "#D2402E" : dObj.getDay() === 0 ? "#D2402E" : dObj.getDay() === 6 ? "#2A6FDB" : "#333" }}>{dObj.getDate()}</span>
+                        <span style={{ fontSize: 12.5, fontWeight: isToday ? 800 : 600, color: out ? "#b6bac4" : hol ? "#D2402E" : dObj.getDay() === 0 ? "#D2402E" : dObj.getDay() === 6 ? UI.blue : "#333" }}>{dObj.getDate()}</span>
                         {/* [12차수 원장 지시] 칸에 사람 수를 적지 않는다 — 근무일이면 "출근"만 */}
-                        <span style={{ minHeight: 12, fontSize: 11, fontWeight: 800, color: w ? "#2A6FDB" : "#c8cdd8", lineHeight: 1 }}>{w ? "출근" : ""}</span>
+                        <span style={{ minHeight: 12, fontSize: 11, fontWeight: 800, color: w ? UI.blue : "#c8cdd8", lineHeight: 1 }}>{w ? "출근" : ""}</span>
                       </button>
                     );
                   })}
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 10, padding: "8px 4px 0", borderTop: "1px solid #f2efe9" }}>
-                  {[["#F0F6FF", "근무일"], ["#FDF0EE", "휴원"]].map(([c, label]) => (
-                    <span key={label} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "#777", fontWeight: 600 }}>
+                  {[[UI.blueBg, "근무일"], ["#FDF0EE", "휴원"]].map(([c, label]) => (
+                    <span key={label} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: UI.sub, fontWeight: 600 }}>
                       <span style={{ width: 10, height: 10, borderRadius: 3, background: c, border: "1px solid #e0dcd4", display: "inline-block" }} />{label}
                     </span>
                   ))}
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "#777", fontWeight: 600 }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: UI.sub, fontWeight: 600 }}>
                     <span style={{ width: 10, height: 10, borderRadius: 3, background: "#fff", border: "1.5px solid #F2C14E", display: "inline-block" }} />추가 근무
                   </span>
-                  {home?.isOwner && <span style={{ fontSize: 11, color: "#7f8fa6", fontWeight: 700 }}>날짜를 길게 누르면 근무를 고칠 수 있어요</span>}
+                  {home?.isOwner && <span style={{ fontSize: 11, color: UI.sub, fontWeight: 700 }}>날짜를 길게 누르면 근무를 고칠 수 있어요</span>}
 
                 </div>
               </div>
 
-              <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #eee", padding: "14px 16px", marginTop: 12, boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
+              <div style={{ background: "#fff", borderRadius: 14, border: `1px solid ${UI.line}`, padding: "14px 16px", marginTop: 12, boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
-                  <div style={{ fontSize: 14.5, fontWeight: 800, color: "#2A2A28" }}>{fmtDateKR(calSel)}</div>
-                  {calSel === today && <span style={{ fontSize: 11, fontWeight: 800, color: "#0c5a9e", background: "#e8f2fc", borderRadius: 999, padding: "2px 8px" }}>오늘</span>}
+                  <div style={{ fontSize: 14.5, fontWeight: 800, color: UI.text }}>{fmtDateKR(calSel)}</div>
+                  {calSel === today && <span style={{ fontSize: 11, fontWeight: 800, color: "#0c5a9e", background: UI.blueBg, borderRadius: 999, padding: "2px 8px" }}>오늘</span>}
                 </div>
                 {selHol && <div style={{ fontSize: 13, fontWeight: 700, color: "#D2402E", marginBottom: 7 }}>휴원 · {holName(selHol)}</div>}
-                <div style={{ fontSize: 13.5, fontWeight: 700, color: selWork ? "#2A6FDB" : "#9aa0ab", marginBottom: 10 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: selWork ? UI.blue : UI.dim, marginBottom: 10 }}>
                   {selWork ? `${selWork.kind === "추가" ? "추가 근무" : "근무"} · ${selWork.time ? `${fmtTime(selWork.time)} 출근` : "시간 미정"}` : "근무일이 아닙니다"}
                 </div>
                 {selRoll.length === 0 ? (
-                  <div style={{ fontSize: 13, color: "#9aa0ab" }}>이 날 수업하는 학생이 없습니다.</div>
+                  <div style={{ fontSize: 13, color: UI.dim }}>이 날 수업하는 학생이 없습니다.</div>
                 ) : (
                   <>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "#7f8fa6", marginBottom: 7 }}>수업 학생</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: UI.sub, marginBottom: 7 }}>수업 학생</div>
                     {selRoll.map(({ student: s, time, kind }) => (
                       <button key={s.id} onClick={() => openStudent(s)} style={{ minHeight: TAP, ...card, marginBottom: 6, padding: "10px 12px" }}>
-                        <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, color: "#2A2A28" }}>
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, color: UI.text }}>
                           {s.name}
                           {kind !== "정규" && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: "#b45309", background: "#fef3e7", padding: "2px 6px", borderRadius: 999 }}>{kind}</span>}
                         </span>
-                        {time && <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: "#1C66A5", background: "#eaf2fb", padding: "3px 8px", borderRadius: 8 }}>{time}</span>}
+                        {time && <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: UI.blue, background: UI.blueBg, padding: "3px 8px", borderRadius: 8 }}>{time}</span>}
                       </button>
                     ))}
                   </>

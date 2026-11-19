@@ -1,4 +1,4 @@
-import { TAP } from "../../theme/tokens.jsx";
+import { TAP, UI } from "../../theme/tokens.jsx";
 import { useEffect, useRef, useState } from "react";
 import { teacherLinkDead, teacherUrl } from "../../core/auth.jsx";
 import { NS_FILE_MAX_BYTES, chunkNsSets, fmtNsWhen, nsLine, nsSetKey, readNsFile } from "../../domain/nsUpload.jsx";
@@ -6,7 +6,7 @@ import { NS_FILE_MAX_BYTES, chunkNsSets, fmtNsWhen, nsLine, nsSetKey, readNsFile
 // ─── [127차수 10-12] 선생님 홈·원장 홈 "내신 단어 올리기" (원장 결정 10-12, 화면 모형 "내신단어-올리기-화면모형-1012") ───
 //   앱용 단어 파일(…앱단어.json)을 끌어다 놓거나 고르면 → 파일마다 "어느 학교 · 어느 시험 · 무슨 단어 · 몇 개" 한 줄 → [올리기]를 눌러야 올라간다.
 //   올리면 학생 앱에 바로 보인다. 아래 "최근 올린 것"에서 되돌릴 수 있다(조교는 자기가 올린 것만, 원장은 전부 — 판정은 마플싱커가 한다).
-const P = "#6a4bc4", P_BG = "#f6f2ff", LINE = "#e8eaef", SUB = "#6a7080";
+const P = "#6a4bc4", P_BG = "#f6f2ff", LINE = UI.line, SUB = "#6a7080";
 const chip = { display: "inline-block", fontSize: 12, fontWeight: 800, padding: "2px 7px", borderRadius: 6, background: "#eee9fb", color: "#55399f", marginRight: 6, whiteSpace: "nowrap" };
 const row = { display: "flex", alignItems: "center", gap: 10, border: `1px solid ${LINE}`, borderRadius: 12, padding: "10px 12px", marginBottom: 7, background: "#fff" };
 const smallBtn = (strong) => ({ flexShrink: 0, minHeight: 44, padding: "0 12px", borderRadius: 10, fontSize: 13.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
@@ -114,12 +114,12 @@ export function NsUpload({ onBack, refreshKey = 0 }) {   // [135차수 s] refres
   return (
     <div data-testid="ns-upload" ref={topRef}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <button type="button" onClick={onBack} style={{ border: "none", background: "transparent", color: "#1C66A5", fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", minHeight: 44, minWidth: 44, padding: "0 6px 0 0", textAlign: "left" }}>‹ 홈</button>
-        <span style={{ fontSize: 17, fontWeight: 800, color: "#1a1a2e" }}>내신 단어 올리기</span>
+        <button type="button" onClick={onBack} style={{ border: "none", background: "transparent", color: UI.blue, fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", minHeight: 44, minWidth: 44, padding: "0 6px 0 0", textAlign: "left" }}>‹ 홈</button>
+        <span style={{ fontSize: 17, fontWeight: 800, color: UI.text }}>내신 단어 올리기</span>
       </div>
 
       {msg && <div role="status" style={{ marginBottom: 12, padding: "11px 13px", borderRadius: 12, fontSize: 14.5, fontWeight: 800, wordBreak: "keep-all",
-        background: msg.ok ? "#e8f5ed" : "#fdecea", border: `1px solid ${msg.ok ? "#bfe5ce" : "#f3c1bb"}`, color: msg.ok ? "#1f6e3f" : "#b03a2e" }}>{msg.ok ? "✓ " : "⚠ "}{msg.text}</div>}
+        background: msg.ok ? "#e8f5ed" : UI.warnBg, border: `1px solid ${msg.ok ? "#bfe5ce" : "#f3c1bb"}`, color: msg.ok ? "#1f6e3f" : UI.warnFg }}>{msg.ok ? "✓ " : "⚠ "}{msg.text}</div>}
 
       {/* 끌어다 놓는 자리 + 파일 고르기(폰) */}
       <div onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
@@ -138,12 +138,12 @@ export function NsUpload({ onBack, refreshKey = 0 }) {   // [135차수 s] refres
         <div key={p.id} data-testid="ns-picked-row" style={{ ...row, ...(p.ok ? {} : { background: "#f4f5f8", borderColor: "#cfd3dd" }) }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             {p.ok ? (<>
-              <div style={{ fontSize: 15, fontWeight: 800, color: "#1a1a2e", wordBreak: "keep-all", overflowWrap: "anywhere" }}>{p.line.head}</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: UI.text, wordBreak: "keep-all", overflowWrap: "anywhere" }}>{p.line.head}</div>
               <div style={{ fontSize: 13, color: SUB, marginTop: 3, lineHeight: 1.5, overflowWrap: "anywhere" }}><span style={chip}>{p.line.kind}</span>{p.line.detail}</div>
               {liveKeys.has(p.key) && <div style={{ fontSize: 12.5, color: "#55399f", fontWeight: 800, marginTop: 3, wordBreak: "keep-all" }}>이미 올린 묶음 — 올리면 새것으로 바뀝니다</div>}
             </>) : (<>
               <div style={{ fontSize: 14.5, fontWeight: 800, color: SUB, wordBreak: "break-all" }}>{p.name} — 올릴 수 없는 파일</div>
-              <div style={{ fontSize: 13, color: "#b03a2e", marginTop: 3, fontWeight: 700, wordBreak: "keep-all" }}>{p.error}</div>
+              <div style={{ fontSize: 13, color: UI.warnFg, marginTop: 3, fontWeight: 700, wordBreak: "keep-all" }}>{p.error}</div>
             </>)}
           </div>
           <button type="button" onClick={() => setPicked((prev) => prev.filter((x) => x.id !== p.id))} disabled={busy} style={smallBtn(false)} aria-label={`${p.name} 빼기`}>빼기</button>
@@ -157,16 +157,16 @@ export function NsUpload({ onBack, refreshKey = 0 }) {   // [135차수 s] refres
 
       {/* 최근 올린 것 + 되돌리기 */}
       <div style={{ fontSize: 13.5, fontWeight: 800, color: SUB, margin: "16px 2px 8px" }}>최근 올린 것</div>
-      {listErr && <div style={{ ...row, color: "#b03a2e", fontSize: 13.5, fontWeight: 700 }}><span style={{ flex: 1, wordBreak: "keep-all" }}>{listErr}</span><button type="button" onClick={loadList} style={smallBtn(true)}>다시 시도</button></div>}
-      {!listErr && rows === null && <div style={{ padding: "14px 4px", fontSize: 13.5, color: "#9aa0ab", fontWeight: 600 }}>불러오는 중...</div>}
-      {!listErr && rows && rows.length === 0 && <div style={{ padding: "14px 4px", fontSize: 13.5, color: "#9aa0ab", fontWeight: 600 }}>아직 올린 단어가 없습니다.</div>}
+      {listErr && <div style={{ ...row, color: UI.warnFg, fontSize: 13.5, fontWeight: 700 }}><span style={{ flex: 1, wordBreak: "keep-all" }}>{listErr}</span><button type="button" onClick={loadList} style={smallBtn(true)}>다시 시도</button></div>}
+      {!listErr && rows === null && <div style={{ padding: "14px 4px", fontSize: 13.5, color: UI.dim, fontWeight: 600 }}>불러오는 중...</div>}
+      {!listErr && rows && rows.length === 0 && <div style={{ padding: "14px 4px", fontSize: 13.5, color: UI.dim, fontWeight: 600 }}>아직 올린 단어가 없습니다.</div>}
       {rows && rows.map((r) => {
         const line = nsLine(r, r.n);
         const asking = askUndo === r.no;
         return (
           <div key={r.no} data-testid="ns-recent-row" style={{ ...row, flexWrap: asking ? "wrap" : "nowrap" }}>
             <div style={{ flex: asking ? "1 1 100%" : 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14.5, fontWeight: 800, color: "#1a1a2e", wordBreak: "keep-all", overflowWrap: "anywhere" }}>{line.head} · {r.title}</div>
+              <div style={{ fontSize: 14.5, fontWeight: 800, color: UI.text, wordBreak: "keep-all", overflowWrap: "anywhere" }}>{line.head} · {r.title}</div>
               <div style={{ fontSize: 12.5, color: SUB, marginTop: 3, lineHeight: 1.5, wordBreak: "keep-all", overflowWrap: "anywhere" }}><span style={chip}>{r.kind}</span>{r.n}개{Number(r.week) > 0 ? ` · ${r.week}주차` : ""} · {fmtNsWhen(r.at)}{r.byName ? ` · ${r.byName}` : ""}</div>
             </div>
             {r.canUndo ? (asking ? (<>
@@ -175,7 +175,7 @@ export function NsUpload({ onBack, refreshKey = 0 }) {   // [135차수 s] refres
             </>) : (
               <button type="button" onClick={() => undo(r)} disabled={busy} style={smallBtn(true)} aria-label={`${r.title} 되돌리기`}>되돌리기</button>
             )) : (
-              <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 700, color: "#9aa0ab", padding: "0 2px", textAlign: "right", lineHeight: 1.35 }}>되돌리기는<br />올린 사람·원장만</span>
+              <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 700, color: UI.dim, padding: "0 2px", textAlign: "right", lineHeight: 1.35 }}>되돌리기는<br />올린 사람·원장만</span>
             )}
           </div>
         );

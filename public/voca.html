@@ -977,7 +977,7 @@ const STU = (() => {
  * [교사 선별 2026-08-27] 원장(mk=1) 또는 선별 권한을 받은 선생님(pk=1)이면 켜진다. */
 const CAN_PICK = !!(STU && (STU.master || STU.pk));
 /* [교사 선별 2026-08-27] 선생님인지 — 선생님 링크는 id가 __teacher__로 시작한다(원장은 __master__).
- * 원장 전용 책(보카바이블)은 선생님 책장에서 잠금 카드("???")조차 안 뜨게 한다(원장 지시). */
+ * [178차수] 보카바이블은 선생님 [내 단어장]에서 바로 열린다(전에는 아예 숨김). [단어 선별]에서는 전처럼 안 보인다. */
 const IS_TEACHER_VOCA = !!(STU && String(STU.id || '').startsWith('__teacher__'));
 /* [선별 78차수] 오늘 골라야 하는 칸 — 학생앱 선생님 홈이 ?plec=1,2,3,4&pbook=wm_hi 로 알려준다.
  * 이 칸들만 맨 위에 "오늘 고를 칸"으로 따로 모아 보여준다. 나머지 칸도 그대로 고를 수 있다
@@ -1576,7 +1576,9 @@ function shelfStates(){
     // 다른 원장 전용 책이 추가될 경우의 기존 제한
     if (b.owner){ st[b.id] = (OWNER_VIEW() && !PICKMODE) ? 'normal' : 'hide'; continue; }
     // [08-27 원장 지시] 선생님에게는 원장 전용 책을 아예 안 보여준다(잠금 카드도 없음)
-    if (IS_TEACHER_VOCA && b.id === 'vocabible'){ st[b.id] = 'hide'; continue; }
+    // [178차수 원장 결정 11-19] 선생님도 보카바이블로 공부한다 — [내 단어장]에서는 바로 열린다(하이스트 완주 조건 없음).
+    //   [단어 선별]에서는 전처럼 안 보인다(학생 숙제로 낼 단어를 고르는 곳이라 선생님 공부 책은 뺀다).
+    if (IS_TEACHER_VOCA && b.id === 'vocabible'){ st[b.id] = PICKMODE ? 'hide' : 'normal'; continue; }
     if (!stu){ st[b.id] = 'normal'; continue; }             // 원장·마스터: 전부 표시(현행)
     if (b.ns){ st[b.id] = 'normal'; continue; }             // [내신 2차수] 내 학교·이번 범위로 이미 걸러진 책
     if (b.id === 'vocabible'){ st[b.id] = 'hide'; continue; }   // 아래에서 재결정
@@ -1733,7 +1735,7 @@ function renderShelf(){
     const card = document.createElement('div');
     card.className = 'book' + (ready ? '' : ' soon');
     const lv = BOOK_LEVEL[b.id];                             // [0814] 난이도 단계(없으면 배지 안 붙음)
-    const badge = b.priv ? (stu ? `<div class="bhid">히든</div>` : `<div class="bpriv">원장 전용</div>`)
+    const badge = b.priv ? (IS_TEACHER_VOCA ? '' : stu ? `<div class="bhid">히든</div>` : `<div class="bpriv">원장 전용</div>`)   // [178차수] 선생님 책장에서는 표시 없이 보통 책처럼
                          : (lv ? `<div class="blv">${lv}단계</div>` : '');
     card.innerHTML =
       `<div class="bt">${b.title}</div>` +

@@ -1,5 +1,5 @@
 import { ToeicSaveStatus } from "../toeic/ToeicSaveStatus.jsx";
-import { TAP } from "../../theme/tokens.jsx";
+import { TAP, UI } from "../../theme/tokens.jsx";
 import { OwnerToeicP5 } from "../toeic/OwnerToeicP5.jsx";
 import { OwnerToeicPanel } from "../toeic/OwnerToeicPanel.jsx";
 
@@ -13,7 +13,7 @@ export function renderTeacherToeicTab(C) {
               {[{ key: "tests", label: "회차 (LC·RC)" }, { key: "p5", label: "파트5 5문제" }].map(m => (
                 <button key={m.key} onClick={() => setToeicMode(m.key)} style={{minHeight: TAP, 
                   flex: 1, padding: "10px 12px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", fontSize: 13.5, fontWeight: 800,
-                  border: `1px solid ${toeicMode === m.key ? "#182848" : "#dfe3ef"}`, background: toeicMode === m.key ? "#182848" : "#fff", color: toeicMode === m.key ? "#fff" : "#7b8494",
+                  border: `1px solid ${toeicMode === m.key ? UI.navy : UI.line}`, background: toeicMode === m.key ? UI.navy : "#fff", color: toeicMode === m.key ? "#fff" : UI.sub,
                 }}>{m.label}</button>
               ))}
             </div>
