@@ -1,12 +1,12 @@
 import { TAP, UI } from "../../theme/tokens.jsx";
-import { OwnerCheckinPanel, checkinMinutes, fmtCheckinSpan, fmtMinutes, renderCheckinBox } from "./TeacherCheckin.jsx";
+import { CheckinBox, OwnerCheckinPanel, checkinMinutes, fmtCheckinSpan, fmtMinutes } from "./TeacherCheckin.jsx";
 import { HOLIDAYS } from "../../data/holidays.jsx";
 import { TEACHER_DK_KO, teacherWorkOn } from "../../domain/teacher.jsx";
 import { fmtDateKR, fmtTime, fmtYMD } from "../../domain/time.jsx";
 
 // [122차수] 선생님 캘린더 탭 그리기. TeacherHome.jsx에서 그대로 옮김.
 export function renderTeacherCalTab(C) {
-  const { calSel, calYm, home, roster, schedPressRef, setHome, setCalSel, setCalYm, setSchedEdit, teacher, today } = C;
+  const { calSel, calYm, checkIn, checkinBusy, checkinMsg, home, roster, schedPressRef, setHome, setCalSel, setCalYm, setSchedEdit, teacher, today } = C;
           const first = new Date(calYm.y, calYm.m, 1);
           const firstDow = first.getDay();
           const daysInMonth = new Date(calYm.y, calYm.m + 1, 0).getDate();
@@ -104,13 +104,12 @@ export function renderTeacherCalTab(C) {
                   {selWork ? `${selWork.kind === "추가" ? "추가 근무" : "근무"} · ${selWork.time ? `${fmtTime(selWork.time)} 출근` : "시간 미정"}` : "근무일이 아닙니다"}
                 </div>
                 {/* [181차수] 출근 기록 — 오늘이면 [출근] 단추, 다른 날이면 그 날 기록. 원장에게는 그 날 출근한 선생님 목록 */}
-                {home?.checkin === true && (calSel === today
-                  ? <div style={{ marginBottom: 12 }}>{renderCheckinBox(C)}</div>
-                  : (myCheckins[calSel] || missed(calSel, !!selWork)) && (
-                    <div style={{ fontSize: 13, fontWeight: 700, color: myCheckins[calSel] ? UI.okFg : UI.warnFg, marginBottom: 10 }}>
-                      {myCheckins[calSel] ? `출근 기록 · ${fmtCheckinSpan(myCheckins[calSel])}${myCheckins[calSel].fix ? " · 원장님이 적음" : ""}` : "출근 기록 없음"}
-                    </div>
-                  ))}
+                {/* [183차수] 고른 날의 내 출근 기록 — 오늘이면 단추, 지난 날이면 기록 + 고치기(미래 날짜에는 안 나온다) */}
+                {home?.checkin === true && calSel <= today && (
+                  <div style={{ marginBottom: 12 }}>
+                    <CheckinBox key={calSel} home={home} setHome={setHome} today={today} date={calSel} checkIn={checkIn} checkinBusy={checkinBusy} checkinMsg={checkinMsg} missed={missed(calSel, !!selWork)} />
+                  </div>
+                )}
                 {/* [182차수] 원장: 그 날 선생님 출근 기록(고치기) + 그 달 모아보기 */}
                 <OwnerCheckinPanel home={home} setHome={setHome} calSel={calSel} calYm={calYm} today={today} />
                 {/* [180차수 원장 요청 11-19] 수업 학생 명단은 뺐다(학생은 [학생] 탭에서 본다). 대신 보고 있는 달의 근무일을 모아 보여준다. */}

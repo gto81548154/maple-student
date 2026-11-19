@@ -21,30 +21,83 @@ export const fmtMinutes = (min) => { const h = Math.floor(min / 60), m = min % 6
 // "17:52" 또는 "17:52–22:05"
 export const fmtCheckinSpan = (rec) => rec ? (rec.out ? `${fmtCheckinTime(rec.at)}–${fmtCheckinTime(rec.out)}` : fmtCheckinTime(rec.at)) : "";
 
-// 오늘 출근 칸 — 홈 맨 위와 캘린더(오늘을 골랐을 때)에 같은 것을 그린다.
-export function renderCheckinBox(C) {
-  const { checkIn, checkinBusy, checkinMsg, home, today } = C;
-  if (!home || home.checkin !== true) return null;
-  const rec = home.checkins && home.checkins[today];
+// [183차수 원장 요청 11-19] 선생님이 출근·퇴근 시각을 직접 고르고 고칠 수 있다(서버가 home.checkinV >= 3 일 때).
+//   오늘: [출근]·[퇴근] 단추(지금 시각) + [시간 입력](시각을 골라 적기·고치기)
+//   지난 날: 그 날 기록 + [고치기] 또는 [기록 넣기]
+//   직접 넣은 기록은 서버가 self 표시를 붙인다 — 원장 화면에 "직접 입력"으로 보인다. 미래 날짜·아직 오지 않은 시각은 서버가 거절한다.
+// 지금 한국 시각 "HH:MM"
+const nowHm = () => fmtCheckinTime(new Date().toISOString());
+export function CheckinBox({ home, setHome, today, date, checkIn, checkinBusy, checkinMsg, missed = false }) {
+  const [edit, setEdit] = useState(null);   // { in, out }
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  if (!home || home.checkin !== true || !date || date > today) return null;
+  const isToday = date === today;
+  const rec = home.checkins && home.checkins[date];
   const canOut = Number(home.checkinV) >= 2;
-  const small = { flexShrink: 0, minHeight: TAP, padding: "0 12px", borderRadius: 10, border: `1px solid ${UI.line}`, background: "#fff", color: UI.sub, fontSize: 12.5, fontWeight: 700, cursor: checkinBusy ? "wait" : "pointer", fontFamily: "inherit", opacity: checkinBusy ? 0.6 : 1 };
-  const big = { flexShrink: 0, minHeight: TAP, padding: "0 18px", borderRadius: 10, border: "none", background: UI.navy, color: "#fff", fontSize: 14, fontWeight: 800, cursor: checkinBusy ? "wait" : "pointer", fontFamily: "inherit", opacity: checkinBusy ? 0.6 : 1 };
+  const canType = Number(home.checkinV) >= 3;
+  const wait = busy || checkinBusy;
+  const small = { flexShrink: 0, minHeight: TAP, padding: "0 12px", borderRadius: 10, border: `1px solid ${UI.line}`, background: "#fff", color: UI.sub, fontSize: 12.5, fontWeight: 700, cursor: wait ? "wait" : "pointer", fontFamily: "inherit", opacity: wait ? 0.6 : 1 };
+  const big = { flexShrink: 0, minHeight: TAP, padding: "0 18px", borderRadius: 10, border: "none", background: UI.navy, color: "#fff", fontSize: 14, fontWeight: 800, cursor: wait ? "wait" : "pointer", fontFamily: "inherit", opacity: wait ? 0.6 : 1 };
+  const inp = { minHeight: TAP, padding: "0 8px", borderRadius: 9, border: `1px solid ${UI.line}`, fontFamily: "inherit", fontSize: 14, color: UI.text, background: "#fff" };
+  const save = async (body) => {
+    if (busy) return;
+    setBusy(true); setMsg("");
+    try {
+      const r = await fetch(teacherUrl("/teacher/checkin"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ date, ...body }) });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j || !j.success) throw new Error((j && j.error) || "");
+      setHome(prev => prev ? { ...prev, checkins: j.checkins || {} } : prev);
+      setEdit(null);
+    } catch (e) {
+      setMsg(e && e.message && !(e instanceof TypeError) ? `저장하지 못했어요: ${e.message}` : "저장하지 못했어요. 인터넷 연결을 확인해 주세요.");
+    } finally { setBusy(false); }
+  };
+  const openEdit = () => { setMsg(""); setEdit({ in: rec ? fmtCheckinTime(rec.at) : (isToday ? nowHm() : ""), out: rec && rec.out ? fmtCheckinTime(rec.out) : "" }); };
+  const tag = rec ? (rec.fix ? " · 원장님이 적음" : rec.self ? " · 직접 입력" : "") : "";
   return (
-    <div data-testid="checkin-box" style={{ background: UI.card, border: `1px solid ${rec ? "#cfe9df" : UI.line}`, borderRadius: 14, padding: "11px 14px", display: "flex", alignItems: "center", gap: 8 }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12, fontWeight: 800, color: rec ? UI.okFg : UI.sub }}>오늘 출근{rec && rec.fix ? " · 원장님이 적음" : ""}</div>
-        <div style={{ fontSize: 14.5, fontWeight: 800, color: UI.text, marginTop: 3 }}>
-          {!rec ? "아직 기록 전이에요" : rec.out ? `${fmtCheckinTime(rec.at)} 출근 · ${fmtCheckinTime(rec.out)} 퇴근` : `${fmtCheckinTime(rec.at)} 출근 기록됨`}
+    <div data-testid="checkin-box" style={{ background: UI.card, border: `1px solid ${rec ? "#cfe9df" : UI.line}`, borderRadius: 14, padding: "11px 14px" }}>
+      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <div style={{ flex: "1 1 130px", minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: rec ? UI.okFg : missed ? UI.warnFg : UI.sub }}>{isToday ? "오늘 출근" : "출근 기록"}{tag}</div>
+          <div style={{ fontSize: 14.5, fontWeight: 800, color: UI.text, marginTop: 3 }}>
+            {!rec ? (isToday ? "아직 기록 전이에요" : "기록 없음") : rec.out ? `${fmtCheckinTime(rec.at)} 출근 · ${fmtCheckinTime(rec.out)} 퇴근` : `${fmtCheckinTime(rec.at)} 출근${isToday ? " 기록됨" : ""}`}
+          </div>
+          {rec && rec.out && <div style={{ fontSize: 12, fontWeight: 700, color: UI.sub, marginTop: 2 }}>{fmtMinutes(checkinMinutes(rec))} 근무</div>}
+          {isToday && checkinMsg && <div role="alert" style={{ fontSize: 12, fontWeight: 700, color: UI.warnFg, marginTop: 4 }}>{checkinMsg}</div>}
         </div>
-        {rec && rec.out && <div style={{ fontSize: 12, fontWeight: 700, color: UI.sub, marginTop: 2 }}>{fmtMinutes(checkinMinutes(rec))} 근무</div>}
-        {checkinMsg && <div role="alert" style={{ fontSize: 12, fontWeight: 700, color: UI.warnFg, marginTop: 4 }}>{checkinMsg}</div>}
+        {!edit && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+            {canType && <button type="button" disabled={wait} onClick={openEdit} style={small}>{rec ? "고치기" : isToday ? "시간 입력" : "기록 넣기"}</button>}
+            {isToday && !canType && rec && !rec.out && <button type="button" disabled={wait} onClick={() => { if (window.confirm("오늘 출근 기록을 지울까요?")) checkIn("undo"); }} style={small}>취소</button>}
+            {isToday && !canType && rec && rec.out && <button type="button" disabled={wait} onClick={() => { if (window.confirm("퇴근 기록을 지울까요? 출근 기록은 그대로 남아요.")) checkIn("undoOut"); }} style={small}>퇴근 취소</button>}
+            {isToday && !rec && <button type="button" disabled={wait} onClick={() => checkIn("in")} style={big}>{checkinBusy ? "기록 중…" : "출근"}</button>}
+            {isToday && rec && !rec.out && canOut && <button type="button" disabled={wait} onClick={() => checkIn("out")} style={big}>{checkinBusy ? "기록 중…" : "퇴근"}</button>}
+          </div>
+        )}
       </div>
-      {!rec && <button type="button" disabled={checkinBusy} onClick={() => checkIn("in")} style={big}>{checkinBusy ? "기록 중…" : "출근"}</button>}
-      {rec && !rec.out && <button type="button" disabled={checkinBusy} onClick={() => { if (window.confirm("오늘 출근 기록을 지울까요?")) checkIn("undo"); }} style={small}>취소</button>}
-      {rec && !rec.out && canOut && <button type="button" disabled={checkinBusy} onClick={() => checkIn("out")} style={big}>{checkinBusy ? "기록 중…" : "퇴근"}</button>}
-      {rec && rec.out && <button type="button" disabled={checkinBusy} onClick={() => { if (window.confirm("퇴근 기록을 지울까요? 출근 기록은 그대로 남아요.")) checkIn("undoOut"); }} style={small}>퇴근 취소</button>}
+      {edit && (
+        <div style={{ marginTop: 10, padding: 10, borderRadius: 10, background: UI.bg }}>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+            <label style={{ fontSize: 12.5, fontWeight: 700, color: UI.sub }}>출근 <input type="time" value={edit.in} onChange={e => setEdit({ ...edit, in: e.target.value })} style={inp} aria-label="출근 시각" /></label>
+            <label style={{ fontSize: 12.5, fontWeight: 700, color: UI.sub }}>퇴근 <input type="time" value={edit.out} onChange={e => setEdit({ ...edit, out: e.target.value })} style={inp} aria-label="퇴근 시각" /></label>
+          </div>
+          <div style={{ fontSize: 11.5, color: UI.sub, marginTop: 6 }}>퇴근은 비워 둘 수 있어요. 아직 오지 않은 시각은 적을 수 없어요.</div>
+          {msg && <div role="alert" style={{ fontSize: 12, fontWeight: 700, color: UI.warnFg, marginTop: 6 }}>{msg}</div>}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+            <button type="button" disabled={busy || !edit.in} onClick={() => save({ in: edit.in, out: edit.out || null })} style={{ ...big, minHeight: TAP, padding: "0 14px", fontSize: 13, opacity: busy || !edit.in ? 0.5 : 1 }}>저장</button>
+            {rec && <button type="button" disabled={busy} onClick={() => { if (window.confirm("이 날 출근 기록을 지울까요?")) save({ in: null }); }} style={{ ...small, color: UI.warnFg }}>기록 지우기</button>}
+            <button type="button" disabled={busy} onClick={() => { setEdit(null); setMsg(""); }} style={small}>닫기</button>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+// 홈 맨 위 — 오늘 칸
+export function renderCheckinBox(C) {
+  const { checkIn, checkinBusy, checkinMsg, home, setHome, today } = C;
+  return <CheckinBox home={home} setHome={setHome} today={today} date={today} checkIn={checkIn} checkinBusy={checkinBusy} checkinMsg={checkinMsg} />;
 }
 
 // ─── [182차수] 원장 캘린더 — 고른 날의 선생님 출근 기록(고치기) + 그 달 모아보기 ───
@@ -90,7 +143,7 @@ export function OwnerCheckinPanel({ home, setHome, calSel, calYm, today }) {
           return (
             <div key={x.id} style={{ borderTop: `1px solid ${UI.line}`, padding: "7px 0" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, color: UI.text }}>{x.name || "이름 없음"}{rec && rec.fix && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: UI.sub }}>고침</span>}</span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, color: UI.text }}>{x.name || "이름 없음"}{rec && (rec.fix || rec.self) && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: UI.sub }}>{rec.fix ? "고침" : "직접 입력"}</span>}</span>
                 {rec
                   ? <span style={{ flexShrink: 0, fontSize: 12.5, fontWeight: 800, color: UI.okFg, background: UI.okBg, padding: "3px 8px", borderRadius: 8 }}>{fmtCheckinSpan(rec)}</span>
                   : <span style={{ flexShrink: 0, fontSize: 12.5, fontWeight: 700, color: UI.dim }}>기록 없음</span>}
