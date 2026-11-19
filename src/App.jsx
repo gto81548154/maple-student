@@ -23,6 +23,7 @@ import { getExamRangeTextForStudent, getStudentSchoolCodeForRange } from "./doma
 import { KakaoOpenBanner } from "./ui/KakaoOpenBanner.jsx";
 import { AttQrModal } from "./ui/Qr.jsx";
 import { MoreMenu, MoreSubFrame, StudentHeader, StudentTabBar } from "./ui/StudentChrome.jsx";
+import { StudentToeicScreen, useStudentToeicOn } from "./screens/toeic/StudentToeic.jsx";
 import { renderHomeTab } from "./screens/home/HomeTab.jsx";
 import { renderTasksTab } from "./screens/tasks/TasksTab.jsx";
 import { renderVocaTab } from "./screens/voca/VocaTab.jsx";
@@ -48,7 +49,7 @@ import { renderWithdrawnScreen } from "./screens/status/WithdrawnScreen.jsx";
 import { renderLoadErrorScreen } from "./screens/status/LoadErrorScreen.jsx";
 
 // [133차수] 주소(#해시)에 쓰는 학생 화면 이름 — 위 탭 5개 + 더보기 안 화면 9개(146차수: 장학금 reward · 152차수: 🎤 파닉스 phonics — 145차수 녹음 제출 record 를 안에 합침). 모르는 이름은 홈으로.
-const STUDENT_ROUTE_IDS = ["home", "tasks", "voca", "videos", "more", "cal", "vocabWrong", "mock", "progress", "notices", "examInfo", "settings", "phonics", "reward"];
+const STUDENT_ROUTE_IDS = ["home", "tasks", "voca", "videos", "more", "cal", "vocabWrong", "mock", "progress", "notices", "examInfo", "settings", "phonics", "reward", "toeic"];
 // [152차수] 옛 주소 #record(녹음 제출)는 #phonics 로 바꿔 읽는다(홈 화면에 추가해 둔 옛 바로가기 대비)
 try { if (/^#\/?record(\b|$)/.test(window.location.hash)) window.history.replaceState(window.history.state, "", "#phonics"); } catch (e) {}
 
@@ -74,6 +75,7 @@ export default function App() {
   const showAttQrRef = useRef(false); showAttQrRef.current = showAttQr;
   const [selectedDate, setSelectedDate] = useState(null);
   const { vocaHwRec } = useVocaHw({ bundleVocaHw, selectedDate, studentId, tab, todos });
+  const toeicOn = useStudentToeicOn(lastLoadedAt);   // [185차수] 원장이 이 학생의 토익을 켜 뒀는지(더보기에 "토익"을 보일지)
   const { activeSecRef, awayCountRef, awaySecRef, awayStartRef, currentSessionIdRef, lastActiveAtRef, lastSavedAwayCountRef, lastSavedAwaySecRef, lastSavedFocusSecRef, lastSavedPlaySecRef, lastVideoSaveStatus, longestAwayRef, pendingVideoCount, selectedVideoBook, setLastVideoSaveStatus, setPendingVideoCount, setSelectedVideoBook, setVideoWatch, setVideosFeaturedId, setViewStartTime, setViewingVideo, videoSaveChunkSeqRef, videoSaveInFlightRef, videoWatch, videosFeaturedId, viewStartTime, viewingVideo, ytDurationSecRef, ytFocusSecRef, ytPlaySecRef, ytPlayerStateRef } = useVideoState();
   const mockBusyRef = useRef(false); // [101차수] 모의고사 시험·답 입력·제출 중(MockExamTab이 알려준다)
   // [147차수] 앱을 켤 때 한 번 뜨는 안내 카드 — 자료를 처음 받은 뒤 한 번만 계산해 띄운다(탭을 옮겨도 다시 안 뜸)
@@ -247,7 +249,7 @@ export default function App() {
   if (!student) return null;
   const { activeDate, allDates, doneTasks, getFailReason, isCheckedView, isFailed, pct, pinnedMessages, stepGroups, todayStrForTab, todoRevealHeld, totalTasks } = computeTodoView({ checklistData, records, selectedDate, studentId, todos, vocaHwRec });
   const { hasVocabWrong, startVocaHwTest, studentVideos, taskVoca, vocaPassLabel, vocabWarn } = computeVocaView({ activeDate, customHolidays, makeups, progressTree, setVocaHwTask, stepGroups, student, studentId, videos, vocabWrongWords });
-  const { activeSurveys, attNoticeAll, attWeek, calSub, examDdays, moreGroups, nearestExam, unansweredSurveys, wrongCount } = computeMoreView({attStatus, curriculum, customHolidays, exams, hasVocabWrong, makeups, phonicsState, phonicsTasks, pinnedMessages, progressTree, roadmapSub: (() => { const rm = computeRoadmap({ curriculum, student, todos, progressTree }); return rm && rm.myStage ? `지금 ${rm.myStage}단계${rm.stageInfo?.range ? ` (${rm.stageInfo.range})` : ""} · 내가 어디까지 왔는지` : ""; })(), student, surveyResponses, surveys, todayStrForTab, vocabWarn, vocabWrongWords });
+  const { activeSurveys, attNoticeAll, attWeek, calSub, examDdays, moreGroups, nearestExam, unansweredSurveys, wrongCount } = computeMoreView({toeicOn, attStatus, curriculum, customHolidays, exams, hasVocabWrong, makeups, phonicsState, phonicsTasks, pinnedMessages, progressTree, roadmapSub: (() => { const rm = computeRoadmap({ curriculum, student, todos, progressTree }); return rm && rm.myStage ? `지금 ${rm.myStage}단계${rm.stageInfo?.range ? ` (${rm.stageInfo.range})` : ""} · 내가 어디까지 왔는지` : ""; })(), student, surveyResponses, surveys, todayStrForTab, vocabWarn, vocabWrongWords });
   const { allTaskItems, goTab, picker, scrollToVideoCard, topTabOf, watchBySid } = makeTabNav({ confirmLeaveTab, headerRef, setPhonicsOpenTask, setSelectedVideoBook, setTab, setVideosFeaturedId, setVocaExtraBook, setVocaOpenLast, setVocaOpenTask, startVocaHwTest, stepGroups, studentId, studentVideos, tab, taskVoca, toggleVideo, videoWatch, viewingVideo, vocaHwBusyRef, vocaHwRec });
   goTabRef.current = goTab; pickerRef.current = picker;
   // [147차수] 첫 자료가 들어온 뒤 한 번만: 급한 것(오답 기한·설문·시험·새 공지·원장 카드)을 카드로 모아 띄운다
@@ -432,6 +434,13 @@ export default function App() {
           // 숙제 안(단어 목록)에서는 "‹ 더보기" 대신 화면 안의 "‹ 숙제 목록" 하나만 보인다(되돌아가기 단추가 두 줄로 겹치지 않게)
           return phonicsOpenTask ? screen : <MoreSubFrame title="파닉스" onBack={backToMore}>{screen}</MoreSubFrame>;
         })()}
+
+        {/* [185차수] 더보기 → 토익 — 원장이 켜 준 학생만. 꺼져 있는데 주소(#toeic)로 들어오면 안내만 보인다(서버도 막는다) */}
+        {tab === "toeic" && (
+          <MoreSubFrame title="토익" onBack={backToMore}>
+            {toeicOn ? <StudentToeicScreen /> : <div style={{ padding: 34, textAlign: "center", color: UI.dim, fontSize: 13.5 }}>토익이 켜져 있지 않아요. 원장님께 문의해 주세요.</div>}
+          </MoreSubFrame>
+        )}
 
         {/* [146차수] 더보기 → 장학금·친구 소개 — 학생이 신청, 원장이 원장앱에서 확인 뒤 기프티콘 지급 */}
         {tab === "reward" && (

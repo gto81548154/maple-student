@@ -136,6 +136,21 @@ export function useTeacherActions(D) {
       setCheckinMsg(e && e.message && !(e instanceof TypeError) ? `기록하지 못했어요: ${e.message}` : "기록하지 못했어요. 인터넷 연결을 확인하고 다시 눌러 주세요.");
     } finally { setCheckinBusy(false); }
   };
+  // [185차수] 학생 토익 켜고 끄기(원장만 — 서버가 원장 링크만 받는다). 켠 학생의 앱 더보기에 "토익"이 생긴다.
+  const [toeicStuBusy, setToeicStuBusy] = useState("");
+  const toggleToeicStudent = async (s, on) => {
+    if (toeicStuBusy) return;
+    setToeicStuBusy(String(s.id));
+    try {
+      const r = await fetch(teacherUrl("/teacher/toeic-student"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ studentId: String(s.id), on: !!on }) });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j || !j.success) throw new Error((j && j.error) || "");
+      setHome(prev => prev ? { ...prev, toeicStudents: Array.isArray(j.toeicStudents) ? j.toeicStudents : [] } : prev);
+    } catch (e) {
+      setErr(e && e.message && !(e instanceof TypeError) ? `토익을 바꾸지 못했어요: ${e.message}` : "토익을 바꾸지 못했어요. 인터넷 연결을 확인해 주세요.");
+      setTimeout(() => setErr(""), 4000);
+    } finally { setToeicStuBusy(""); }
+  };
   // [10차수 원장 지시] 학생 화면은 새 창에서 연다 — 선생님 홈을 그대로 두고 학생만 확인하고 닫는다.
   // [184차수] 마스터로 들어온 원장 — 학생 화면은 예전 마스터 홈과 같은 길(?master=1&id=&t=학생 열쇠)로 연다.
   //   마스터 열쇠를 주소에 싣지 않기 위해서다. 학생 열쇠는 워커의 마스터 목록에서 받아 둔다(없으면 열쇠 없이 연다).
@@ -193,5 +208,5 @@ export function useTeacherActions(D) {
     }
     return `${vocaSrc}&${extra.toString()}`;
   })();
-  return { checkIn, checkinBusy, checkinMsg, openStudent, saveStaffSchedule, startTeacherHwTest, toggleTodo, vocaPickSrc, vocaSrc };
+  return { checkIn, checkinBusy, checkinMsg, toeicStuBusy, toggleToeicStudent, openStudent, saveStaffSchedule, startTeacherHwTest, toggleTodo, vocaPickSrc, vocaSrc };
 }

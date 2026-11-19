@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { teacherUrl, STAFF_AUTH } from "../../core/auth.jsx";
+import { toeicApiUrl, toeicWho } from "../../core/toeicAccess.jsx";
 import { WORKER_ORIGIN } from "../../core/config.jsx";
 import { createToeicSync } from "../../domain/toeicSync.mjs";
 
 // [162] 답안지가 기기에 보관하는 답의 저장 이름. 답안지(ToeicAnswerSheet)와 버리기(discard)가 같은 이름을 쓴다.
-export const toeicDraftKey = id => "mapl_toeic_draft_v1:" + WORKER_ORIGIN + ":" + (STAFF_AUTH?.tid || "") + ":" + id;
+export const toeicDraftKey = id => "mapl_toeic_draft_v1:" + WORKER_ORIGIN + ":" + toeicWho() + ":" + id;
 export const TOEIC_DRAFT_EVENT = "mapl-toeic-draft";
 
 // The key contains the account ID, never its secret link/token.
@@ -12,8 +12,8 @@ export function useOwnerToeic(enabled) {
   const [sync] = useState(() => createToeicSync({
     storage: { getItem: key => window.localStorage.getItem(key), setItem: (key, value) => window.localStorage.setItem(key, value) },
     locks: navigator.locks,
-    key: "mapl_toeic_outbox_v1:" + WORKER_ORIGIN + ":" + (STAFF_AUTH?.tid || ""),
-    url: () => teacherUrl("/teacher/toeic"),
+    key: "mapl_toeic_outbox_v1:" + WORKER_ORIGIN + ":" + toeicWho(),
+    url: () => toeicApiUrl(),   // [185차수] 선생님·원장 = 교사 문, 토익을 켠 학생 = 학생 문
   }));
   const [state, setState] = useState(() => sync.snapshot());
   useEffect(() => {
