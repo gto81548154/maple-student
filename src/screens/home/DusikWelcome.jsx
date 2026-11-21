@@ -28,7 +28,6 @@ export function DusikWelcome({ studentId, today, homework }) {
   const [headline, detail] = homeworkMessage(homework);
   const allDone = homework.assigned && !homework.retry && homework.remaining === 0;
   const lastCheer = useRef(null);
-  const speech = useRef(null);
 
   useEffect(() => {
     if (dismissed || !allDone || lastCheer.current === today) return;
@@ -41,20 +40,9 @@ export function DusikWelcome({ studentId, today, homework }) {
     setMoment("cheer");
   }, [dismissed, allDone, studentId, today]);
 
-  useEffect(() => () => {
-    if (speech.current) window.speechSynthesis?.cancel();
-  }, [dismissed]);
-
   function greet() {
     setMoment(moments[tapCount % moments.length]);
     setTapCount(n => n + 1);
-    if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
-    if (speech.current) window.speechSynthesis.cancel();
-    const line = new SpeechSynthesisUtterance(`${headline} ${detail}`);
-    line.lang = "ko-KR";
-    line.onend = line.onerror = () => { if (speech.current === line) speech.current = null; };
-    speech.current = line;
-    window.speechSynthesis.speak(line);
   }
 
   useEffect(() => {
@@ -94,7 +82,7 @@ export function DusikWelcome({ studentId, today, homework }) {
         <span>{detail}</span>
       </div>
       <button className="dusik-pet" type="button" ref={pet}
-        aria-label="두식이 말풍선 듣기" title="두식이 말풍선 듣기" onClick={greet}>
+        aria-label="두식이와 인사하기" title="두식이와 인사하기" onClick={greet}>
         <span key={tapCount} className="dusik-sprite" data-moment={moment} aria-hidden="true"
           onAnimationEnd={() => setMoment("rest")}
           style={{
