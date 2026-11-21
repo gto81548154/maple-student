@@ -25,13 +25,25 @@
 .dusik-pet:focus-visible, .dusik-close:focus-visible { outline: 2px solid #80522f; outline-offset: -2px; }
 .dusik-sprite {
   display: block; width: 100%; height: 100%; background-size: 2100% 100%; background-repeat: no-repeat;
+  background-image: url("./dusik.webp");
 }
 .dusik-sprite[data-moment="wave"] {
   animation: dusik-wave 760ms steps(1, end) 1;
 }
 .dusik-sprite:is([data-moment="tilt"], [data-moment="paws"], [data-moment="hop"]) {
+  background-image: url("./dusik-reactions.webp");
   background-size: 600% 300%;
   animation: dusik-moment 1.05s linear 1;
+}
+.dusik-sprite[data-moment="cheer"] {
+  background-image: url("./dusik-cheer.webp");
+  background-size: 300% 100%;
+  animation: dusik-cheer 1.45s steps(1, end) 1;
+}
+@keyframes dusik-cheer {
+  0%, 84%, 100% { background-position-x: 0%; }
+  15%, 70% { background-position-x: 50%; }
+  30% { background-position-x: 100%; }
 }
 @keyframes dusik-moment {
   0% { background-position-x: 0%; animation-timing-function: steps(5, end); }
@@ -45,7 +57,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .dusik-sprite[data-moment] {
-    animation: none; background-image: var(--dusik-rest) !important;
+    animation: none; background-image: url("./dusik.webp") !important;
     background-size: 2100% 100% !important; background-position: 0% 0% !important;
   }
 }
