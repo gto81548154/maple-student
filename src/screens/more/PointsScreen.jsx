@@ -56,7 +56,7 @@ export function PointsScreen({ studentId, onBalance, goReward }) {
       const r = await orderPoint(studentId, pick.id, price);
       if (!aliveRef.current) return;
       applyBalance(Number(r.balance) || 0);
-      setData((d) => (d ? { ...d, orders: [r.order, ...(d.orders || [])] } : d));
+      if (r.order && r.order.id) setData((d) => (d ? { ...d, orders: [r.order, ...(d.orders || [])] } : d));
       setPick(null);
       say("주문했어요 ✓ 원장님이 확인하고 보내 드려요");
       load();
@@ -74,7 +74,7 @@ export function PointsScreen({ studentId, onBalance, goReward }) {
       const r = await cancelPointOrder(studentId, o.id);
       if (!aliveRef.current) return;
       applyBalance(Number(r.balance) || 0);
-      setData((d) => (d ? { ...d, orders: (d.orders || []).map((x) => (x.id === o.id ? r.order : x)) } : d));
+      if (r.order && r.order.id) setData((d) => (d ? { ...d, orders: (d.orders || []).map((x) => (x.id === o.id ? r.order : x)) } : d));
       say("주문을 취소했어요. 포인트가 돌아왔어요");
       load();
     } catch (e) { if (aliveRef.current) say(e.code === "not_pending" ? "이미 처리된 주문이에요" : "지금은 취소할 수 없어요"); load(); }
@@ -86,7 +86,8 @@ export function PointsScreen({ studentId, onBalance, goReward }) {
   if (state === "off") return <div style={{ ...CARD, padding: 34, textAlign: "center", color: UI.dim, fontSize: 13.5, lineHeight: 1.6 }}>마플 포인트를 준비하고 있어요{data && data.startDate ? <><br /><span style={{ fontSize: 12.5 }}>{fmtYmd(data.startDate)}부터 시작해요</span></> : null}</div>;
 
   const balance = Number(data.balance) || 0;
-  const products = Array.isArray(data.products) ? data.products : [];
+  // [186차수 검토] 가격이 비어 있는 상품은 빼고 그린다(빈 상품이 저장돼 있으면 "∞P"·빈 화면이 되던 것)
+  const products = (Array.isArray(data.products) ? data.products : []).map((p) => ({ ...p, prices: (Array.isArray(p && p.prices) ? p.prices : []).map(Number).filter((n) => Number.isFinite(n) && n > 0) })).filter((p) => p.id && p.prices.length);
   const orders = Array.isArray(data.orders) ? data.orders : [];
   const items = Array.isArray(data.items) ? data.items : [];
   const rules = Array.isArray(data.rules) ? data.rules : [];

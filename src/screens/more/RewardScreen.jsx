@@ -209,7 +209,7 @@ export function RewardScreen({ student, studentId, pointsOn = false }) {
       if (!resp.ok || !data.success) throw new Error("지금은 신청할 수 없어요. 잠시 뒤 다시 해 주세요.");
       if (!aliveRef.current) return;
       const { t: _t, photoBase64: _p, ...rest } = body;
-      const mine = { ...rest, id: data.id || `local_${Date.now()}`, at: data.at || new Date().toISOString(), status: "pending", reason: "" };
+      const mine = { ...rest, id: data.id || `local_${Date.now()}`, at: data.at || new Date().toISOString(), status: "pending", reason: "", usesPoints: pointsOn };   // [186차수 검토] 방금 신청한 줄도 포인트 글로(목록을 다시 받기 전까지 "1만원"으로 보이던 것)
       setItems((prev) => [mine, ...prev.filter((x) => x.id !== mine.id)]);
       setListState("ok");
       if (kind === "score") { setScore(""); setMidGrade(""); setFinalGrade(""); setExamDate(""); setPhoto(null); }
