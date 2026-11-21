@@ -37,7 +37,9 @@ export function computeMoreView(D) {
       { key: "notices", icon: "📣", title: "공지·설문", sub: noticeSub, subTone: unansweredSurveys.length ? "warn" : undefined },
       { key: "examInfo", icon: "📋", title: "시험 정보", sub: nearestExam ? `${nearestExam.name} ${nearestExam.ddayLabel} · 시험 범위` : "다가오는 시험 없음" },
       // [146차수] 성적 장학금·친구 소개 기프티콘 신청(원장 결정 11-04)
-      { key: "reward", icon: "🎁", title: "장학금·친구 소개", sub: "기프티콘 신청하기" },
+      // [186차수] 마플 포인트 — 워커가 켜 둔 때에만 보인다. 켜져 있으면 장학금·친구 소개도 포인트로 받는다
+      ...(D.pointsPeek && D.pointsPeek.on ? [{ key: "points", icon: "💰", title: "마플 포인트", sub: `내 포인트 ${Math.round(D.pointsPeek.balance || 0).toLocaleString("ko-KR")}P · 상점` }] : []),
+      { key: "reward", icon: "🎁", title: "장학금·친구 소개", sub: D.pointsPeek && D.pointsPeek.on ? "포인트 신청하기" : "기프티콘 신청하기" },
     ] },
     { title: "학습", items: [
       { key: "cal", icon: "📅", title: "수업 일정", sub: calSub },

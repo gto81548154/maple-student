@@ -22,6 +22,15 @@ import { TAP, UI } from "../../theme/tokens.jsx";
 const SCORE_MIN = 95;           // 중학생 점수 기준
 const SCORE_AMOUNT = 10000;
 const REFERRAL_AMOUNT = 30000;
+// [186차수] 마플 포인트가 켜져 있으면(pointsOn) 기프티콘 대신 포인트로 받는다(1포인트 = 1원). 새로 생긴 것:
+//   · 성적 향상 장학금(kind:"improve") — 지난 시험보다 중학생 10점 이상 / 고등학생 1등급 이상 오르면 5,000P.
+//     body { kind:"improve", level, semester, exam("mid"|"final"), prev, now, examDate, photoBase64, photoMime }
+//     같은 시험으로 성적 장학금도 받으면 큰 쪽 하나만(워커가 맞춘다).
+//   · 친구 소개 — 친구가 상담만 와도 3,000P, 등록하면 30,000P 더(둘 다). 신청 방법은 그대로.
+const IMPROVE_AMOUNT = 5000;
+const CONSULT_AMOUNT = 3000;
+const IMPROVE_MIN_SCORE = 10;
+const fmtPt = (n) => `${Number(n).toLocaleString("ko-KR")}P`;
 const CLAIM_DAYS = 30;          // 시험 뒤 한 달
 const PHOTO_MAX_BYTES = 2 * 1024 * 1024;
 const PHOTO_MAX_PX = 1600;
@@ -88,7 +97,8 @@ const Pills = ({ value, onChange, items }) => (
     ))}
   </div>
 );
-export function RewardScreen({ student, studentId }) {
+export function RewardScreen({ student, studentId, pointsOn = false }) {
+  const gift = (n) => (pointsOn ? fmtPt(n) : `${fmtWon(n)} 기프티콘`);   // 받는 것 이름
   const todayStr = getTodayStr();
   const guessedLevel = getStudentLevelForDday(student || {});
   const [kind, setKind] = useState("score");
@@ -98,6 +108,8 @@ export function RewardScreen({ student, studentId }) {
   const [score, setScore] = useState("");
   const [midGrade, setMidGrade] = useState("");
   const [finalGrade, setFinalGrade] = useState("");
+  const [prevVal, setPrevVal] = useState("");       // [186차수] 성적 향상: 지난 시험 점수(중)·등급(고)
+  const [nowVal, setNowVal] = useState("");         //                이번 시험 점수(중)·등급(고)
   const [examDate, setExamDate] = useState("");
   const [photo, setPhoto] = useState(null);          // { dataUrl, base64, mime, name }
   const [photoBusy, setPhotoBusy] = useState(false);
@@ -146,6 +158,23 @@ export function RewardScreen({ student, studentId }) {
   else if (!photo) scoreBlock = "성적표 사진을 꼭 올려 주세요";
   else if (dupScore) scoreBlock = "이 시험은 이미 신청했어요";
   const scoreReady = scoreFilled && !scoreBlock;
+  // ─── [186차수] 성적 향상 장학금: 대상인지 미리 판정 ───
+  const improveExam = exam === "final" ? "final" : "mid";
+  const prevNum = Number(prevVal), nowNum = Number(nowVal);
+  const improveFilled = prevVal !== "" && nowVal !== "";
+  const improveOk = isMiddle
+    ? (Number.isFinite(prevNum) && Number.isFinite(nowNum) && prevNum >= 0 && nowNum <= 100 && nowNum - prevNum >= IMPROVE_MIN_SCORE)
+    : (prevNum >= 1 && nowNum >= 1 && prevNum - nowNum >= 1);
+  const dupImprove = alive.some((x) => x.kind === "improve" && x.semester === semester && (x.exam || "") === improveExam);
+  let improveBlock = "";
+  if (!improveFilled) improveBlock = "";
+  else if (!improveOk) improveBlock = isMiddle ? `지난 시험보다 ${IMPROVE_MIN_SCORE}점 이상 올라야 신청할 수 있어요` : "지난 시험보다 1등급 이상 올라야 신청할 수 있어요";
+  else if (!examDate) improveBlock = "시험 본 날짜를 골라 주세요";
+  else if (dateFuture) improveBlock = "시험 날짜가 오늘보다 뒤예요";
+  else if (dateExpired) improveBlock = "신청 기한(시험 뒤 한 달)이 지났어요";
+  else if (!photo) improveBlock = "성적표나 정오표 사진을 꼭 올려 주세요";
+  else if (dupImprove) improveBlock = "이 시험은 이미 신청했어요";
+  const improveReady = improveFilled && !improveBlock;
   const referralFilled = friendName.trim().length >= 2 && friendPhone.replace(/\D/g, "").length >= 9;
   const referralBlock = !referralFilled ? "" : dupReferral ? "이 친구는 이미 신청했어요" : "";
   const referralReady = referralFilled && !referralBlock;
@@ -165,7 +194,9 @@ export function RewardScreen({ student, studentId }) {
     setNotice(""); setFlash("");
     if (IS_STAFF_VIEW) { setNotice("보기 전용 화면에서는 신청할 수 없어요"); return; }
     if (!WORKER_ORIGIN) { setNotice("지금은 신청할 수 없어요. 잠시 뒤 다시 해 주세요."); return; }
-    const body = kind === "score"
+    const body = kind === "improve"
+      ? { studentId, t: getSelfAccessToken(), kind: "improve", level, semester, exam: improveExam, prev: prevNum, now: nowNum, examDate, photoBase64: photo.base64, photoMime: photo.mime, amount: IMPROVE_AMOUNT }
+      : kind === "score"
       ? { studentId, t: getSelfAccessToken(), kind: "score", level, semester, exam: examKey, score: isMiddle ? scoreNum : null, midGrade: isMiddle ? null : midNum, finalGrade: isMiddle ? null : finalNum, examDate, photoBase64: photo.base64, photoMime: photo.mime, amount: SCORE_AMOUNT }
       : { studentId, t: getSelfAccessToken(), kind: "referral", friendName: friendName.trim().slice(0, 30), friendSchool: friendSchool.trim().slice(0, 40), friendGrade: friendGrade.trim().slice(0, 10), friendPhone: friendPhone.trim().slice(0, 20), amount: REFERRAL_AMOUNT };
     setSending(true);
@@ -174,7 +205,7 @@ export function RewardScreen({ student, studentId }) {
       const data = await resp.json().catch(() => ({}));
       if (resp.status === 413) throw new Error("사진이 너무 커요. 다른 사진으로 다시 올려 주세요.");
       if (resp.status === 401 || resp.status === 403) throw new Error("앱을 새로고침한 뒤 다시 해 주세요");
-      if (resp.status === 409) throw new Error(kind === "score" ? "이 시험은 이미 신청했어요" : "이 친구는 이미 신청했어요");
+      if (resp.status === 409) throw new Error(kind === "referral" ? "이 친구는 이미 신청했어요" : "이 시험은 이미 신청했어요");
       if (!resp.ok || !data.success) throw new Error("지금은 신청할 수 없어요. 잠시 뒤 다시 해 주세요.");
       if (!aliveRef.current) return;
       const { t: _t, photoBase64: _p, ...rest } = body;
@@ -182,6 +213,7 @@ export function RewardScreen({ student, studentId }) {
       setItems((prev) => [mine, ...prev.filter((x) => x.id !== mine.id)]);
       setListState("ok");
       if (kind === "score") { setScore(""); setMidGrade(""); setFinalGrade(""); setExamDate(""); setPhoto(null); }
+      else if (kind === "improve") { setPrevVal(""); setNowVal(""); setExamDate(""); setPhoto(null); }
       else { setFriendName(""); setFriendSchool(""); setFriendGrade(""); setFriendPhone(""); }
       setFlash("신청했어요 ✓ 학원에서 확인한 뒤 알려 드릴게요");
       setTimeout(() => { if (aliveRef.current) setFlash(""); }, 3000);
@@ -198,7 +230,9 @@ export function RewardScreen({ student, studentId }) {
       {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((g) => <option key={g} value={g}>{g}등급</option>)}
     </select>
   );
-  const itemTitle = (it) => it.kind === "referral"
+  const itemTitle = (it) => it.kind === "improve"
+    ? `성적 향상 장학금 · ${semesterLabel(it.semester)} ${examLabel(it.exam)} · ${it.level === "high" ? `${it.prev}등급 → ${it.now}등급` : `${it.prev}점 → ${it.now}점`}`
+    : it.kind === "referral"
     ? `친구 소개 · ${it.friendName || "이름 없음"}${it.friendSchool ? ` (${it.friendSchool}${it.friendGrade ? " " + it.friendGrade : ""})` : ""}`
     : `성적 장학금 · ${semesterLabel(it.semester)} ${examLabel(it.exam)} · ${it.level === "middle" || it.score != null ? `${it.score}점` : `${it.midGrade}·${it.finalGrade}등급`}`;
   return (
@@ -207,15 +241,57 @@ export function RewardScreen({ student, studentId }) {
       <div style={{ background: UI.navy, borderRadius: 16, padding: "14px 16px", color: "#fff" }}>
         <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 8 }}>🎁 이렇게 받아요</div>
         <div style={{ fontSize: 13, lineHeight: 1.7, color: "rgba(255,255,255,0.9)", wordBreak: "keep-all" }}>
-          · 중학생: 학교 중간·기말 영어 <b>{SCORE_MIN}점 이상</b> → {fmtWon(SCORE_AMOUNT)} 기프티콘<br />
-          · 고등학생: 중간·기말 <b>둘 다 영어 1등급</b> → {fmtWon(SCORE_AMOUNT)} 기프티콘<br />
-          · 친구 소개: 친구가 학원에 등록하면 <b>둘 다</b> {fmtWon(REFERRAL_AMOUNT)} 기프티콘<br />
-          <span style={{ color: "rgba(255,255,255,0.7)", fontSize: 12 }}>성적 장학금은 시험 뒤 한 달 안에, 성적표 사진과 함께 신청해요. 학원에서 확인한 뒤 드려요.</span>
+          · 중학생: 학교 중간·기말 영어 <b>{SCORE_MIN}점 이상</b> → {gift(SCORE_AMOUNT)}<br />
+          · 고등학생: 중간·기말 <b>둘 다 영어 1등급</b> → {gift(SCORE_AMOUNT)}<br />
+          {pointsOn && <>· 성적 향상: 지난 시험보다 <b>{IMPROVE_MIN_SCORE}점(중) · 1등급(고) 이상</b> 오르면 → {fmtPt(IMPROVE_AMOUNT)}<br /></>}
+          {pointsOn
+            ? <>· 친구 소개: 친구가 <b>상담만 와도</b> {fmtPt(CONSULT_AMOUNT)}, 등록하면 <b>둘 다</b> {fmtPt(REFERRAL_AMOUNT)} 더<br /></>
+            : <>· 친구 소개: 친구가 학원에 등록하면 <b>둘 다</b> {fmtWon(REFERRAL_AMOUNT)} 기프티콘<br /></>}
+          <span style={{ color: "rgba(255,255,255,0.7)", fontSize: 12 }}>장학금은 시험 뒤 한 달 안에, 성적표 사진과 함께 신청해요. 학원에서 확인한 뒤 드려요.{pointsOn ? " 성적 장학금과 성적 향상이 같은 시험이면 큰 쪽 하나만 받아요." : ""}</span>
         </div>
       </div>
-      <div style={{ marginTop: 12 }}><Pills value={kind} onChange={(v) => { setKind(v); setNotice(""); setFlash(""); }} items={[{ v: "score", label: "성적 장학금" }, { v: "referral", label: "친구 소개" }]} /></div>
+      <div style={{ marginTop: 12 }}><Pills value={kind} onChange={(v) => { setKind(v); setNotice(""); setFlash(""); }} items={pointsOn ? [{ v: "score", label: "성적 장학금" }, { v: "improve", label: "성적 향상" }, { v: "referral", label: "친구 소개" }] : [{ v: "score", label: "성적 장학금" }, { v: "referral", label: "친구 소개" }]} /></div>
       <div style={{ ...CARD, marginTop: 10 }}>
-        {kind === "score" ? (
+        {kind === "improve" ? (
+          <>
+            <div style={{ ...LBL, marginTop: 0 }}>나는</div>
+            <Pills value={level} onChange={(v) => { setLevel(v); setPrevVal(""); setNowVal(""); if (exam === "both") setExam("mid"); }} items={[{ v: "middle", label: `중학생 · ${IMPROVE_MIN_SCORE}점 상승` }, { v: "high", label: "고등학생 · 1등급 상승" }]} />
+            <div style={LBL}>학기</div>
+            <select value={semester} onChange={(e) => setSemester(e.target.value)} style={INPUT}>{semesterOptions().map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}</select>
+            <div style={LBL}>이번 시험</div>
+            <Pills value={improveExam} onChange={setExam} items={[{ v: "mid", label: "중간고사" }, { v: "final", label: "기말고사" }]} />
+            <div style={LBL}>{isMiddle ? "영어 점수 (지난 시험 → 이번 시험)" : "영어 등급 (지난 시험 → 이번 시험)"}</div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {isMiddle
+                ? <input type="number" inputMode="numeric" min={0} max={100} value={prevVal} placeholder="지난 예: 72" onChange={(e) => setPrevVal(e.target.value.slice(0, 3))} style={INPUT} />
+                : gradeSelect(prevVal, setPrevVal)}
+              <span aria-hidden="true" style={{ color: UI.dim, fontWeight: 800 }}>→</span>
+              {isMiddle
+                ? <input type="number" inputMode="numeric" min={0} max={100} value={nowVal} placeholder="이번 예: 84" onChange={(e) => setNowVal(e.target.value.slice(0, 3))} style={INPUT} />
+                : gradeSelect(nowVal, setNowVal)}
+            </div>
+            <div style={LBL}>이번 시험 본 날</div>
+            <input type="date" value={examDate} max={todayStr} onChange={(e) => setExamDate(e.target.value)} style={INPUT} />
+            <div style={LBL}>성적표·정오표 사진 <span style={{ fontWeight: 600, color: UI.warnFg }}>(꼭 필요해요)</span></div>
+            <input ref={fileRef} type="file" accept="image/*" onChange={onPickPhoto} style={{ display: "none" }} />
+            {photo ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <img src={photo.dataUrl} alt="성적표" style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 10, border: `1px solid ${UI.line}` }} />
+                <div style={{ flex: 1, minWidth: 0, fontSize: 13, color: UI.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{photo.name}</div>
+                <button type="button" onClick={() => fileRef.current && fileRef.current.click()} style={{ ...BTN, background: UI.blueBg, color: UI.blue, padding: "8px 12px", fontSize: 13 }}>바꾸기</button>
+              </div>
+            ) : (
+              <button type="button" disabled={photoBusy} onClick={() => fileRef.current && fileRef.current.click()} style={{ ...BTN, width: "100%", background: UI.blueBg, color: UI.blue, opacity: photoBusy ? 0.6 : 1 }}>{photoBusy ? "사진 준비 중…" : "📷 이번 시험 성적표·정오표 사진 올리기"}</button>
+            )}
+            <div style={{ fontSize: 12.5, color: UI.sub, lineHeight: 1.6, marginTop: 8 }}>지난 시험 성적은 학원 기록과 맞춰 본 뒤에 확인해 드려요.</div>
+            {improveFilled && (
+              <div style={{ marginTop: 14, borderRadius: 12, padding: "10px 12px", fontSize: 13.5, fontWeight: 800, textAlign: "center", background: improveReady ? UI.okBg : UI.warnBg, color: improveReady ? UI.okFg : UI.warnFg }}>
+                {improveReady ? `${fmtPt(IMPROVE_AMOUNT)} 대상이에요 🎉` : improveBlock}
+              </div>
+            )}
+            <button type="button" onClick={submit} disabled={!improveReady || sending} style={{ ...BTN_PRIMARY, width: "100%", marginTop: 12, height: 52, borderRadius: 14, fontSize: 16, opacity: (!improveReady || sending) ? 0.45 : 1, cursor: (!improveReady || sending) ? "default" : "pointer" }}>{sending ? "보내는 중…" : "성적 향상 장학금 신청"}</button>
+          </>
+        ) : kind === "score" ? (
           <>
             <div style={{ ...LBL, marginTop: 0 }}>나는</div>
             <Pills value={level} onChange={(v) => { setLevel(v); setExam(v === "middle" ? "mid" : "both"); }} items={[{ v: "middle", label: "중학생" }, { v: "high", label: "고등학생" }]} />
@@ -249,14 +325,14 @@ export function RewardScreen({ student, studentId }) {
             )}
             {scoreFilled && (
               <div style={{ marginTop: 14, borderRadius: 12, padding: "10px 12px", fontSize: 13.5, fontWeight: 800, textAlign: "center", background: scoreReady ? UI.okBg : UI.warnBg, color: scoreReady ? UI.okFg : UI.warnFg }}>
-                {scoreReady ? `${fmtWon(SCORE_AMOUNT)} 기프티콘 대상이에요 🎉` : scoreBlock}
+                {scoreReady ? `${gift(SCORE_AMOUNT)} 대상이에요 🎉` : scoreBlock}
               </div>
             )}
             <button type="button" onClick={submit} disabled={!scoreReady || sending} style={{ ...BTN_PRIMARY, width: "100%", marginTop: 12, height: 52, borderRadius: 14, fontSize: 16, opacity: (!scoreReady || sending) ? 0.45 : 1, cursor: (!scoreReady || sending) ? "default" : "pointer" }}>{sending ? "보내는 중…" : "장학금 신청"}</button>
           </>
         ) : (
           <>
-            <div style={{ fontSize: 13, color: UI.sub, lineHeight: 1.6 }}>내가 소개한 친구가 학원에 등록하면 나도, 친구도 {fmtWon(REFERRAL_AMOUNT)} 기프티콘을 받아요. 친구 정보를 적어 주세요.</div>
+            <div style={{ fontSize: 13, color: UI.sub, lineHeight: 1.6 }}>{pointsOn ? `친구가 상담만 와도 ${fmtPt(CONSULT_AMOUNT)}, 학원에 등록하면 나도 친구도 ${fmtPt(REFERRAL_AMOUNT)}를 더 받아요.` : `내가 소개한 친구가 학원에 등록하면 나도, 친구도 ${fmtWon(REFERRAL_AMOUNT)} 기프티콘을 받아요.`} 친구 정보를 적어 주세요.</div>
             <div style={LBL}>친구 이름</div>
             <input type="text" value={friendName} maxLength={30} placeholder="예: 김마플" onChange={(e) => setFriendName(e.target.value)} style={INPUT} />
             <div style={LBL}>학교 · 학년 <span style={{ fontWeight: 600, color: UI.dim }}>(아는 만큼만)</span></div>
@@ -287,10 +363,11 @@ export function RewardScreen({ student, studentId }) {
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <span style={{ fontSize: 12, color: UI.dim }}>{fmtDate(it.at)}</span>
                   <span style={{ fontSize: 11.5, fontWeight: 800, color: st.fg, background: st.bg, borderRadius: 8, padding: "2px 8px" }}>{st.label}</span>
-                  {it.amount ? <span style={{ fontSize: 12, color: UI.sub, marginLeft: "auto" }}>{fmtWon(it.amount)}</span> : null}
+                  {it.usesPoints ? <span style={{ fontSize: 12, color: UI.sub, marginLeft: "auto" }}>{fmtPt(it.points != null ? Number(it.points) + Number(it.consultPoints || 0) : it.amount || 0)}</span> : it.amount ? <span style={{ fontSize: 12, color: UI.sub, marginLeft: "auto" }}>{fmtWon(it.amount)}</span> : null}
                 </div>
                 <div style={{ fontSize: 14, fontWeight: 700, color: UI.text, marginTop: 4, lineHeight: 1.5, wordBreak: "break-word" }}>{itemTitle(it)}</div>
                 {it.status === "rejected" && it.reason && <div style={{ fontSize: 12.5, color: UI.warnFg, marginTop: 3, lineHeight: 1.5 }}>이유: {it.reason}</div>}
+                {it.usesPoints && it.status !== "paid" && Number(it.consultPoints) > 0 && <div style={{ fontSize: 12.5, color: UI.okFg, marginTop: 3, lineHeight: 1.5 }}>친구가 상담을 와서 {fmtPt(it.consultPoints)}가 들어왔어요</div>}
                 {it.status === "paid" && it.reason && <div style={{ fontSize: 12.5, color: UI.sub, marginTop: 3, lineHeight: 1.5 }}>💬 {it.reason}</div>}
               </div>
             );

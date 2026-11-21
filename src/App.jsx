@@ -10,6 +10,8 @@ import { MockExamTab } from "./screens/mock/MockExamTab.jsx";
 import { AppSettingsScreen, ExamInfoScreen, NoticesScreen } from "./screens/more/MoreScreens.jsx";
 import { PhonicsScreen } from "./screens/phonics/PhonicsScreen.jsx";
 import { RewardScreen } from "./screens/more/RewardScreen.jsx";
+import { PointsScreen } from "./screens/more/PointsScreen.jsx";
+import { usePointsPeek } from "./domain/points.jsx";
 import { BookPassCelebration } from "./screens/progress/BookPassCelebration.jsx";
 import { RoadmapScreen } from "./screens/progress/RoadmapScreen.jsx";
 import { computeRoadmap } from "./domain/roadmap.jsx";
@@ -49,7 +51,7 @@ import { renderWithdrawnScreen } from "./screens/status/WithdrawnScreen.jsx";
 import { renderLoadErrorScreen } from "./screens/status/LoadErrorScreen.jsx";
 
 // [133차수] 주소(#해시)에 쓰는 학생 화면 이름 — 위 탭 5개 + 더보기 안 화면 9개(146차수: 장학금 reward · 152차수: 🎤 파닉스 phonics — 145차수 녹음 제출 record 를 안에 합침). 모르는 이름은 홈으로.
-const STUDENT_ROUTE_IDS = ["home", "tasks", "voca", "videos", "more", "cal", "vocabWrong", "mock", "progress", "notices", "examInfo", "settings", "phonics", "reward", "toeic"];
+const STUDENT_ROUTE_IDS = ["home", "tasks", "voca", "videos", "more", "cal", "vocabWrong", "mock", "progress", "notices", "examInfo", "settings", "phonics", "reward", "toeic", "points"];   // [186차수] points = 마플 포인트
 // [152차수] 옛 주소 #record(녹음 제출)는 #phonics 로 바꿔 읽는다(홈 화면에 추가해 둔 옛 바로가기 대비)
 try { if (/^#\/?record(\b|$)/.test(window.location.hash)) window.history.replaceState(window.history.state, "", "#phonics"); } catch (e) {}
 
@@ -75,6 +77,7 @@ export default function App() {
   const showAttQrRef = useRef(false); showAttQrRef.current = showAttQr;
   const [selectedDate, setSelectedDate] = useState(null);
   const { vocaHwRec } = useVocaHw({ bundleVocaHw, selectedDate, studentId, tab, todos });
+  const [pointsPeek, setPointsPeek] = usePointsPeek(studentId, lastLoadedAt);   // [186차수] 마플 포인트가 켜져 있는지·내 잔액(더보기·홈에 보일지)
   const toeicOn = useStudentToeicOn(lastLoadedAt);   // [185차수] 원장이 이 학생의 토익을 켜 뒀는지(더보기에 "토익"을 보일지)
   const { activeSecRef, awayCountRef, awaySecRef, awayStartRef, currentSessionIdRef, lastActiveAtRef, lastSavedAwayCountRef, lastSavedAwaySecRef, lastSavedFocusSecRef, lastSavedPlaySecRef, lastVideoSaveStatus, longestAwayRef, pendingVideoCount, selectedVideoBook, setLastVideoSaveStatus, setPendingVideoCount, setSelectedVideoBook, setVideoWatch, setVideosFeaturedId, setViewStartTime, setViewingVideo, videoSaveChunkSeqRef, videoSaveInFlightRef, videoWatch, videosFeaturedId, viewStartTime, viewingVideo, ytDurationSecRef, ytFocusSecRef, ytPlaySecRef, ytPlayerStateRef } = useVideoState();
   const mockBusyRef = useRef(false); // [101차수] 모의고사 시험·답 입력·제출 중(MockExamTab이 알려준다)
@@ -249,7 +252,7 @@ export default function App() {
   if (!student) return null;
   const { activeDate, allDates, doneTasks, getFailReason, isCheckedView, isFailed, pct, pinnedMessages, stepGroups, todayStrForTab, todoRevealHeld, totalTasks } = computeTodoView({ checklistData, records, selectedDate, studentId, todos, vocaHwRec });
   const { hasVocabWrong, startVocaHwTest, studentVideos, taskVoca, vocaPassLabel, vocabWarn } = computeVocaView({ activeDate, customHolidays, makeups, progressTree, setVocaHwTask, stepGroups, student, studentId, videos, vocabWrongWords });
-  const { activeSurveys, attNoticeAll, attWeek, calSub, examDdays, moreGroups, nearestExam, unansweredSurveys, wrongCount } = computeMoreView({toeicOn, attStatus, curriculum, customHolidays, exams, hasVocabWrong, makeups, phonicsState, phonicsTasks, pinnedMessages, progressTree, roadmapSub: (() => { const rm = computeRoadmap({ curriculum, student, todos, progressTree }); return rm && rm.myStage ? `지금 ${rm.myStage}단계${rm.stageInfo?.range ? ` (${rm.stageInfo.range})` : ""} · 내가 어디까지 왔는지` : ""; })(), student, surveyResponses, surveys, todayStrForTab, vocabWarn, vocabWrongWords });
+  const { activeSurveys, attNoticeAll, attWeek, calSub, examDdays, moreGroups, nearestExam, unansweredSurveys, wrongCount } = computeMoreView({pointsPeek, toeicOn, attStatus, curriculum, customHolidays, exams, hasVocabWrong, makeups, phonicsState, phonicsTasks, pinnedMessages, progressTree, roadmapSub: (() => { const rm = computeRoadmap({ curriculum, student, todos, progressTree }); return rm && rm.myStage ? `지금 ${rm.myStage}단계${rm.stageInfo?.range ? ` (${rm.stageInfo.range})` : ""} · 내가 어디까지 왔는지` : ""; })(), student, surveyResponses, surveys, todayStrForTab, vocabWarn, vocabWrongWords });
   const { allTaskItems, goTab, picker, scrollToVideoCard, topTabOf, watchBySid } = makeTabNav({ confirmLeaveTab, headerRef, setPhonicsOpenTask, setSelectedVideoBook, setTab, setVideosFeaturedId, setVocaExtraBook, setVocaOpenLast, setVocaOpenTask, startVocaHwTest, stepGroups, studentId, studentVideos, tab, taskVoca, toggleVideo, videoWatch, viewingVideo, vocaHwBusyRef, vocaHwRec });
   goTabRef.current = goTab; pickerRef.current = picker;
   // [147차수] 첫 자료가 들어온 뒤 한 번만: 급한 것(오답 기한·설문·시험·새 공지·원장 카드)을 카드로 모아 띄운다
@@ -280,7 +283,7 @@ export default function App() {
   const F = "'Pretendard Variable', -apple-system, sans-serif";
 
   // [119차수] 탭별 그리기 함수(screens/…)에 넘겨줄 값 묶음. 그리기 함수는 여기서 필요한 것만 꺼내 쓴다.
-  const C = { activeDate, activeSurveys, allDates, allTaskItems, attLog, attNoticeAll, attStatus, attWeek, calSub, customHolidays, doneTasks, examDdays, examRanges, exams, getFailReason, goTab, hasVocabWrong, isCheckedView, isFailed, lastVideoSaveStatus, makeups, nearestExam, pct, pendingVideoCount, phonicsState, phonicsTasks, picker, pinnedMessages, progressTree, scrollToVideoCard, selectedVideoBook, setSelectedDate, setSelectedVideoBook, setVocaHwTask, setVocaOpenLast, setVocaOpenTask, stepGroups, student, studentId, studentVideos, taskVoca, todayStrForTab, todoRevealHeld, toggleVideo, totalTasks, unansweredSurveys, videos, videosFeaturedId, viewingVideo, vocaExtraBook, vocaHwBusyRef, vocaHwRec, vocaHwTask, vocaOpenLast, vocaOpenTask, vocaPassLabel, vocabWarn, watchBySid, wrongCount };
+  const C = { pointsPeek, activeDate, activeSurveys, allDates, allTaskItems, attLog, attNoticeAll, attStatus, attWeek, calSub, customHolidays, doneTasks, examDdays, examRanges, exams, getFailReason, goTab, hasVocabWrong, isCheckedView, isFailed, lastVideoSaveStatus, makeups, nearestExam, pct, pendingVideoCount, phonicsState, phonicsTasks, picker, pinnedMessages, progressTree, scrollToVideoCard, selectedVideoBook, setSelectedDate, setSelectedVideoBook, setVocaHwTask, setVocaOpenLast, setVocaOpenTask, stepGroups, student, studentId, studentVideos, taskVoca, todayStrForTab, todoRevealHeld, toggleVideo, totalTasks, unansweredSurveys, videos, videosFeaturedId, viewingVideo, vocaExtraBook, vocaHwBusyRef, vocaHwRec, vocaHwTask, vocaOpenLast, vocaOpenTask, vocaPassLabel, vocabWarn, watchBySid, wrongCount };
   return (
     <div style={{ minHeight: "100vh", background: UI.bg, fontFamily: F, color: UI.text }}>
       {/* [103차수] 카카오톡 안에서 열었을 때만 "브라우저로 열기" 띠. 홈 화면 추가·알림 안내는 더보기 → 앱 설정으로 이사(원장 결정 09-08) */}
@@ -445,7 +448,14 @@ export default function App() {
         {/* [146차수] 더보기 → 장학금·친구 소개 — 학생이 신청, 원장이 원장앱에서 확인 뒤 기프티콘 지급 */}
         {tab === "reward" && (
           <MoreSubFrame title="장학금·친구 소개" onBack={backToMore}>
-            <RewardScreen student={student} studentId={studentId} />
+            <RewardScreen student={student} studentId={studentId} pointsOn={pointsPeek.on} />
+          </MoreSubFrame>
+        )}
+
+        {/* [186차수] 더보기 → 마플 포인트 — 잔액·상점·내역·모으는 법. 워커가 꺼 두었으면 "준비하고 있어요"만 보인다 */}
+        {tab === "points" && (
+          <MoreSubFrame title="마플 포인트" onBack={backToMore}>
+            <PointsScreen studentId={studentId} onBalance={setPointsPeek} goReward={() => goTab("reward")} />
           </MoreSubFrame>
         )}
 

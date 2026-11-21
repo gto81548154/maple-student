@@ -14,7 +14,7 @@ import { WordSearch } from "./WordSearch.jsx";
 // [119차수 · 140차수 토스 스타일 2단계] 홈 탭 그리기 — 시안 C 모양(단, 오늘 숙제가 맨 위).
 // 순서: ① 맨 위 큰 한 줄 요약 → ② 단어 검색 → ③ [오늘 숙제] → ④ [지금 폰으로 할 공부] → ⑤ [다음 수업] → ⑥ [시험 정보 · 공지]
 export function renderHomeTab(C) {
-  const { activeDate, activeSurveys, allDates, attLog, attNoticeAll, attStatus, calSub, customHolidays, exams, getFailReason, goTab, hasVocabWrong, isCheckedView, isFailed, makeups, nearestExam, phonicsTasks, picker, pinnedMessages, progressTree, stepGroups, student, studentId, studentVideos, taskVoca, todayStrForTab, unansweredSurveys, videos, vocaHwRec, vocaPassLabel, vocabWarn, watchBySid, wrongCount } = C;
+  const { pointsPeek, activeDate, activeSurveys, allDates, attLog, attNoticeAll, attStatus, calSub, customHolidays, exams, getFailReason, goTab, hasVocabWrong, isCheckedView, isFailed, makeups, nearestExam, phonicsTasks, picker, pinnedMessages, progressTree, stepGroups, student, studentId, studentVideos, taskVoca, todayStrForTab, unansweredSurveys, videos, vocaHwRec, vocaPassLabel, vocabWarn, watchBySid, wrongCount } = C;
           const step1Items = (stepGroups.find(s => s.key === "step1")?.items) || [];
           // 카드 안 "검사 n/m" = 이 카드의 항목 기준(재시는 분모·분자에서 제외 — 숙제 탭 진행률과 같은 규칙). 5단계 전체 숫자와 섞지 않는다.
           const step1Countable = step1Items.filter(it => !isFailed(it));
@@ -282,6 +282,8 @@ export function renderHomeTab(C) {
                 {[
                   { key: "examInfo", icon: "📋", iconBg: GREEN_BG, label: "시험 정보", count: 0, sub: nearestExam ? `${nearestExam.name} ${nearestExam.ddayLabel}` : "다가오는 시험 없음", tone: nearestExam ? "green" : "" },
                   { key: "notices", icon: "📣", iconBg: UI.bg, label: "공지", count: pinnedMessages.length, sub: unansweredSurveys.length ? `응답할 설문 ${unansweredSurveys.length}개` : (activeSurveys.length ? `설문 ${activeSurveys.length}개 응답 완료` : "새 공지가 없어요"), tone: unansweredSurveys.length ? "warn" : "" },
+                  // [186차수] 마플 포인트 — 켜져 있을 때만. 내 잔액이 한 줄로 보인다
+                  ...(pointsPeek && pointsPeek.on ? [{ key: "points", icon: "💰", iconBg: "#FFF4D6", label: "마플 포인트", count: 0, sub: `${Math.round(pointsPeek.balance || 0).toLocaleString("ko-KR")}P`, tone: "green" }] : []),
                   ...((progressTree?.lanes || []).length ? [{ key: "progress", icon: "🗺️", iconBg: PURPLE_BG, label: "마플 로드맵", count: 0, sub: "교재별 진행 상황", tone: "" }] : []),
                 ].map((r, i) => (
                   <button key={r.key} type="button" onClick={() => goTab(r.key)}
