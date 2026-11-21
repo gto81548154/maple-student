@@ -10,6 +10,7 @@ import { VOCA_UNIT_WORDS, fmtLecRange, guessVocaBooks, vocaFullLabel, vocaShortL
 import { UI, TAP } from "../../theme/tokens.jsx";
 import { StudentMonthCalendar } from "../calendar/StudentMonthCalendar.jsx";
 import { WordSearch } from "./WordSearch.jsx";
+import { DusikWelcome } from "./DusikWelcome.jsx";
 
 // [119차수 · 140차수 토스 스타일 2단계] 홈 탭 그리기 — 시안 C 모양(단, 오늘 숙제가 맨 위).
 // 순서: ① 맨 위 큰 한 줄 요약 → ② 단어 검색 → ③ [오늘 숙제] → ④ [지금 폰으로 할 공부] → ⑤ [다음 수업] → ⑥ [시험 정보 · 공지]
@@ -85,6 +86,7 @@ export function renderHomeTab(C) {
 
           return (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {!IS_STAFF_VIEW && <DusikWelcome key={studentId} studentId={studentId} />}
 
               {/* ① 맨 위 큰 한 줄 요약 (날짜 + "오늘/이 날 할 일 N개 남았어요" / 다 했으면 완료 문구) */}
               <div style={{ padding: "4px 4px 2px" }}>
