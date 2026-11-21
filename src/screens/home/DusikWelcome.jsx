@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import art from "./dusik.webp";
-import reactions from "./dusik-reactions.webp";
 import "./DusikWelcome.css";
 
-const moments = ["wave", "tilt", "paws", "hop"];
+const reactionRows = ["tilt", "paws", "hop"];
+const moments = ["wave", ...reactionRows, "cheer"];
 
 export function DusikWelcome({ studentId }) {
   const storageKey = `maple.dusik.dismissed.${studentId}`;
@@ -16,7 +15,7 @@ export function DusikWelcome({ studentId }) {
   const [tapCount, setTapCount] = useState(0);
   const [acting, setActing] = useState(true);
   const moment = acting ? moments[Math.max(0, tapCount - 1) % moments.length] : "rest";
-  const reactionRow = moments.indexOf(moment) - 1;
+  const reactionRow = reactionRows.indexOf(moment);
 
   useEffect(() => {
     if (dismissed) return;
@@ -60,8 +59,6 @@ export function DusikWelcome({ studentId }) {
         <span key={tapCount} className="dusik-sprite" data-moment={moment} aria-hidden="true"
           onAnimationEnd={() => setActing(false)}
           style={{
-            "--dusik-rest": `url(${art})`,
-            backgroundImage: `url(${reactionRow >= 0 ? reactions : art})`,
             backgroundPositionX: `${frame * 5}%`,
             backgroundPositionY: reactionRow >= 0 ? `${reactionRow * 50}%` : "0%",
           }} />
