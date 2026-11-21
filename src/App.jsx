@@ -250,7 +250,7 @@ export default function App() {
   }
 
   if (!student) return null;
-  const { activeDate, allDates, doneTasks, getFailReason, isCheckedView, isFailed, pct, pinnedMessages, stepGroups, todayStrForTab, todoRevealHeld, totalTasks } = computeTodoView({ checklistData, records, selectedDate, studentId, todos, vocaHwRec });
+  const { activeDate, allDates, doneTasks, getFailReason, isCheckedView, isFailed, pct, pinnedMessages, stepGroups, todayHomework, todayStrForTab, todoRevealHeld, totalTasks } = computeTodoView({ checklistData, records, selectedDate, studentId, todos, vocaHwRec, bundleVocaHw });
   const { hasVocabWrong, startVocaHwTest, studentVideos, taskVoca, vocaPassLabel, vocabWarn } = computeVocaView({ activeDate, customHolidays, makeups, progressTree, setVocaHwTask, stepGroups, student, studentId, videos, vocabWrongWords });
   const { activeSurveys, attNoticeAll, attWeek, calSub, examDdays, moreGroups, nearestExam, unansweredSurveys, wrongCount } = computeMoreView({pointsPeek, toeicOn, attStatus, curriculum, customHolidays, exams, hasVocabWrong, makeups, phonicsState, phonicsTasks, pinnedMessages, progressTree, roadmapSub: (() => { const rm = computeRoadmap({ curriculum, student, todos, progressTree }); return rm && rm.myStage ? `지금 ${rm.myStage}단계${rm.stageInfo?.range ? ` (${rm.stageInfo.range})` : ""} · 내가 어디까지 왔는지` : ""; })(), student, surveyResponses, surveys, todayStrForTab, vocabWarn, vocabWrongWords });
   const { allTaskItems, goTab, picker, scrollToVideoCard, topTabOf, watchBySid } = makeTabNav({ confirmLeaveTab, headerRef, setPhonicsOpenTask, setSelectedVideoBook, setTab, setVideosFeaturedId, setVocaExtraBook, setVocaOpenLast, setVocaOpenTask, startVocaHwTest, stepGroups, studentId, studentVideos, tab, taskVoca, toggleVideo, videoWatch, viewingVideo, vocaHwBusyRef, vocaHwRec });
@@ -395,7 +395,7 @@ export default function App() {
             순서: 등원+D-Day 칸(109차수: 아래에 7일 줄) → "오늘 할 일" 제목+날짜 → 오늘 숙제 카드(1단계 항목 전부) → 이어서 할 공부(단어/강의/오답) → 공지·시험 정보·수업 일정·학습 진도 바로가기.
             데이터는 전부 이미 계산된 것 재사용(stepGroups·taskVoca·vocaHwRec·buildVideoPickerV2·vocabWarn·pinnedMessages·examDdays). 서버 추가 요청 없음.
             학생이 눌러서 완료하는 체크박스는 없다 — 상태(확인 전/확인 완료/재시)만 보여준다. 모든 이동은 goTab. */}
-        {tab === "home" && renderHomeTab(C)}
+        {tab === "home" && renderHomeTab({ ...C, todayHomework })}
         {/* ═══ [105차수 09-08 디자인 개편] 숙제 탭 — 시안 images/02-homework.png, 계획서 7절 ═══
             순서: 날짜 알약(공개된 날짜만) → 제목+날짜 → 선생님 확인 현황(원본 진행률 그대로) → 5단계 카드(항목 있으면 펼침, 없으면 "오늘 없음" 한 줄) → 밤 10시 안내.
             단계 순서·이름·조교/강사 배지·항목 키·원문·상태 판정(isCheckedView·isFailed·getFailReason)은 전부 원본. 학생 수동 완료 없음. */}
