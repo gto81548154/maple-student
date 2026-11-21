@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import art from "./dusik.webp";
+import reactions from "./dusik-reactions.webp";
 import "./DusikWelcome.css";
+
+const moments = ["wave", "tilt", "paws", "hop"];
 
 export function DusikWelcome({ studentId }) {
   const storageKey = `maple.dusik.dismissed.${studentId}`;
@@ -10,7 +13,10 @@ export function DusikWelcome({ studentId }) {
   });
   const pet = useRef(null);
   const [frame, setFrame] = useState(0);
-  const [greeting, setGreeting] = useState(0);
+  const [tapCount, setTapCount] = useState(0);
+  const [acting, setActing] = useState(true);
+  const moment = acting ? moments[Math.max(0, tapCount - 1) % moments.length] : "rest";
+  const reactionRow = moments.indexOf(moment) - 1;
 
   useEffect(() => {
     if (dismissed) return;
@@ -50,9 +56,15 @@ export function DusikWelcome({ studentId }) {
       </div>
       <button className="dusik-pet" type="button" ref={pet}
         aria-label="두식이와 인사하기" title="두식이와 인사하기"
-        onClick={() => setGreeting(n => n + 1)}>
-        <span key={greeting} className="dusik-sprite" aria-hidden="true"
-          style={{ backgroundImage: `url(${art})`, backgroundPositionX: `${frame * 5}%` }} />
+        onClick={() => { setTapCount(n => n + 1); setActing(true); }}>
+        <span key={tapCount} className="dusik-sprite" data-moment={moment} aria-hidden="true"
+          onAnimationEnd={() => setActing(false)}
+          style={{
+            "--dusik-rest": `url(${art})`,
+            backgroundImage: `url(${reactionRow >= 0 ? reactions : art})`,
+            backgroundPositionX: `${frame * 5}%`,
+            backgroundPositionY: reactionRow >= 0 ? `${reactionRow * 50}%` : "0%",
+          }} />
       </button>
       <button className="dusik-close" type="button" aria-label="두식이 인사 닫기"
         onClick={dismiss}>×</button>

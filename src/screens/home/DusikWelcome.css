@@ -25,7 +25,17 @@
 .dusik-pet:focus-visible, .dusik-close:focus-visible { outline: 2px solid #80522f; outline-offset: -2px; }
 .dusik-sprite {
   display: block; width: 100%; height: 100%; background-size: 2100% 100%; background-repeat: no-repeat;
+}
+.dusik-sprite[data-moment="wave"] {
   animation: dusik-wave 760ms steps(1, end) 1;
+}
+.dusik-sprite:is([data-moment="tilt"], [data-moment="paws"], [data-moment="hop"]) {
+  background-size: 600% 300%;
+  animation: dusik-moment 1.05s linear 1;
+}
+@keyframes dusik-moment {
+  0% { background-position-x: 0%; animation-timing-function: steps(5, end); }
+  83.333%, 100% { background-position-x: 100%; }
 }
 @keyframes dusik-wave {
   0% { background-position-x: 85%; }
@@ -34,5 +44,8 @@
   76%,100% { background-position-x: 100%; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .dusik-sprite { animation: none; background-position-x: 0% !important; }
+  .dusik-sprite[data-moment] {
+    animation: none; background-image: var(--dusik-rest) !important;
+    background-size: 2100% 100% !important; background-position: 0% 0% !important;
+  }
 }
