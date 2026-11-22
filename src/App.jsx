@@ -51,7 +51,7 @@ import { renderWithdrawnScreen } from "./screens/status/WithdrawnScreen.jsx";
 import { renderLoadErrorScreen } from "./screens/status/LoadErrorScreen.jsx";
 
 // [133차수] 주소(#해시)에 쓰는 학생 화면 이름 — 위 탭 5개 + 더보기 안 화면 9개(146차수: 장학금 reward · 152차수: 🎤 파닉스 phonics — 145차수 녹음 제출 record 를 안에 합침). 모르는 이름은 홈으로.
-const STUDENT_ROUTE_IDS = ["home", "tasks", "voca", "videos", "more", "cal", "vocabWrong", "mock", "progress", "notices", "surveys", "examInfo", "settings", "phonics", "reward", "toeic", "points"];   // [186차수] points = 마플 포인트
+const STUDENT_ROUTE_IDS = ["home", "tasks", "voca", "videos", "more", "cal", "vocabWrong", "mock", "progress", "notices", "surveys", "examInfo", "settings", "phonics", "reward", "referral", "toeic", "points"];   // [186차수] points = 마플 포인트
 // [152차수] 옛 주소 #record(녹음 제출)는 #phonics 로 바꿔 읽는다(홈 화면에 추가해 둔 옛 바로가기 대비)
 try { if (/^#\/?record(\b|$)/.test(window.location.hash)) window.history.replaceState(window.history.state, "", "#phonics"); } catch (e) {}
 
@@ -446,9 +446,9 @@ export default function App() {
         )}
 
         {/* [146차수] 더보기 → 장학금·친구 소개 — 학생이 신청, 원장이 원장앱에서 확인 뒤 기프티콘 지급 */}
-        {tab === "reward" && (
+        {(tab === "reward" || tab === "referral") && (
           <MoreSubFrame title="장학금·친구 소개" onBack={backToMore}>
-            <RewardScreen student={student} studentId={studentId} pointsOn={pointsPeek.on} />
+            <RewardScreen key={tab} initialKind={tab === "referral" ? "referral" : "score"} student={student} studentId={studentId} pointsOn={pointsPeek.on} />
           </MoreSubFrame>
         )}
 
