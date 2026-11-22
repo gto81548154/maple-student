@@ -4,17 +4,7 @@ import "./DusikWelcome.css";
 const reactionRows = ["tilt", "paws", "hop"];
 const moments = ["wave", ...reactionRows, "cheer"];
 
-function homeworkMessage(homework) {
-  if (homework.remaining > 0) {
-    const first = homework.first.split(/\s*(?:->|→)\s*/)[0];
-    return [`오늘 숙제 ${homework.remaining}개 남았어!`, `‘${first}’부터 해 볼까?`];
-  }
-  if (homework.retry) return ["다시 볼 숙제가 있어", "아래 숙제 카드에서 재시 항목을 확인해 봐."];
-  if (homework.assigned) return ["오늘 숙제 다 했다!", "오늘도 고생했어!"];
-  return ["안녕, 난 두식이야", "오늘도 만나서 반가워"];
-}
-
-export function DusikWelcome({ studentId, today, homework }) {
+export function DusikWelcome({ studentId, noticeCount, unansweredCount, onOpen }) {
   const storageKey = `maple.dusik.dismissed.${studentId}`;
   const [dismissed, setDismissed] = useState(() => {
     try { return sessionStorage.getItem(storageKey) === "1"; }
@@ -25,21 +15,6 @@ export function DusikWelcome({ studentId, today, homework }) {
   const [tapCount, setTapCount] = useState(0);
   const [moment, setMoment] = useState("wave");
   const reactionRow = reactionRows.indexOf(moment);
-  const [headline, detail] = homeworkMessage(homework);
-  const allDone = homework.assigned && !homework.retry && homework.remaining === 0;
-  const lastCheer = useRef(null);
-
-  useEffect(() => {
-    if (dismissed || !allDone || lastCheer.current === today) return;
-    lastCheer.current = today;
-    const key = `maple.dusik.cheered.${studentId}`;
-    try {
-      if (sessionStorage.getItem(key) === today) return;
-      sessionStorage.setItem(key, today);
-    } catch { /* The in-memory date still prevents repeats. */ }
-    setMoment("cheer");
-  }, [dismissed, allDone, studentId, today]);
-
   function greet() {
     setMoment(moments[tapCount % moments.length]);
     setTapCount(n => n + 1);
@@ -78,8 +53,8 @@ export function DusikWelcome({ studentId, today, homework }) {
   return (
     <section className="dusik-welcome" aria-label="두식이의 인사">
       <div className="dusik-copy" role="status" aria-live="polite" aria-atomic="true">
-        <strong>{headline}</strong>
-        <span>{detail}</span>
+        <strong>{unansweredCount ? `응답할 설문이 ${unansweredCount}개 있어!` : "학원 소식 보러 갈까?"}</strong>
+        <span>{noticeCount ? `선생님이 올린 공지가 ${noticeCount}개 있어.` : "성적장학금 신청 방법도 볼 수 있어."}</span>
       </div>
       <button className="dusik-pet" type="button" ref={pet}
         aria-label="두식이와 인사하기" title="두식이와 인사하기" onClick={greet}>
@@ -90,6 +65,11 @@ export function DusikWelcome({ studentId, today, homework }) {
             backgroundPositionY: reactionRow >= 0 ? `${reactionRow * 50}%` : "0%",
           }} />
       </button>
+      <div className="dusik-links" role="group" aria-label="학원 소식 바로가기">
+        <button type="button" onClick={() => onOpen("notices")}>공지사항</button>
+        <button type="button" onClick={() => onOpen("surveys")}>설문조사</button>
+        <button type="button" onClick={() => onOpen("reward")}>성적장학금</button>
+      </div>
       <button className="dusik-close" type="button" aria-label="두식이 인사 닫기"
         onClick={dismiss}>×</button>
     </section>

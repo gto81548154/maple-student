@@ -8,26 +8,28 @@ import { fmtBuildLabel } from "../../core/buildId.jsx";
 
 // 더보기 → 공지·설문: 고정 공지(pinnedMessages)와 진행 중 설문(StudentSurveyCard)을 나눠서 보여준다.
 //   "읽음/안 읽음"은 원본에 기록이 없으므로 새로 추정하지 않는다(계획서 6절). 설문 응답 규칙은 StudentSurveyCard 그대로.
-export function NoticesScreen({ pinnedMessages, surveys, surveyResponses, student, onSurveySubmitted }) {
+export function NoticesScreen({ pinnedMessages, surveys, surveyResponses, student, onSurveySubmitted, surveysOnly = false }) {
   const secHead = { fontSize: 13, fontWeight: 800, color: UI.sub, margin: "14px 2px 8px" };
   const empty = (t) => <div style={{ background: UI.card, border: `1px solid ${UI.line}`, borderRadius: 14, padding: "18px 16px", fontSize: 13.5, color: UI.dim, textAlign: "center" }}>{t}</div>;
   return (
     <div>
-      <div style={{ ...secHead, marginTop: 0 }}>공지</div>
-      {pinnedMessages.length === 0 ? empty("지금 올라온 공지가 없어요") : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {pinnedMessages.map(([dateKey, rec]) => (
-            <div key={dateKey} style={{ background: UI.card, border: `1px solid ${UI.line}`, borderRadius: 14, padding: "12px 14px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                <span style={{ fontSize: 12 }}>📌</span>
-                <span style={{ fontSize: 11.5, color: UI.sub }}>{fmtDateShort(dateKey) ? `${fmtDateShort(dateKey)} · ` : ""}{rec.author || "선생님"}</span>
+      {!surveysOnly && <section>
+        <div style={{ ...secHead, marginTop: 0 }}>공지</div>
+        {pinnedMessages.length === 0 ? empty("지금 올라온 공지가 없어요") : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {pinnedMessages.map(([dateKey, rec]) => (
+              <div key={dateKey} style={{ background: UI.card, border: `1px solid ${UI.line}`, borderRadius: 14, padding: "12px 14px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                  <span style={{ fontSize: 12 }}>📌</span>
+                  <span style={{ fontSize: 11.5, color: UI.sub }}>{fmtDateShort(dateKey) ? `${fmtDateShort(dateKey)} · ` : ""}{rec.author || "선생님"}</span>
+                </div>
+                <div style={{ fontSize: 14.5, color: UI.text, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{rec.text}</div>
               </div>
-              <div style={{ fontSize: 14.5, color: UI.text, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{rec.text}</div>
-            </div>
-          ))}
-        </div>
-      )}
-      <div style={secHead}>설문</div>
+            ))}
+          </div>
+        )}
+      </section>}
+      {!surveysOnly && <div style={secHead}>설문</div>}
       {surveys.length === 0 ? empty("진행 중인 설문이 없어요") : (
         <div>
           {surveys.map((sv) => (
