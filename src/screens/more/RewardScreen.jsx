@@ -97,11 +97,11 @@ const Pills = ({ value, onChange, items }) => (
     ))}
   </div>
 );
-export function RewardScreen({ student, studentId, pointsOn = false }) {
+export function RewardScreen({ student, studentId, pointsOn = false, initialKind = "score" }) {
   const gift = (n) => (pointsOn ? fmtPt(n) : `${fmtWon(n)} 기프티콘`);   // 받는 것 이름
   const todayStr = getTodayStr();
   const guessedLevel = getStudentLevelForDday(student || {});
-  const [kind, setKind] = useState("score");
+  const [kind, setKind] = useState(initialKind);
   const [level, setLevel] = useState(guessedLevel);
   const [semester, setSemester] = useState(defaultSemester());
   const [exam, setExam] = useState("mid");           // 중학생: 중간/기말 중 하나. 고등학생: 둘 다(both)
@@ -156,7 +156,7 @@ export function RewardScreen({ student, studentId, pointsOn = false }) {
   else if (dateFuture) scoreBlock = "시험 날짜가 오늘보다 뒤예요";
   else if (dateExpired) scoreBlock = "신청 기한(시험 뒤 한 달)이 지났어요";
   else if (!photo) scoreBlock = "성적표 사진을 꼭 올려 주세요";
-  else if (dupScore) scoreBlock = "이 시험은 이미 신청했어요";
+  else if (dupScore) scoreBlock = isMiddle ? "이 시험은 이미 신청했어요" : "이번 학기는 이미 신청했어요";
   const scoreReady = scoreFilled && !scoreBlock;
   // ─── [186차수] 성적 향상 장학금: 대상인지 미리 판정 ───
   const improveExam = exam === "final" ? "final" : "mid";
@@ -205,7 +205,11 @@ export function RewardScreen({ student, studentId, pointsOn = false }) {
       const data = await resp.json().catch(() => ({}));
       if (resp.status === 413) throw new Error("사진이 너무 커요. 다른 사진으로 다시 올려 주세요.");
       if (resp.status === 401 || resp.status === 403) throw new Error("앱을 새로고침한 뒤 다시 해 주세요");
-      if (resp.status === 409) throw new Error(kind === "referral" ? "이 친구는 이미 신청했어요" : "이 시험은 이미 신청했어요");
+      if (resp.status === 409) {
+        if (kind === "referral") throw new Error("이 친구는 이미 신청했어요");
+        if (kind === "score" && !isMiddle) throw new Error("이번 학기는 이미 신청했어요");
+        throw new Error("이 시험은 이미 신청했어요");
+      }
       if (!resp.ok || !data.success) throw new Error("지금은 신청할 수 없어요. 잠시 뒤 다시 해 주세요.");
       if (!aliveRef.current) return;
       const { t: _t, photoBase64: _p, ...rest } = body;
@@ -241,8 +245,8 @@ export function RewardScreen({ student, studentId, pointsOn = false }) {
       <div style={{ background: UI.navy, borderRadius: 16, padding: "14px 16px", color: "#fff" }}>
         <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 8 }}>🎁 이렇게 받아요</div>
         <div style={{ fontSize: 13, lineHeight: 1.7, color: "rgba(255,255,255,0.9)", wordBreak: "keep-all" }}>
-          · 중학생: 학교 중간·기말 영어 <b>{SCORE_MIN}점 이상</b> → {gift(SCORE_AMOUNT)}<br />
-          · 고등학생: 중간·기말 <b>둘 다 영어 1등급</b> → {gift(SCORE_AMOUNT)}<br />
+          · 중학생은 영어 <b>{SCORE_MIN}점 이상</b>이면 중간·기말 시험별로 한 번씩 신청할 수 있어요. ({gift(SCORE_AMOUNT)})<br />
+          · 고등학생은 중간·기말 영어가 <b>모두 1등급</b>이면 두 성적을 묶어 학기별로 한 번 신청할 수 있어요. ({gift(SCORE_AMOUNT)})<br />
           {pointsOn && <>· 성적 향상: 지난 시험보다 <b>{IMPROVE_MIN_SCORE}점(중) · 1등급(고) 이상</b> 오르면 → {fmtPt(IMPROVE_AMOUNT)}<br /></>}
           {pointsOn
             ? <>· 친구 소개: 친구가 <b>상담만 와도</b> {fmtPt(CONSULT_AMOUNT)}, 등록하면 <b>둘 다</b> {fmtPt(REFERRAL_AMOUNT)} 더<br /></>

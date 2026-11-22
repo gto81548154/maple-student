@@ -12,7 +12,10 @@
   color: #503a2b;
 }
 .dusik-pet { grid-column: 2; }
-.dusik-links { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.dusik-links { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+@media (max-width: 374px) {
+  .dusik-links { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .dusik-links button {
   min-height: 44px; padding: 5px 2px; border: 1px solid #d8c0a0; border-radius: 12px;
   background: #fffefa; color: #5a3b22; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;

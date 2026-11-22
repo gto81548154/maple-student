@@ -69,6 +69,7 @@ export function DusikWelcome({ studentId, noticeCount, unansweredCount, onOpen }
         <button type="button" onClick={() => onOpen("notices")}>공지사항</button>
         <button type="button" onClick={() => onOpen("surveys")}>설문조사</button>
         <button type="button" onClick={() => onOpen("reward")}>성적장학금</button>
+        <button type="button" onClick={() => onOpen("referral")}>친구소개</button>
       </div>
       <button className="dusik-close" type="button" aria-label="두식이 인사 닫기"
         onClick={dismiss}>×</button>
