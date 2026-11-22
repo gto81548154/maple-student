@@ -51,7 +51,7 @@ import { renderWithdrawnScreen } from "./screens/status/WithdrawnScreen.jsx";
 import { renderLoadErrorScreen } from "./screens/status/LoadErrorScreen.jsx";
 
 // [133차수] 주소(#해시)에 쓰는 학생 화면 이름 — 위 탭 5개 + 더보기 안 화면 9개(146차수: 장학금 reward · 152차수: 🎤 파닉스 phonics — 145차수 녹음 제출 record 를 안에 합침). 모르는 이름은 홈으로.
-const STUDENT_ROUTE_IDS = ["home", "tasks", "voca", "videos", "more", "cal", "vocabWrong", "mock", "progress", "notices", "examInfo", "settings", "phonics", "reward", "toeic", "points"];   // [186차수] points = 마플 포인트
+const STUDENT_ROUTE_IDS = ["home", "tasks", "voca", "videos", "more", "cal", "vocabWrong", "mock", "progress", "notices", "surveys", "examInfo", "settings", "phonics", "reward", "toeic", "points"];   // [186차수] points = 마플 포인트
 // [152차수] 옛 주소 #record(녹음 제출)는 #phonics 로 바꿔 읽는다(홈 화면에 추가해 둔 옛 바로가기 대비)
 try { if (/^#\/?record(\b|$)/.test(window.location.hash)) window.history.replaceState(window.history.state, "", "#phonics"); } catch (e) {}
 
@@ -250,7 +250,7 @@ export default function App() {
   }
 
   if (!student) return null;
-  const { activeDate, allDates, doneTasks, getFailReason, isCheckedView, isFailed, pct, pinnedMessages, stepGroups, todayHomework, todayStrForTab, todoRevealHeld, totalTasks } = computeTodoView({ checklistData, records, selectedDate, studentId, todos, vocaHwRec, bundleVocaHw });
+  const { activeDate, allDates, doneTasks, getFailReason, isCheckedView, isFailed, pct, pinnedMessages, stepGroups, todayStrForTab, todoRevealHeld, totalTasks } = computeTodoView({ checklistData, records, selectedDate, studentId, todos, vocaHwRec });
   const { hasVocabWrong, startVocaHwTest, studentVideos, taskVoca, vocaPassLabel, vocabWarn } = computeVocaView({ activeDate, customHolidays, makeups, progressTree, setVocaHwTask, stepGroups, student, studentId, videos, vocabWrongWords });
   const { activeSurveys, attNoticeAll, attWeek, calSub, examDdays, moreGroups, nearestExam, unansweredSurveys, wrongCount } = computeMoreView({pointsPeek, toeicOn, attStatus, curriculum, customHolidays, exams, hasVocabWrong, makeups, phonicsState, phonicsTasks, pinnedMessages, progressTree, roadmapSub: (() => { const rm = computeRoadmap({ curriculum, student, todos, progressTree }); return rm && rm.myStage ? `지금 ${rm.myStage}단계${rm.stageInfo?.range ? ` (${rm.stageInfo.range})` : ""} · 내가 어디까지 왔는지` : ""; })(), student, surveyResponses, surveys, todayStrForTab, vocabWarn, vocabWrongWords });
   const { allTaskItems, goTab, picker, scrollToVideoCard, topTabOf, watchBySid } = makeTabNav({ confirmLeaveTab, headerRef, setPhonicsOpenTask, setSelectedVideoBook, setTab, setVideosFeaturedId, setVocaExtraBook, setVocaOpenLast, setVocaOpenTask, startVocaHwTest, stepGroups, studentId, studentVideos, tab, taskVoca, toggleVideo, videoWatch, viewingVideo, vocaHwBusyRef, vocaHwRec });
@@ -395,16 +395,16 @@ export default function App() {
             순서: 등원+D-Day 칸(109차수: 아래에 7일 줄) → "오늘 할 일" 제목+날짜 → 오늘 숙제 카드(1단계 항목 전부) → 이어서 할 공부(단어/강의/오답) → 공지·시험 정보·수업 일정·학습 진도 바로가기.
             데이터는 전부 이미 계산된 것 재사용(stepGroups·taskVoca·vocaHwRec·buildVideoPickerV2·vocabWarn·pinnedMessages·examDdays). 서버 추가 요청 없음.
             학생이 눌러서 완료하는 체크박스는 없다 — 상태(확인 전/확인 완료/재시)만 보여준다. 모든 이동은 goTab. */}
-        {tab === "home" && renderHomeTab({ ...C, todayHomework })}
+        {tab === "home" && renderHomeTab(C)}
         {/* ═══ [105차수 09-08 디자인 개편] 숙제 탭 — 시안 images/02-homework.png, 계획서 7절 ═══
             순서: 날짜 알약(공개된 날짜만) → 제목+날짜 → 선생님 확인 현황(원본 진행률 그대로) → 5단계 카드(항목 있으면 펼침, 없으면 "오늘 없음" 한 줄) → 밤 10시 안내.
             단계 순서·이름·조교/강사 배지·항목 키·원문·상태 판정(isCheckedView·isFailed·getFailReason)은 전부 원본. 학생 수동 완료 없음. */}
         {tab === "tasks" && renderTasksTab(C)}
         {/* [103차수] 더보기 — 목록 + 하위 화면(기존 화면을 MoreSubFrame 안에 그대로 넣는다). "‹ 더보기"도 goTab이라 나가기 확인창이 똑같이 걸린다 */}
         {tab === "more" && <MoreMenu groups={moreGroups} onPick={(k) => (k === "labPopup" ? setLabOpen(true) : goTab(k))} />}
-        {tab === "notices" && (
-          <MoreSubFrame title="공지·설문" onBack={backToMore}>
-            <NoticesScreen pinnedMessages={pinnedMessages} surveys={activeSurveys} surveyResponses={surveyResponses} student={student}
+        {(tab === "notices" || tab === "surveys") && (
+          <MoreSubFrame title={tab === "surveys" ? "설문조사" : "공지·설문"} onBack={backToMore}>
+            <NoticesScreen surveysOnly={tab === "surveys"} pinnedMessages={pinnedMessages} surveys={activeSurveys} surveyResponses={surveyResponses} student={student}
               onSurveySubmitted={(svId, resp) => setSurveyResponses((prev) => ({ ...prev, [svId]: resp }))} />
           </MoreSubFrame>
         )}

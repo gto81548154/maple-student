@@ -3,7 +3,7 @@ import { buildStepGroups, filterTodoDatesForReveal, pickDefaultTodoDate, stripLa
 
 // [121차수] 화면에 쓸 숙제 값 계산(공지·날짜 목록·오늘 숙제 단계·체크 판정·진행률) — App.jsx에서 그대로 옮김. 훅이 아니라 보통 함수(불러온 자료가 있을 때만 부른다).
 export function computeTodoView(D) {
-  const { records, selectedDate, studentId, todos, vocaHwRec } = D;
+  const { checklistData, records, selectedDate, studentId, todos, vocaHwRec } = D;
   const sRec = records[studentId] || records[Number(studentId)] || {};
   // [151차수 원장 결정 11-04] 학생에게 보이는 공지 = 수업 기록 중 "👀 학생에게 보이기"(studentVisible)를 켠 글만.
   //   예전엔 📌 고정(pinned)을 기준으로 해서 선생님끼리 보는 메모까지 학생에게 떴다. 이제 고정은 원장앱 안에서만 쓰는 표시다.
@@ -44,20 +44,6 @@ export function computeTodoView(D) {
     allDates = [...nearerNewer, defaultDate];
   }
   const activeDate = selectedDate || defaultDate;
-  const active = dayChecklist(D, activeDate, vocaHwRec);
-  const today = activeDate === todayStrForTab ? active : dayChecklist(D, todayStrForTab, D.bundleVocaHw?.[todayStrForTab]);
-  const homework = today.stepGroups.find(group => group.key === "step1").items;
-  const pending = homework.filter(item => !today.isFailed(item) && !today.isCheckedView(item));
-  const todayHomework = {
-    remaining: pending.length,
-    first: pending[0]?.text || "",
-    retry: homework.some(item => today.isFailed(item)),
-    assigned: homework.length > 0,
-  };
-  return { ...active, activeDate, allDates, pinnedMessages, todayHomework, todayStrForTab, todoRevealHeld };
-}
-
-function dayChecklist({ todos, studentId, checklistData }, activeDate, vocaHwRec) {
   const todo = todos[activeDate]?.[studentId] || todos[activeDate]?.[Number(studentId)] || {};
   // 5단계 그룹
   // 빈 단계도 "오늘 없음"으로 보여줘 학생이 전체 학습 흐름을 확인할 수 있게 한다.
@@ -119,5 +105,5 @@ function dayChecklist({ todos, studentId, checklistData }, activeDate, vocaHwRec
   const totalTasks = countableItems.length;
   const doneTasks = countableItems.filter(item => isCheckedView(item)).length;   // [0825 5차수] 앱 단어 자동 완료 포함
   const pct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
-  return { doneTasks, getFailReason, isCheckedView, isFailed, pct, stepGroups, totalTasks };
+  return { activeDate, allDates, doneTasks, getFailReason, isCheckedView, isFailed, pct, pinnedMessages, stepGroups, todayStrForTab, todoRevealHeld, totalTasks };
 }

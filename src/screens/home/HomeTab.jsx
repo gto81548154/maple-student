@@ -86,7 +86,8 @@ export function renderHomeTab(C) {
 
           return (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {!IS_STAFF_VIEW && <DusikWelcome key={studentId} studentId={studentId} today={todayStrForTab} homework={C.todayHomework} />}
+              {!IS_STAFF_VIEW && <DusikWelcome key={studentId} studentId={studentId}
+                noticeCount={pinnedMessages.length} unansweredCount={unansweredSurveys.length} onOpen={goTab} />}
 
               {/* ① 맨 위 큰 한 줄 요약 (날짜 + "오늘/이 날 할 일 N개 남았어요" / 다 했으면 완료 문구) */}
               <div style={{ padding: "4px 4px 2px" }}>
