@@ -8,6 +8,9 @@ const VOCA_BOOK_MATCHERS = [
   { id: "ve_ess",   re: /어휘끝[^\n]*필수/ },
   { id: "ve_adv",   re: /어휘끝[^\n]*고난도/ },
   { id: "ve_ety",   re: /어원편/ },
+  // [더블보카 11-24] "더블보카 Core"·"더블 보카 코어"·"더블보카pro" — 띄어쓰기·한글·영어가 달라도 잡는다. Core와 Pro는 뒤에 붙은 말로 가른다.
+  { id: "dv_core",  re: /더블\s*보카[\s\-–—_.·]*(core|코어)/i },
+  { id: "dv_pro",   re: /더블\s*보카[\s\-–—_.·]*(pro|프로)/i },
 ];
 // ─── [0813] 홈 "수업 단어 공부" 카드: 오늘 숙제에서 단어장 범위 읽기 ───
 // [0814] 책 이름표는 이 표 한 곳에만 둔다 — full은 크게 쓰는 정식 이름(마플보카 책장 제목과 같게),
@@ -19,12 +22,14 @@ const VOCA_BOOK_LABELS = {
   ve_ess:    { full: "어휘끝 중학 필수",      short: "어휘끝 필수" },
   ve_adv:    { full: "어휘끝 중학 고난도",    short: "어휘끝 고난도" },
   ve_ety:    { full: "어휘끝 어원편",         short: "어원편" },
+  dv_core:   { full: "더블보카 Core",         short: "더블보카 Core" },
+  dv_pro:    { full: "더블보카 Pro",          short: "더블보카 Pro" },
   vocabible: { full: "보카바이블 A·B",        short: "보카바이블" },
   toeic_hk:  { full: "해커스 토익 보카",      short: "토익 보카" },   // [150차수] 단어 검색 결과 배지용
 };
 export const vocaFullLabel = (id) => (VOCA_BOOK_LABELS[id] ? VOCA_BOOK_LABELS[id].full : "");
 export const vocaShortLabel = (id) => (VOCA_BOOK_LABELS[id] ? VOCA_BOOK_LABELS[id].short : "단어장");
-export const VOCA_UNIT_WORDS = { wm_sn: "DAY", wm_basic: "DAY", wm_hi: "DAY", ve_ess: "UNIT", ve_adv: "UNIT", ve_ety: "DAY", vocabible: "강", toeic_hk: "DAY" };   // [150차수] 보카바이블은 "강"
+export const VOCA_UNIT_WORDS = { wm_sn: "DAY", wm_basic: "DAY", wm_hi: "DAY", ve_ess: "UNIT", ve_adv: "UNIT", ve_ety: "DAY", dv_core: "DAY", dv_pro: "DAY", vocabible: "강", toeic_hk: "DAY" };   // [150차수] 보카바이블은 "강"
 // 숙제 항목에서 "단어-워마 수능 25 26 27 28" 같은 줄을 찾아 { book, lecs }로 돌려준다.
 // 책 이름이 잡히고 1~60 사이 숫자가 있는 첫 줄을 쓴다. 없으면 null. (2000 같은 큰 숫자는 걸러짐)
 // [0813 검토수정] ① "25~28" 같은 물결표(및 붙임표) 범위를 26·27까지 펼쳐서 읽는다
