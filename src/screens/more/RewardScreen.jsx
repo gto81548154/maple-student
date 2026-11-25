@@ -175,8 +175,14 @@ export function RewardScreen({ student, studentId, pointsOn = false, initialKind
   else if (!photo) improveBlock = "성적표나 정오표 사진을 꼭 올려 주세요";
   else if (dupImprove) improveBlock = "이 시험은 이미 신청했어요";
   const improveReady = improveFilled && !improveBlock;
+  // [188차수] 친구 소개: 소개하는 사람(나)은 자동으로 들어간다 — 화면에 내 이름을 보여 줘서 "누구 정보를 적는지" 헷갈리지 않게.
+  //   이름 뒤 "-학교학년" 꼬리는 떼고 보여 준다(스킬트리 화면과 같은 방식).
+  const myFullName = String(student?.name || "").trim();
+  const myName = myFullName.split("-")[0].trim();
+  const typedFriend = friendName.trim();
+  const friendIsMe = !!myName && (typedFriend === myName || typedFriend === myFullName);
   const referralFilled = friendName.trim().length >= 2 && friendPhone.replace(/\D/g, "").length >= 9;
-  const referralBlock = !referralFilled ? "" : dupReferral ? "이 친구는 이미 신청했어요" : "";
+  const referralBlock = !referralFilled ? "" : friendIsMe ? "내 이름이 아니라 소개할 친구 이름을 적어 주세요" : dupReferral ? "이 친구는 이미 신청했어요" : "";
   const referralReady = referralFilled && !referralBlock;
   // ─── 사진 고르기 ───
   const onPickPhoto = async (ev) => {
@@ -336,16 +342,31 @@ export function RewardScreen({ student, studentId, pointsOn = false, initialKind
           </>
         ) : (
           <>
-            <div style={{ fontSize: 13, color: UI.sub, lineHeight: 1.6 }}>{pointsOn ? `친구가 상담만 와도 ${fmtPt(CONSULT_AMOUNT)}, 학원에 등록하면 나도 친구도 ${fmtPt(REFERRAL_AMOUNT)}를 더 받아요.` : `내가 소개한 친구가 학원에 등록하면 나도, 친구도 ${fmtWon(REFERRAL_AMOUNT)} 기프티콘을 받아요.`} 친구 정보를 적어 주세요.</div>
+            <div style={{ fontSize: 13, color: UI.sub, lineHeight: 1.6 }}>{pointsOn ? `친구가 상담만 와도 ${fmtPt(CONSULT_AMOUNT)}, 학원에 등록하면 나도 친구도 ${fmtPt(REFERRAL_AMOUNT)}를 더 받아요.` : `내가 소개한 친구가 학원에 등록하면 나도, 친구도 ${fmtWon(REFERRAL_AMOUNT)} 기프티콘을 받아요.`}</div>
+            {/* [188차수] ① 소개하는 사람 = 나(자동) ② 아래 칸 = 전부 소개할 친구 것 — 둘을 나눠 보여 준다 */}
+            <div style={{ marginTop: 12, background: UI.blueBg, borderRadius: 12, padding: "10px 12px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                <span style={{ fontSize: 12, fontWeight: 800, color: UI.blue, background: "#fff", borderRadius: 8, padding: "3px 8px", flexShrink: 0 }}>소개하는 사람</span>
+                <span style={{ fontSize: 15, fontWeight: 800, color: UI.text, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myName ? `${myName} (나)` : "나"}</span>
+              </div>
+              <div style={{ fontSize: 12.5, color: UI.sub, marginTop: 5, lineHeight: 1.5 }}>내 정보는 자동으로 들어가요. 따로 적지 않아도 돼요.</div>
+            </div>
+            <div style={{ fontSize: 14.5, fontWeight: 800, color: UI.text, margin: "16px 0 0" }}>👇 소개할 <span style={{ color: UI.blue }}>친구</span> 정보를 적어 주세요</div>
             <div style={LBL}>친구 이름</div>
-            <input type="text" value={friendName} maxLength={30} placeholder="예: 김마플" onChange={(e) => setFriendName(e.target.value)} style={INPUT} />
-            <div style={LBL}>학교 · 학년 <span style={{ fontWeight: 600, color: UI.dim }}>(아는 만큼만)</span></div>
+            <input type="text" value={friendName} maxLength={30} placeholder="친구 이름 (예: 김마플)" onChange={(e) => setFriendName(e.target.value)} style={INPUT} />
+            <div style={LBL}>친구 학교 · 학년 <span style={{ fontWeight: 600, color: UI.dim }}>(아는 만큼만)</span></div>
             <div style={{ display: "flex", gap: 8 }}>
-              <input type="text" value={friendSchool} maxLength={40} placeholder="학교" onChange={(e) => setFriendSchool(e.target.value)} style={{ ...INPUT, flex: 2 }} />
+              <input type="text" value={friendSchool} maxLength={40} placeholder="친구 학교" onChange={(e) => setFriendSchool(e.target.value)} style={{ ...INPUT, flex: 2 }} />
               <input type="text" value={friendGrade} maxLength={10} placeholder="예: 중2" onChange={(e) => setFriendGrade(e.target.value)} style={{ ...INPUT, flex: 1 }} />
             </div>
-            <div style={LBL}>친구 또는 부모님 연락처</div>
+            <div style={LBL}>친구 연락처 <span style={{ fontWeight: 600, color: UI.dim }}>(친구 또는 친구 부모님 번호)</span></div>
             <input type="tel" inputMode="tel" value={friendPhone} maxLength={20} placeholder="010-0000-0000" onChange={(e) => setFriendPhone(e.target.value)} style={INPUT} />
+            <div style={{ fontSize: 12.5, color: UI.sub, marginTop: 6, lineHeight: 1.5 }}>내 번호가 아니라 친구 쪽 번호를 적어 주세요. 학원에서 이 번호로 연락드려요.</div>
+            {referralReady && (
+              <div style={{ marginTop: 14, borderRadius: 12, padding: "10px 12px", fontSize: 13.5, fontWeight: 800, textAlign: "center", background: UI.okBg, color: UI.okFg, lineHeight: 1.5, wordBreak: "keep-all" }}>
+                {myName ? `${myName}(나)` : "나"} → {typedFriend} 친구를 소개해요
+              </div>
+            )}
             {referralFilled && referralBlock && <div style={{ marginTop: 14, borderRadius: 12, padding: "10px 12px", fontSize: 13.5, fontWeight: 800, textAlign: "center", background: UI.warnBg, color: UI.warnFg }}>{referralBlock}</div>}
             <button type="button" onClick={submit} disabled={!referralReady || sending} style={{ ...BTN_PRIMARY, width: "100%", marginTop: 12, height: 52, borderRadius: 14, fontSize: 16, opacity: (!referralReady || sending) ? 0.45 : 1, cursor: (!referralReady || sending) ? "default" : "pointer" }}>{sending ? "보내는 중…" : "친구 소개 신청"}</button>
           </>
