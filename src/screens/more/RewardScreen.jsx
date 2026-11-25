@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { IS_STAFF_VIEW } from "../../core/auth.jsx";
 import { getSelfAccessToken } from "../../core/bundle.jsx";
 import { WORKER_ORIGIN } from "../../core/config.jsx";
@@ -263,7 +263,7 @@ export function RewardScreen({ student, studentId, pointsOn = false, initialKind
       <div style={{ marginTop: 12 }}><Pills value={kind} onChange={(v) => { setKind(v); setNotice(""); setFlash(""); }} items={pointsOn ? [{ v: "score", label: "성적 장학금" }, { v: "improve", label: "성적 향상" }, { v: "referral", label: "친구 소개" }] : [{ v: "score", label: "성적 장학금" }, { v: "referral", label: "친구 소개" }]} /></div>
       <div style={{ ...CARD, marginTop: 10 }}>
         {kind === "improve" ? (
-          <>
+          <Fragment key="improve">
             <div style={{ ...LBL, marginTop: 0 }}>나는</div>
             <Pills value={level} onChange={(v) => { setLevel(v); setPrevVal(""); setNowVal(""); if (exam === "both") setExam("mid"); }} items={[{ v: "middle", label: `중학생 · ${IMPROVE_MIN_SCORE}점 상승` }, { v: "high", label: "고등학생 · 1등급 상승" }]} />
             <div style={LBL}>학기</div>
@@ -300,9 +300,9 @@ export function RewardScreen({ student, studentId, pointsOn = false, initialKind
               </div>
             )}
             <button type="button" onClick={submit} disabled={!improveReady || sending} style={{ ...BTN_PRIMARY, width: "100%", marginTop: 12, height: 52, borderRadius: 14, fontSize: 16, opacity: (!improveReady || sending) ? 0.45 : 1, cursor: (!improveReady || sending) ? "default" : "pointer" }}>{sending ? "보내는 중…" : "성적 향상 장학금 신청"}</button>
-          </>
+          </Fragment>
         ) : kind === "score" ? (
-          <>
+          <Fragment key="score">
             <div style={{ ...LBL, marginTop: 0 }}>나는</div>
             <Pills value={level} onChange={(v) => { setLevel(v); setExam(v === "middle" ? "mid" : "both"); }} items={[{ v: "middle", label: "중학생" }, { v: "high", label: "고등학생" }]} />
             <div style={LBL}>학기</div>
@@ -339,9 +339,9 @@ export function RewardScreen({ student, studentId, pointsOn = false, initialKind
               </div>
             )}
             <button type="button" onClick={submit} disabled={!scoreReady || sending} style={{ ...BTN_PRIMARY, width: "100%", marginTop: 12, height: 52, borderRadius: 14, fontSize: 16, opacity: (!scoreReady || sending) ? 0.45 : 1, cursor: (!scoreReady || sending) ? "default" : "pointer" }}>{sending ? "보내는 중…" : "장학금 신청"}</button>
-          </>
+          </Fragment>
         ) : (
-          <>
+          <Fragment key="referral">{/* [188차수] 종류마다 key를 달아 칸을 새로 만든다 — 안 달면 성적 장학금의 사진 칸이 친구 연락처 칸으로 재사용돼 경고가 났다 */}
             <div style={{ fontSize: 13, color: UI.sub, lineHeight: 1.6 }}>{pointsOn ? `친구가 상담만 와도 ${fmtPt(CONSULT_AMOUNT)}, 학원에 등록하면 나도 친구도 ${fmtPt(REFERRAL_AMOUNT)}를 더 받아요.` : `내가 소개한 친구가 학원에 등록하면 나도, 친구도 ${fmtWon(REFERRAL_AMOUNT)} 기프티콘을 받아요.`}</div>
             {/* [188차수] ① 소개하는 사람 = 나(자동) ② 아래 칸 = 전부 소개할 친구 것 — 둘을 나눠 보여 준다 */}
             <div style={{ marginTop: 12, background: UI.blueBg, borderRadius: 12, padding: "10px 12px" }}>
@@ -361,7 +361,7 @@ export function RewardScreen({ student, studentId, pointsOn = false, initialKind
             </div>
             <div style={LBL}>친구 연락처 <span style={{ fontWeight: 600, color: UI.dim }}>(친구 또는 친구 부모님 번호)</span></div>
             <input type="tel" inputMode="tel" value={friendPhone} maxLength={20} placeholder="010-0000-0000" onChange={(e) => setFriendPhone(e.target.value)} style={INPUT} />
-            <div style={{ fontSize: 12.5, color: UI.sub, marginTop: 6, lineHeight: 1.5 }}>내 번호가 아니라 친구 쪽 번호를 적어 주세요. 학원에서 이 번호로 연락드려요.</div>
+            <div style={{ fontSize: 12.5, color: UI.sub, marginTop: 6, lineHeight: 1.5 }}>내 번호가 아니라 친구 쪽 번호를 적어 주세요.</div>
             {referralReady && (
               <div style={{ marginTop: 14, borderRadius: 12, padding: "10px 12px", fontSize: 13.5, fontWeight: 800, textAlign: "center", background: UI.okBg, color: UI.okFg, lineHeight: 1.5, wordBreak: "keep-all" }}>
                 {myName ? `${myName}(나)` : "나"} → {typedFriend} 친구를 소개해요
@@ -369,7 +369,7 @@ export function RewardScreen({ student, studentId, pointsOn = false, initialKind
             )}
             {referralFilled && referralBlock && <div style={{ marginTop: 14, borderRadius: 12, padding: "10px 12px", fontSize: 13.5, fontWeight: 800, textAlign: "center", background: UI.warnBg, color: UI.warnFg }}>{referralBlock}</div>}
             <button type="button" onClick={submit} disabled={!referralReady || sending} style={{ ...BTN_PRIMARY, width: "100%", marginTop: 12, height: 52, borderRadius: 14, fontSize: 16, opacity: (!referralReady || sending) ? 0.45 : 1, cursor: (!referralReady || sending) ? "default" : "pointer" }}>{sending ? "보내는 중…" : "친구 소개 신청"}</button>
-          </>
+          </Fragment>
         )}
         {notice && <div style={{ marginTop: 12, background: UI.warnBg, color: UI.warnFg, borderRadius: 12, padding: "10px 12px", fontSize: 13, fontWeight: 700, lineHeight: 1.5 }}>{notice}</div>}
         {flash && <div role="status" style={{ marginTop: 12, background: UI.okBg, color: UI.okFg, borderRadius: 12, padding: "10px 12px", fontSize: 14, fontWeight: 800, textAlign: "center" }}>{flash}</div>}
