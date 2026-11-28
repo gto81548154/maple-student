@@ -1,4 +1,4 @@
-import { VOCA_UNIT_WORDS, vocaShortLabel } from "./voca.jsx";
+import { vocaShortLabel, vocaUnitLabel } from "./voca.jsx";
 
 // ─── [125차수 10-12] 단어 검색 — 계산만 하는 곳(화면·인터넷 없음) ───
 // 원장 결정(10-07): 홈 맨 위 검색 칸. 찾는 범위 = 정규 단어장 + 내 학교 내신 단어(지금 준비하는 시험 범위).
@@ -88,7 +88,7 @@ export function pickUploadedNaesin(indexJson, year, exam) {
 // 결과 줄에 붙는 이름표 글자: "어휘끝 고난도 · UNIT 12" / "내신 단어 · 3과-1차"
 function sourceLabel(src, lec) {
   if (src.ns) return `내신 단어 · ${src.lecNames?.[lec] || `${lec}`}`;
-  return `${vocaShortLabel(src.id)} · ${VOCA_UNIT_WORDS[src.id] || "DAY"} ${lec}`;
+  return `${vocaShortLabel(src.id)} · ${vocaUnitLabel(src.id, lec)}`;   // [189차수] 수능 2000 51 → "STUDY MORE"
 }
 
 // 검색 재료 하나를 만든다. rows = buildSearchRows 결과. 내신은 범위 안 유닛(lecNames에 있는 것)만 남긴다.

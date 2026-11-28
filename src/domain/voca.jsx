@@ -30,6 +30,10 @@ const VOCA_BOOK_LABELS = {
 export const vocaFullLabel = (id) => (VOCA_BOOK_LABELS[id] ? VOCA_BOOK_LABELS[id].full : "");
 export const vocaShortLabel = (id) => (VOCA_BOOK_LABELS[id] ? VOCA_BOOK_LABELS[id].short : "단어장");
 export const VOCA_UNIT_WORDS = { wm_sn: "DAY", wm_basic: "DAY", wm_hi: "DAY", ve_ess: "UNIT", ve_adv: "UNIT", ve_ety: "DAY", dv_core: "DAY", dv_pro: "DAY", vocabible: "강", toeic_hk: "DAY" };   // [150차수] 보카바이블은 "강"
+// [189차수] 책별 특별 단원 이름 — 번호 대신 이 이름으로 보인다(마플보카의 특별 단원 이름표와 같은 내용). 이동·기록은 번호 그대로.
+//   wm_sn 51 = 수능 2000 맨 끝 "STUDY MORE"(최다 빈출 숙어·유의어·반의어·혼동어, 블랙홀 카드만 있는 단원)
+export const VOCA_UNIT_NAMES = { wm_sn: { 51: "STUDY MORE" } };
+export const vocaUnitLabel = (id, lec) => VOCA_UNIT_NAMES[id]?.[Number(lec)] || `${VOCA_UNIT_WORDS[id] || "DAY"} ${lec}`;
 // 숙제 항목에서 "단어-워마 수능 25 26 27 28" 같은 줄을 찾아 { book, lecs }로 돌려준다.
 // 책 이름이 잡히고 1~60 사이 숫자가 있는 첫 줄을 쓴다. 없으면 null. (2000 같은 큰 숫자는 걸러짐)
 // [0813 검토수정] ① "25~28" 같은 물결표(및 붙임표) 범위를 26·27까지 펼쳐서 읽는다
