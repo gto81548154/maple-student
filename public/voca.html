@@ -1831,7 +1831,7 @@ async function backfillCounts(shelf){
     if (known) continue;                         // 이미 개수를 알면 스킵(목록표로 아는 것 포함)
     try {
       const list = await loadBookData(b);        // 캐시가 있으면 재사용됨
-      const n = Array.isArray(list) ? list.length : 0;
+      const n = Array.isArray(list) ? list.filter(w => !(w && w.k)).length : 0;   // [11-28] 표제어만(블랙홀 카드 k 빼고) — 책을 연 뒤 숫자·마플싱커 개수와 같게
       if (!n) continue;
       const bs = ROOT.books[b.id];
       if (bs) bs.total = n;                       // 상태가 있으면 저장(다음부터 즉시 표시)
