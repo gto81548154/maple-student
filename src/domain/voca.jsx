@@ -2,6 +2,8 @@
 // 진도 맵·강의 영상의 교재명에서 이 학생이 배우는 단어장을 추정한다. (정규 커리큘럼 연동)
 // 매칭되는 책이 하나도 없으면 전체(원장 전용 제외)를 보여준다 — 새 학생도 막히지 않게.
 const VOCA_BOOK_MATCHERS = [
+  // [190차수] 26개정은 "26개정"이 같이 적혀 있을 때만. "수능 2000"만 적혀 있으면 전처럼 22개정(wm_sn). 26개정 줄이 위에 있어야 먼저 걸린다.
+  { id: "wm_sn26",  re: /워(드)?\s*마(스터)?[^\n]*수능[^\n]*26\s*개정|워(드)?\s*마(스터)?[^\n]*26\s*개정[^\n]*수능/ },
   { id: "wm_sn",    re: /워(드)?\s*마(스터)?[^\n]*수능/ },
   { id: "wm_basic", re: /워(드)?\s*마(스터)?[^\n]*(basic|베이직)/i },
   { id: "wm_hi",    re: /하이스트/ },
@@ -17,6 +19,7 @@ const VOCA_BOOK_MATCHERS = [
 //        short는 좁은 카드에서 쓰는 줄임말. 이름을 고칠 일이 생기면 여기만 고치면 된다.
 const VOCA_BOOK_LABELS = {
   wm_sn:     { full: "워드마스터 수능 2000 (22개정)", short: "워마 수능" },   // [189차수] 마플보카 책장 제목과 같게(22개정 판). 26개정 판은 나중에 새 책으로
+  wm_sn26:   { full: "워드마스터 수능 2000 (26개정)", short: "워마 수능26" },
   wm_basic:  { full: "워드마스터 고등 Basic", short: "워마 Basic" },
   wm_hi:     { full: "워드마스터 하이스트",   short: "하이스트" },
   ve_ess:    { full: "어휘끝 중학 필수",      short: "어휘끝 필수" },
@@ -29,10 +32,10 @@ const VOCA_BOOK_LABELS = {
 };
 export const vocaFullLabel = (id) => (VOCA_BOOK_LABELS[id] ? VOCA_BOOK_LABELS[id].full : "");
 export const vocaShortLabel = (id) => (VOCA_BOOK_LABELS[id] ? VOCA_BOOK_LABELS[id].short : "단어장");
-export const VOCA_UNIT_WORDS = { wm_sn: "DAY", wm_basic: "DAY", wm_hi: "DAY", ve_ess: "UNIT", ve_adv: "UNIT", ve_ety: "DAY", dv_core: "DAY", dv_pro: "DAY", vocabible: "강", toeic_hk: "DAY" };   // [150차수] 보카바이블은 "강"
+export const VOCA_UNIT_WORDS = { wm_sn: "DAY", wm_sn26: "DAY", wm_basic: "DAY", wm_hi: "DAY", ve_ess: "UNIT", ve_adv: "UNIT", ve_ety: "DAY", dv_core: "DAY", dv_pro: "DAY", vocabible: "강", toeic_hk: "DAY" };   // [150차수] 보카바이블은 "강"
 // [189차수] 책별 특별 단원 이름 — 번호 대신 이 이름으로 보인다(마플보카의 특별 단원 이름표와 같은 내용). 이동·기록은 번호 그대로.
 //   wm_sn 51 = 수능 2000 맨 끝 "STUDY MORE"(최다 빈출 숙어·유의어·반의어·혼동어, 블랙홀 카드만 있는 단원)
-export const VOCA_UNIT_NAMES = { wm_sn: { 51: "STUDY MORE" } };
+export const VOCA_UNIT_NAMES = { wm_sn: { 51: "STUDY MORE" }, wm_sn26: { 51: "STUDY MORE" } };
 export const vocaUnitLabel = (id, lec) => VOCA_UNIT_NAMES[id]?.[Number(lec)] || `${VOCA_UNIT_WORDS[id] || "DAY"} ${lec}`;
 // 숙제 항목에서 "단어-워마 수능 25 26 27 28" 같은 줄을 찾아 { book, lecs }로 돌려준다.
 // 책 이름이 잡히고 1~60 사이 숫자가 있는 첫 줄을 쓴다. 없으면 null. (2000 같은 큰 숫자는 걸러짐)
@@ -161,7 +164,9 @@ export function findTaskVocaRange(taskItems, aliasIndex) {
     const hit = matchVocaAliasInText(text, aliasIndex);
     if (hit) {
       const lecs = parseVocaLecs(hit.rest);
-      if (lecs.length) return { book: hit.book, lecs };
+      // [190차수] 별칭("워마 수능")으로 22개정이 잡혔어도 줄에 "26개정"이 적혀 있으면 26개정 책으로
+      const book = (hit.book === "wm_sn" && /26\s*개정/.test(text)) ? "wm_sn26" : hit.book;
+      if (lecs.length) return { book, lecs };
       continue;
     }
     if (!/단어/.test(text)) continue;
