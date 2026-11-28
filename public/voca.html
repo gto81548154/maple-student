@@ -1274,7 +1274,7 @@ const DATA_BASE = '';   // 예: 'https://maple-sync.____.workers.dev/files/voca'
 const BOOKS = [
   { id:'vocabible', title:'보카바이블 A·B',        sub:'편입 대비',   unit:'강',   priv:true },  // priv: 히든보스 — 하이스트 2회독 완주로 해금(마스터 홈은 항상 표시)
   { id:'wm_basic',  title:'워드마스터 고등 Basic', sub:'예비고~고1',  unit:'DAY' },
-  { id:'wm_sn',     title:'워드마스터 수능 2000',  sub:'고2~고3',     unit:'DAY' },
+  { id:'wm_sn',     title:'워드마스터 수능 2000 (22개정)', sub:'고2~고3', unit:'DAY' },   // [11-28] 22개정 판. 26개정 판은 나중에 새 책(새 id)으로 따로 넣는다
   { id:'wm_hi',     title:'워드마스터 하이스트',   sub:'고3 심화',    unit:'DAY' },
   { id:'ve_ess',    title:'어휘끝 중학 필수',      sub:'중1~중2',     unit:'UNIT' },
   { id:'ve_adv',    title:'어휘끝 중학 고난도',    sub:'중2~중3',     unit:'UNIT' },
@@ -2189,7 +2189,13 @@ function toast(msg){
 
 /* ───────── 홈 렌더 ───────── */
 let mode = 'all';
+/* [11-28] 책별 특별 단원 이름 — 번호 대신 이 이름으로 보인다(홈 단원 목록·범위·학습 화면 위쪽 줄·토스트 등 전부).
+ *   진도·오늘 몫·회독 기록은 그대로 번호(51)로 저장·비교한다. 이름만 바뀐다.
+ *   wm_sn 51 = 수능 2000 맨 끝 "STUDY MORE"(최다 빈출 숙어·유의어·반의어·혼동어). 블랙홀 카드만 있어서 블랙홀 층에서만 나온다. */
+const UNIT_NAMES = { wm_sn: { 51: 'STUDY MORE' } };
+const unitName = n => (BOOK && UNIT_NAMES[BOOK.id] && UNIT_NAMES[BOOK.id][Number(n)]) || '';
 const lecLabel = n => {
+  const un = unitName(n); if (un) return un;
   if (BOOK && BOOK.ns && NSVIEW && NSVIEW.book === BOOK.id && NSVIEW.names.has(Number(n))) return NSVIEW.names.get(Number(n));   // [128차수] 보기에 맞는 이름(주차별이면 "부교재 · 올림포스 13강")
   if (BOOK && BOOK.ns) return (NSNAMES[BOOK.id] && NSNAMES[BOOK.id].get(Number(n))) || `유닛 ${n}`;   // [내신 2차수] 교과서 과 이름을 그대로 쓴다
   return BOOK && BOOK.unit !== '강' ? `${BOOK.unit} ${String(n).padStart(2,'0')}` : `${String(n).padStart(2,'0')}강`;
@@ -2360,7 +2366,8 @@ function updateStartBtn(){
   if (!picks.length){ btn.disabled = true; btn.textContent = '범위를 골라 주세요'; $('#startNote').textContent = '위 목록에서 공부할 범위를 누르세요'; return; }
   if (!n){ btn.disabled = true; btn.textContent = '고른 범위에 대상 단어가 없어요'; $('#startNote').textContent = `${FILTER_NAME[mode] || ''}필터에 맞는 단어가 없어요 — 범위 필터를 바꿔 보세요`; return; }
   btn.disabled = false;
-  const rangeTxt = BOOK && BOOK.ns ? `${picks.map(lecLabel).slice(0, 2).join('·')}${picks.length > 2 ? ` 외 ${picks.length - 2}` : ''}` : `${uw}${compactLecRange(picks)}`;
+  const plain = picks.filter(l => !unitName(l)), named = picks.filter(l => unitName(l)).map(lecLabel);   // [11-28] STUDY MORE 같은 이름 단원은 번호 묶음과 따로 적는다
+  const rangeTxt = BOOK && BOOK.ns ? `${picks.map(lecLabel).slice(0, 2).join('·')}${picks.length > 2 ? ` 외 ${picks.length - 2}` : ''}` : [plain.length ? `${uw}${compactLecRange(plain)}` : '', ...named].filter(Boolean).join('·');
   btn.textContent = `${rangeTxt} · ${KIND_NAME[kindSel]} 시작`;
   $('#startNote').textContent = `${FILTER_NAME[mode] || ''}단어 ${n}개${pick20 ? ` · ${PICK_N}개씩` : ''}${shufStudy ? ' · 랜덤' : ' · 책 순서'}`;
 }
