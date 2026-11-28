@@ -48,7 +48,10 @@ export function StudentMonthCalendar({ student, makeups, customHolidays, exams, 
     return s && s <= ds && ds <= e;
   });
   // [141차수] 내 학년 영어 시험 날이면 "영어시험", 시험 기간의 다른 날은 "시험기간"
-  const isEngExamDay = (ds, dayExams) => dayExams.some((ex) => String(getEngExamDateForDday(ex, student) || "").slice(0, 10) === ds);
+  // [189차수 11-28] 영어 시험 날은 시험 기간(시작~끝)과 상관없이 표시한다(원장앱 월간 일정과 같은 규칙).
+  //   전에는 기간이 비어 있거나 영어 날짜가 기간 밖이면 그 날이 달력에 아예 안 나왔다.
+  const engDateOf = (ex) => String(getEngExamDateForDday(ex, student) || "").slice(0, 10);
+  const engExamsOf = (ds) => myExams.filter((ex) => engDateOf(ex) === ds);
   const dayInfo = (ds, dObj) => {
     const hol = allHol[ds];
     const hiddenMk = mks.some((m) => m.date === ds && m.isHidden);
@@ -63,8 +66,10 @@ export function StudentMonthCalendar({ student, makeups, customHolidays, exams, 
         attendTime = (eff && eff.schedule && eff.schedule[dayKey]) || null;
       }
     }
-    const dayExams = examsOf(ds);
-    return { hol, hiddenMk, visMk, attendTime, isVac: !!getStudentVacation(student, ds), att: attOf(ds), attMark, dayExams, engExam: dayExams.length > 0 && isEngExamDay(ds, dayExams) };
+    const periodExams = examsOf(ds);
+    const engExams = engExamsOf(ds);
+    const dayExams = periodExams.concat(engExams.filter((ex) => !periodExams.includes(ex)));
+    return { hol, hiddenMk, visMk, attendTime, isVac: !!getStudentVacation(student, ds), att: attOf(ds), attMark, dayExams, engExam: engExams.length > 0 };
   };
 
   // 접힘: 오늘이 든 주(일요일 시작) + 다음 주 = 14칸. 펼침: 그 달 전부(앞뒤 빈칸은 전달·다음달 날짜).
@@ -152,7 +157,7 @@ export function StudentMonthCalendar({ student, makeups, customHolidays, exams, 
     sel.dayExams.forEach((ex) => {
       const { start, end } = getExamStartEndForDday(ex);
       const period = start && end && start !== end ? `${String(start).slice(5, 10)} ~ ${String(end).slice(5, 10)}` : "";
-      rows.push([sel.engExam ? "영어시험" : "시험", `${ex.name || ex.type || "시험"}${period ? ` (${period})` : ""}`, "#8A6200"]);
+      rows.push([engDateOf(ex) === selDate ? "영어시험" : "시험", `${ex.name || ex.type || "시험"}${period ? ` (${period})` : ""}`, "#8A6200"]);
     });
     if (sel.visMk && sel.attMark?.type !== "absent") rows.push([sel.visMk.isOverride ? "시간변경" : "보강", sel.visMk.time ? `${sel.visMk.time} 등원` : "시간 미정", "#8E44AD"]);
     else if (sel.attendTime && sel.attMark?.type !== "absent") rows.push([sel.isVac ? "방학 시간표" : "등원", `${sel.attendTime} 등원${selDate < todayStr ? "" : " 예정"}`, "#2A6FDB"]);   // [96차수] 지난 날은 "예정"을 뺀다

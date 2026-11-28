@@ -16,7 +16,7 @@ const VOCA_BOOK_MATCHERS = [
 // [0814] 책 이름표는 이 표 한 곳에만 둔다 — full은 크게 쓰는 정식 이름(마플보카 책장 제목과 같게),
 //        short는 좁은 카드에서 쓰는 줄임말. 이름을 고칠 일이 생기면 여기만 고치면 된다.
 const VOCA_BOOK_LABELS = {
-  wm_sn:     { full: "워드마스터 수능 2000",  short: "워마 수능" },
+  wm_sn:     { full: "워드마스터 수능 2000 (22개정)", short: "워마 수능" },   // [189차수] 마플보카 책장 제목과 같게(22개정 판). 26개정 판은 나중에 새 책으로
   wm_basic:  { full: "워드마스터 고등 Basic", short: "워마 Basic" },
   wm_hi:     { full: "워드마스터 하이스트",   short: "하이스트" },
   ve_ess:    { full: "어휘끝 중학 필수",      short: "어휘끝 필수" },

@@ -3793,10 +3793,15 @@ async function tryOpenTaskBook(){
   if (b.ns && Array.isArray(req.lecs) && req.lecs.length) nsPointTo(id, req.lecs[0]);   // [128차수] 그 유닛이 보이는 종류로 맞춘 뒤 연다
   await openBook(id);
   if (!BOOK || BOOK.id !== id) return;                // 데이터를 못 불러와 안 열렸으면 여기서 끝
-  const lecs = Array.isArray(req.lecs)
-    ? [...new Set(req.lecs.map(Number).filter(n => Number.isFinite(n) && byLec[n] && byLec[n].length))]
-    : [];
-  if (!lecs.length) return;                           // 이 책에 없는 단원뿐이면 책만 열어둔다
+  const want = Array.isArray(req.lecs) ? [...new Set(req.lecs.map(Number).filter(n => Number.isFinite(n)))] : [];
+  let lecs = want.filter(n => byLec[n] && byLec[n].length);
+  /* [11-28] 일반 층에 없고 블랙홀 층에만 있는 단원(예: 수능 2000 STUDY MORE — 블랙홀 카드만 있다)이면 블랙홀로 열어 그 단원을 고른다.
+   *   단어 검색에서 STUDY MORE 숙어의 [단어장 열기]를 누른 경우. 일반 층에 있는 단원이 하나라도 있으면 전처럼 일반으로 연다. */
+  if (!lecs.length && !b.ns && hasBH() && want.some(n => ALL.some(w => w.k && Number(w.lec) === n))){
+    setLayer('bh');
+    lecs = want.filter(n => byLec[n] && byLec[n].length);
+  }
+  if (!lecs.length){ renderHome(); return; }          // 이 책에 없는 단원뿐이면 책만 열어둔다
   selLecs = new Set(lecs);
   renderHome();                                       // 체크 표시 + "선택 범위에서 학습 시작" 버튼 갱신
   openTaskPicker();                                   // [0814] 체크에서 멈추지 않고 방식 고르는 창까지 띄운다
